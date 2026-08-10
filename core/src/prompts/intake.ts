@@ -33,3 +33,26 @@ ${text}
 
 Usa null si ningún patrón encaja con suficiente confianza.`;
 }
+
+export function gherkinGenerationPrompt(
+  text: string,
+  matchedPattern: { name: string; gherkinTemplate: string } | null
+): string {
+  const patternSection = matchedPattern
+    ? `Usa como punto de partida este patrón conocido ("${matchedPattern.name}"), adaptándolo a los detalles específicos de la petición:
+
+"""
+${matchedPattern.gherkinTemplate}
+"""`
+    : "No hay ningún patrón conocido aplicable: escribe el plan desde cero.";
+
+  return `Eres un analista de QA. Escribe un plan de pruebas en formato Gherkin (Feature/Scenario/Given/When/Then, con tags como @smoke o @regression donde corresponda) para esta petición:
+
+"""
+${text}
+"""
+
+${patternSection}
+
+Responde ÚNICAMENTE con el contenido completo del archivo .feature, empezando por la línea "Feature:". No incluyas explicaciones ni bloques de código markdown.`;
+}
