@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - TypeScript strict mode across `core` and `cli`; no `any` in production code.
-- Node.js >= 20 (LTS).
+- Node.js >= 22 (LTS) — raised from the original >=20 during Task 1's review: `@ai-sdk/*` declares `engines.node >= 22`, so >=20 was unenforceable in practice.
 - Never commit secrets. API keys only ever live in `~/.agente-qa/credentials.json` (outside any git repo).
 - `core` has no direct terminal I/O (no `console.log`/`readline` inside `core/src`) — all human interaction crosses an injected callback interface, so the same engine can later power the Claude Code plugin surface too.
 - Any step where the agent could act on an ambiguous or unconfirmed assumption must instead ask — never silently guess.
