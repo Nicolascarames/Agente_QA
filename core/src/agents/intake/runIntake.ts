@@ -41,7 +41,7 @@ export async function runIntake(
   while (true) {
     const decision = await callbacks.presentForApproval(plan);
     if (decision.approved) break;
-    text = `${text}\n\nCambios solicitados sobre la versión anterior:\n${decision.feedback ?? ""}`;
+    text = `${text}\n\nPlan anterior:\n"""\n${plan.featureText}\n"""\n\nCambios solicitados sobre el plan anterior:\n${decision.feedback ?? ""}`;
     plan = await generateGherkin(text, llm, matched);
   }
 

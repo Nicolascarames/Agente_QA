@@ -88,6 +88,18 @@ describe("runIntake", () => {
     expect(plan.featureText).toContain("Caso custom v2");
     expect(await fs.readFile(filePath, "utf-8")).toBe(plan.featureText);
 
+    // The regeneration call (after rejection) must show the model the previous
+    // plan's featureText alongside the feedback, so it can apply the requested
+    // change relative to something concrete instead of regenerating blind.
+    // receivedCalls[0] = ambiguity check, [1] = initial generation,
+    // [2] = regeneration after rejection (matchPattern makes no LLM call here
+    // since patterns is empty).
+    const firstPlanText = "Feature: Caso custom\n  Scenario: x\n    Given a\n";
+    const regenerationMessages = llm.receivedCalls[2];
+    const regenerationPrompt = regenerationMessages[regenerationMessages.length - 1].content;
+    expect(regenerationPrompt).toContain(firstPlanText);
+    expect(regenerationPrompt).toContain("añade el resultado esperado");
+
     const savedPatternRaw = await fs.readFile(
       path.join(tmpProject, ".agente-qa", "templates", "caso-custom.json"),
       "utf-8"
