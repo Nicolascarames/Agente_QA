@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const generateTextMock = vi.fn();
 const anthropicModelMock = vi.fn((modelId: string) => ({ modelId }));
-const createAnthropicMock = vi.fn(() => anthropicModelMock);
+const createAnthropicMock = vi.fn((..._args: unknown[]) => anthropicModelMock);
 
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
