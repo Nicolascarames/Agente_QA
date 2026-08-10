@@ -13,3 +13,23 @@ Petición del usuario:
 ${text}
 """`;
 }
+
+export function patternMatchPrompt(
+  text: string,
+  patterns: { name: string; description: string }[]
+): string {
+  const patternList = patterns.map((p) => `- ${p.name}: ${p.description}`).join("\n");
+
+  return `Tienes esta lista de patrones de prueba conocidos:
+${patternList}
+
+Petición del usuario:
+"""
+${text}
+"""
+
+¿La petición encaja claramente con alguno de estos patrones? Responde EXCLUSIVAMENTE con un objeto JSON, sin texto adicional, con esta forma exacta:
+{"matchedPatternName": string | null}
+
+Usa null si ningún patrón encaja con suficiente confianza.`;
+}
