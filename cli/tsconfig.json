@@ -1,8 +1,12 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "dist"
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "@agente-qa/core": ["../core/dist/index.d.ts"],
+      "@agente-qa/core/*": ["../core/dist/*"]
+    }
   },
   "include": ["src", "bin"]
 }
