@@ -9,7 +9,7 @@ export class FakeLLMProvider implements LLMProvider {
   }
 
   async generate(messages: Message[]): Promise<string> {
-    this.receivedCalls.push(messages);
+    this.receivedCalls.push([...messages]);
     const next = this.responses.shift();
     if (next === undefined) {
       throw new Error("FakeLLMProvider: no hay más respuestas programadas");
