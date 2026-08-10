@@ -1,0 +1,16 @@
+{
+  "name": "agente-qa",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "agente-qa": "./dist/bin/agente-qa.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agente-qa/core": "*",
+    "@inquirer/prompts": "^8.5.2",
+    "commander": "^15.0.0"
+  }
+}
