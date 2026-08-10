@@ -12,6 +12,7 @@ export function projectConfigPath(projectRoot: string): string {
 }
 
 export async function saveProjectConfig(projectRoot: string, config: ProjectConfig): Promise<void> {
+  ProjectConfigSchema.parse(config);
   const filePath = projectConfigPath(projectRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(config, null, 2), "utf-8");

@@ -35,14 +35,20 @@ Requiere tener [Claude Code](https://code.claude.com) instalado y una sesión in
 
 ## Instalación — CLI standalone (npm)
 
-> Pendiente: nombre definitivo del paquete npm.
+> El paquete todavía no está publicado en npm. Mientras tanto se instala en local desde el propio repositorio:
 
 ```
-npm install -g agente-qa
-agente-qa init
+git clone <url-del-repositorio>
+cd Agente_QA
+npm install
+npm run build
+node cli/dist/bin/agente-qa.js init
+node cli/dist/bin/agente-qa.js chat
 ```
 
-`init` lanza el asistente de configuración: elige proveedor LLM, pega tu API key, define estructura de carpetas y preferencias de capturas/vídeo/reportes.
+`init` lanza el asistente de configuración: en esta versión pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests. Las preferencias de capturas/vídeo/reportes llegarán con los Agentes 2-4, todavía no implementados (ver "Estado del proyecto" abajo).
+
+Cuando el paquete se publique en npm, `npm install -g agente-qa` funcionará como atajo equivalente a los pasos anteriores.
 
 ## Uso
 
@@ -50,4 +56,4 @@ Ambas formas se usan igual: la conversación siempre empieza con una presentaci�
 
 ## Estado del proyecto
 
-Diseño v1 cerrado y documentado, pendiente de plan de implementación. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida) está implementado y pasa 55 tests. Los Agentes 2-4 (generador de tests Playwright, ejecutor y reportes) y la superficie de plugin de Claude Code quedan pendientes como planes futuros independientes. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).

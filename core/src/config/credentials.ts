@@ -16,6 +16,7 @@ export function credentialsPath(homeDir: string): string {
 }
 
 export async function saveCredentials(creds: Credentials, homeDir: string): Promise<void> {
+  CredentialsSchema.parse(creds);
   const filePath = credentialsPath(homeDir);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(creds, null, 2), "utf-8");

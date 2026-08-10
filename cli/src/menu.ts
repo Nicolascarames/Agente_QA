@@ -19,13 +19,21 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
 
     switch (choice) {
       case "create-plan": {
-        const filePath = await runCreatePlan(deps.chatPrompts, deps.homeDir, deps.projectRoot);
-        console.log(`Plan guardado en ${filePath}`);
+        try {
+          const filePath = await runCreatePlan(deps.chatPrompts, deps.homeDir, deps.projectRoot);
+          console.log(`Plan guardado en ${filePath}`);
+        } catch (err) {
+          console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
         break;
       }
       case "config": {
-        await runInit(deps.initPrompts, deps.homeDir, deps.projectRoot);
-        console.log("Configuración actualizada.");
+        try {
+          await runInit(deps.initPrompts, deps.homeDir, deps.projectRoot);
+          console.log("Configuración actualizada.");
+        } catch (err) {
+          console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
         break;
       }
       case "generate-tests":

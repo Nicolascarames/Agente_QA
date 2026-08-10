@@ -38,6 +38,7 @@ describe("runCreatePlan", () => {
       askUser: vi.fn(),
       presentForApproval: vi.fn(),
       offerSavePattern: vi.fn(),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
     await expect(runCreatePlan(prompts, tmpHome, tmpProject)).rejects.toThrow(/agente-qa init/);
   });
@@ -58,6 +59,7 @@ describe("runCreatePlan", () => {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
       offerSavePattern: vi.fn(),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
     const filePath = await runCreatePlan(prompts, tmpHome, tmpProject);

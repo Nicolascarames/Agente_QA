@@ -14,6 +14,10 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.FakeLLMProvider).toBe("function");
   });
 
+  it("exports LLMRequestError", () => {
+    expect(typeof core.LLMRequestError).toBe("function");
+  });
+
   it("exports the pattern registry", () => {
     expect(typeof core.loadAllPatterns).toBe("function");
     expect(typeof core.saveProjectPattern).toBe("function");

@@ -19,6 +19,7 @@ export type { ProjectConfig } from "./config/projectConfig.js";
 
 export type { Message, LLMProvider } from "./llm/provider.js";
 export { LLMResponseParseError, parseJsonResponse } from "./llm/parseJson.js";
+export { LLMRequestError } from "./llm/errors.js";
 export { FakeLLMProvider } from "./llm/testUtils.js";
 export { createProvider } from "./llm/factory.js";
 

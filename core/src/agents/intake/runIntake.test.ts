@@ -35,6 +35,7 @@ describe("runIntake", () => {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
       offerSavePattern: vi.fn(),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
     const { plan, filePath } = await runIntake(
@@ -73,6 +74,7 @@ describe("runIntake", () => {
       offerSavePattern: vi
         .fn()
         .mockResolvedValue({ save: true, name: "caso-custom", description: "Caso de prueba a medida" }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
     const { plan, filePath } = await runIntake(
@@ -107,5 +109,81 @@ describe("runIntake", () => {
     const savedPattern = JSON.parse(savedPatternRaw);
     expect(savedPattern.name).toBe("caso-custom");
     expect(savedPattern.gherkinTemplate).toBe(plan.featureText);
+  });
+
+  it("asks for confirmation before overwriting an existing feature file, and honors the answer", async () => {
+    // First run: creates tests/features/login.feature from scratch.
+    const firstRunLlm = new FakeLLMProvider([
+      '{"ambiguous": false, "questions": []}',
+      '{"matchedPatternName": "login"}',
+      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+    ]);
+    const firstRunCallbacks: IntakeCallbacks = {
+      askUser: vi.fn(),
+      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
+      offerSavePattern: vi.fn(),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+    const { plan: firstPlan, filePath } = await runIntake(
+      "quiero probar el login",
+      firstRunLlm,
+      [loginPattern],
+      tmpProject,
+      "tests",
+      firstRunCallbacks
+    );
+    expect(firstRunCallbacks.confirmOverwrite).not.toHaveBeenCalled();
+    const originalContent = await fs.readFile(filePath, "utf-8");
+    expect(originalContent).toBe(firstPlan.featureText);
+
+    // Second run against the same project/filename, with confirmOverwrite -> false:
+    // must reject and leave the original file untouched (the reproduction from the review).
+    const rejectRunLlm = new FakeLLMProvider([
+      '{"ambiguous": false, "questions": []}',
+      '{"matchedPatternName": "login"}',
+      "Feature: Login\n  Scenario: y\n    Given a2\n    When b2\n    Then c2\n",
+    ]);
+    const confirmOverwriteReject = vi.fn().mockResolvedValue(false);
+    const rejectRunCallbacks: IntakeCallbacks = {
+      askUser: vi.fn(),
+      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
+      offerSavePattern: vi.fn(),
+      confirmOverwrite: confirmOverwriteReject,
+    };
+    await expect(
+      runIntake(
+        "quiero probar el login otra vez",
+        rejectRunLlm,
+        [loginPattern],
+        tmpProject,
+        "tests",
+        rejectRunCallbacks
+      )
+    ).rejects.toThrow(/Cancelado/);
+    expect(confirmOverwriteReject).toHaveBeenCalledWith(filePath);
+    expect(await fs.readFile(filePath, "utf-8")).toBe(originalContent);
+
+    // Third run, with confirmOverwrite -> true: must succeed and overwrite the file.
+    const acceptRunLlm = new FakeLLMProvider([
+      '{"ambiguous": false, "questions": []}',
+      '{"matchedPatternName": "login"}',
+      "Feature: Login\n  Scenario: z\n    Given a3\n    When b3\n    Then c3\n",
+    ]);
+    const acceptRunCallbacks: IntakeCallbacks = {
+      askUser: vi.fn(),
+      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
+      offerSavePattern: vi.fn(),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+    const { plan: thirdPlan } = await runIntake(
+      "quiero probar el login de nuevo",
+      acceptRunLlm,
+      [loginPattern],
+      tmpProject,
+      "tests",
+      acceptRunCallbacks
+    );
+    expect(thirdPlan.featureText).not.toBe(originalContent);
+    expect(await fs.readFile(filePath, "utf-8")).toBe(thirdPlan.featureText);
   });
 });

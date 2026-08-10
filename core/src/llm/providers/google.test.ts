@@ -13,6 +13,7 @@ vi.mock("@ai-sdk/google", () => ({
 }));
 
 import { createGoogleProvider, GOOGLE_DEFAULT_MODEL } from "./google.js";
+import { LLMRequestError } from "../errors.js";
 
 describe("createGoogleProvider", () => {
   beforeEach(() => {
@@ -37,5 +38,18 @@ describe("createGoogleProvider", () => {
       messages: [{ role: "user", content: "hi" }],
     });
     expect(result).toBe("hola");
+  });
+
+  it("wraps generateText failures in an LLMRequestError naming the provider", async () => {
+    const originalError = new Error("network down");
+    generateTextMock.mockRejectedValueOnce(originalError);
+    const provider = createGoogleProvider("goog-test");
+
+    const promise = provider.generate([{ role: "user", content: "hi" }]);
+    await expect(promise).rejects.toBeInstanceOf(LLMRequestError);
+    await expect(promise).rejects.toThrow(/Google/);
+    await promise.catch((err: unknown) => {
+      expect((err as { cause?: unknown }).cause).toBe(originalError);
+    });
   });
 });

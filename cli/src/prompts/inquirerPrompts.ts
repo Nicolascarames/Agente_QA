@@ -14,7 +14,10 @@ export const realInitPrompts: InitPrompts = {
     });
   },
   async inputApiKey(provider) {
-    return password({ message: `Pega tu API key de ${provider}:` });
+    return password({
+      message: `Pega tu API key de ${provider}:`,
+      validate: (value) => value.trim().length > 0 || "La API key no puede estar vacía.",
+    });
   },
   async inputTestsDir() {
     return input({ message: "¿En qué carpeta guardamos los tests? (relativa al proyecto)", default: "tests" });
@@ -70,6 +73,15 @@ export function buildRealChatPrompts(): ChatPrompts {
       const name = await input({ message: "Nombre del patrón:" });
       const description = await input({ message: "Descripción breve:" });
       return { save: true, name, description };
+    },
+    async confirmOverwrite(filePath) {
+      return select({
+        message: `Ya existe un archivo en ${filePath}. ¿Lo sobrescribo?`,
+        choices: [
+          { name: "Sí", value: true },
+          { name: "No", value: false },
+        ],
+      });
     },
   };
 }

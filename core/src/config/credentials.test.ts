@@ -30,4 +30,10 @@ describe("credentials", () => {
     expect(exists).toBe(true);
     expect(credentialsPath(tmpHome)).toBe(path.join(tmpHome, ".agente-qa", "credentials.json"));
   });
+
+  it("rejects and does not write the file when apiKey is empty", async () => {
+    await expect(saveCredentials({ provider: "anthropic", apiKey: "" }, tmpHome)).rejects.toThrow();
+    const exists = await fs.stat(credentialsPath(tmpHome)).then(() => true, () => false);
+    expect(exists).toBe(false);
+  });
 });

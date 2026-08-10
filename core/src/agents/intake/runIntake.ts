@@ -4,13 +4,14 @@ import type { GherkinPlan } from "../../schemas/gherkinPlan.js";
 import { checkAmbiguity } from "./ambiguityChecker.js";
 import { matchPattern } from "../../patterns/matcher.js";
 import { generateGherkin } from "./gherkinGenerator.js";
-import { writeFeatureFile } from "./writeFeatureFile.js";
+import { writeFeatureFile, featureFileExists, featureFilePath } from "./writeFeatureFile.js";
 import { saveProjectPattern } from "../../patterns/registry.js";
 
 export interface IntakeCallbacks {
   askUser(question: string): Promise<string>;
   presentForApproval(plan: GherkinPlan): Promise<{ approved: boolean; feedback?: string }>;
   offerSavePattern(plan: GherkinPlan): Promise<{ save: boolean; name?: string; description?: string }>;
+  confirmOverwrite(filePath: string): Promise<boolean>;
 }
 
 export async function runIntake(
@@ -54,6 +55,15 @@ export async function runIntake(
         gherkinTemplate: plan.featureText,
         pageObjectTemplate: "",
       });
+    }
+  }
+
+  const alreadyExists = await featureFileExists(projectRoot, testsDir, plan.fileName);
+  if (alreadyExists) {
+    const targetPath = featureFilePath(projectRoot, testsDir, plan.fileName);
+    const overwrite = await callbacks.confirmOverwrite(targetPath);
+    if (!overwrite) {
+      throw new Error(`Cancelado: ya existe ${targetPath} y no se sobrescribió.`);
     }
   }
 

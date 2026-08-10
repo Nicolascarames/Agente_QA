@@ -28,6 +28,13 @@ export async function generateGherkin(
   ]);
 
   const featureText = stripCodeFences(raw);
+
+  if (!/^\s*(@\S+\s*)*Feature:/.test(featureText)) {
+    throw new Error(
+      `La respuesta del modelo no parece un archivo Gherkin válido (no empieza por "Feature:"): ${featureText.slice(0, 80)}...`
+    );
+  }
+
   const fileName = `${slugify(extractFeatureTitle(featureText))}.feature`;
 
   return { fileName, featureText };

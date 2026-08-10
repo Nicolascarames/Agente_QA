@@ -28,4 +28,10 @@ describe("projectConfig", () => {
     await saveProjectConfig(tmpProject, { testsDir: "qa-tests" });
     expect(projectConfigPath(tmpProject)).toBe(path.join(tmpProject, ".agente-qa", "config.json"));
   });
+
+  it("rejects and does not write the file when testsDir is empty", async () => {
+    await expect(saveProjectConfig(tmpProject, { testsDir: "" })).rejects.toThrow();
+    const exists = await fs.stat(projectConfigPath(tmpProject)).then(() => true, () => false);
+    expect(exists).toBe(false);
+  });
 });

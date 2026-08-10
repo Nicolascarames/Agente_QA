@@ -21,9 +21,31 @@ describe("generateGherkin", () => {
     expect(plan.featureText).not.toContain("```");
   });
 
-  it("falls back to a generic file name when no Feature title is found", async () => {
+  it("rejects a response with no 'Feature:' line at all as invalid Gherkin", async () => {
     const llm = new FakeLLMProvider(["contenido sin cabecera Feature"]);
-    const plan = await generateGherkin("texto raro", llm, null);
-    expect(plan.fileName).toBe("plan-de-pruebas.feature");
+    await expect(generateGherkin("texto raro", llm, null)).rejects.toThrow(
+      /no parece un archivo Gherkin válido/
+    );
+  });
+
+  it("rejects a response where the model prepends prose before the fenced Gherkin block", async () => {
+    // Reproduction: stripCodeFences only strips a fence at position 0, so prose
+    // before "```gherkin" leaves the prose in featureText and it would otherwise
+    // get written to disk as-is.
+    const llm = new FakeLLMProvider([
+      "Aquí tienes el plan:\n\n```gherkin\nFeature: Login\n  Scenario: x\n    Given a\n```",
+    ]);
+    await expect(generateGherkin("probar login", llm, null)).rejects.toThrow(
+      /no parece un archivo Gherkin válido/
+    );
+  });
+
+  it("accepts a response that starts with Gherkin tags before the Feature: line", async () => {
+    const llm = new FakeLLMProvider([
+      "@smoke\nFeature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+    ]);
+    const plan = await generateGherkin("probar login", llm, null);
+    expect(plan.featureText.startsWith("@smoke")).toBe(true);
+    expect(plan.fileName).toBe("login.feature");
   });
 });

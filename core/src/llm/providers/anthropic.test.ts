@@ -13,6 +13,7 @@ vi.mock("@ai-sdk/anthropic", () => ({
 }));
 
 import { createAnthropicProvider, ANTHROPIC_DEFAULT_MODEL } from "./anthropic.js";
+import { LLMRequestError } from "../errors.js";
 
 describe("createAnthropicProvider", () => {
   beforeEach(() => {
@@ -37,5 +38,18 @@ describe("createAnthropicProvider", () => {
       messages: [{ role: "user", content: "hi" }],
     });
     expect(result).toBe("hola");
+  });
+
+  it("wraps generateText failures in an LLMRequestError naming the provider", async () => {
+    const originalError = new Error("network down");
+    generateTextMock.mockRejectedValueOnce(originalError);
+    const provider = createAnthropicProvider("sk-ant-test");
+
+    const promise = provider.generate([{ role: "user", content: "hi" }]);
+    await expect(promise).rejects.toBeInstanceOf(LLMRequestError);
+    await expect(promise).rejects.toThrow(/Anthropic/);
+    await promise.catch((err: unknown) => {
+      expect((err as { cause?: unknown }).cause).toBe(originalError);
+    });
   });
 });

@@ -29,4 +29,7 @@ program
     });
   });
 
-program.parseAsync(process.argv);
+program.parseAsync(process.argv).catch((err) => {
+  console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+  process.exitCode = 1;
+});

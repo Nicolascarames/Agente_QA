@@ -31,6 +31,7 @@ export async function runCreatePlan(
     askUser: (question) => prompts.askUser(question),
     presentForApproval: (plan) => prompts.presentForApproval(plan.featureText),
     offerSavePattern: () => prompts.offerSavePattern(),
+    confirmOverwrite: (filePath) => prompts.confirmOverwrite(filePath),
   };
 
   const { filePath } = await runIntake(
