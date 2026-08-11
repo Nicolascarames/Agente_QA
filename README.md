@@ -50,7 +50,7 @@ node cli/dist/bin/agente-qa.js init
 node cli/dist/bin/agente-qa.js chat
 ```
 
-`init` lanza el asistente de configuración: en esta versión pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests. Las preferencias de capturas/vídeo/reportes llegarán con los Agentes 3-4, todavía no implementados (ver "Estado del proyecto" abajo).
+`init` lanza el asistente de configuración: en esta versión pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests. Las preferencias de reportes llegarán con el Agente 4, todavía no implementado (ver "Estado del proyecto" abajo).
 
 Cuando el paquete se publique en npm, `npm install -g agente-qa` funcionará como atajo equivalente a los pasos anteriores.
 
@@ -60,4 +60,4 @@ Ambas formas se usan igual: la conversación siempre empieza con una presentaci�
 
 ## Estado del proyecto
 
-El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida) y el Agente 2 (generador de tests Playwright) están implementados; la suite pasa 103 passed, 3 skipped tests (los `skipped` dependen de tener `ruff` instalado en la máquina). Los Agentes 3-4 (ejecutor y reportes) y la superficie de plugin de Claude Code quedan pendientes como planes futuros independientes. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida), el Agente 2 (generador de tests Playwright) y el Agente 3 (ejecutor) están implementados; la suite pasa 131 passed, 5 skipped tests (los `skipped` dependen de tener `ruff` y el stack de Python (`pytest`, `pytest-bdd`, `pytest-playwright`) instalados en la máquina). El Agente 4 (reportes) y la superficie de plugin de Claude Code quedan pendientes como planes futuros independientes. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
