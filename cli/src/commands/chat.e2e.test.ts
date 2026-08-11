@@ -44,7 +44,6 @@ describe("end-to-end: create plan via the real wiring, only the network call moc
       inputInitialText: vi.fn().mockResolvedValue("Quiero probar que el login funciona"),
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 

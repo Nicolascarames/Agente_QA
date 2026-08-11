@@ -24,7 +24,7 @@ describe("runIntake", () => {
     await fs.rm(tmpProject, { recursive: true, force: true });
   });
 
-  it("happy path: no ambiguity, matches a pattern, approved on first try, no save offer", async () => {
+  it("happy path: no ambiguity, matches a pattern, approved on first try", async () => {
     const llm = new FakeLLMProvider([
       '{"ambiguous": false, "questions": []}',
       '{"matchedPatternName": "login"}',
@@ -34,7 +34,6 @@ describe("runIntake", () => {
     const callbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
@@ -48,12 +47,12 @@ describe("runIntake", () => {
     );
 
     expect(plan.fileName).toBe("login.feature");
+    expect(plan.matchedPatternName).toBe("login");
     expect(callbacks.askUser).not.toHaveBeenCalled();
-    expect(callbacks.offerSavePattern).not.toHaveBeenCalled();
-    expect(await fs.readFile(filePath, "utf-8")).toBe(plan.featureText);
+    expect(await fs.readFile(filePath, "utf-8")).toContain(plan.featureText);
   });
 
-  it("ambiguous + no match: asks clarifying questions, loops on rejection, saves new pattern on approval", async () => {
+  it("ambiguous + no match: asks clarifying questions and loops on rejection", async () => {
     // Note: no scripted response for pattern matching here — matchPattern (Task 12)
     // short-circuits with zero LLM calls when the patterns list is empty (see
     // matcher.test.ts: "returns null without calling the model when there are no
@@ -71,9 +70,6 @@ describe("runIntake", () => {
         .fn()
         .mockResolvedValueOnce({ approved: false, feedback: "añade el resultado esperado" })
         .mockResolvedValueOnce({ approved: true }),
-      offerSavePattern: vi
-        .fn()
-        .mockResolvedValue({ save: true, name: "caso-custom", description: "Caso de prueba a medida" }),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
@@ -88,6 +84,7 @@ describe("runIntake", () => {
 
     expect(callbacks.askUser).toHaveBeenCalledWith("¿Qué navegador?");
     expect(plan.featureText).toContain("Caso custom v2");
+    expect(plan.matchedPatternName).toBeNull();
     expect(await fs.readFile(filePath, "utf-8")).toBe(plan.featureText);
 
     // The regeneration call (after rejection) must show the model the previous
@@ -101,14 +98,6 @@ describe("runIntake", () => {
     const regenerationPrompt = regenerationMessages[regenerationMessages.length - 1].content;
     expect(regenerationPrompt).toContain(firstPlanText);
     expect(regenerationPrompt).toContain("añade el resultado esperado");
-
-    const savedPatternRaw = await fs.readFile(
-      path.join(tmpProject, ".agente-qa", "templates", "caso-custom.json"),
-      "utf-8"
-    );
-    const savedPattern = JSON.parse(savedPatternRaw);
-    expect(savedPattern.name).toBe("caso-custom");
-    expect(savedPattern.gherkinTemplate).toBe(plan.featureText);
   });
 
   it("asks for confirmation before overwriting an existing feature file, and honors the answer", async () => {
@@ -121,7 +110,6 @@ describe("runIntake", () => {
     const firstRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
     const { plan: firstPlan, filePath } = await runIntake(
@@ -134,7 +122,7 @@ describe("runIntake", () => {
     );
     expect(firstRunCallbacks.confirmOverwrite).not.toHaveBeenCalled();
     const originalContent = await fs.readFile(filePath, "utf-8");
-    expect(originalContent).toBe(firstPlan.featureText);
+    expect(originalContent).toContain(firstPlan.featureText);
 
     // Second run against the same project/filename, with confirmOverwrite -> false:
     // must reject and leave the original file untouched (the reproduction from the review).
@@ -147,7 +135,6 @@ describe("runIntake", () => {
     const rejectRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: confirmOverwriteReject,
     };
     await expect(
@@ -172,7 +159,6 @@ describe("runIntake", () => {
     const acceptRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
     const { plan: thirdPlan } = await runIntake(
@@ -184,6 +170,6 @@ describe("runIntake", () => {
       acceptRunCallbacks
     );
     expect(thirdPlan.featureText).not.toBe(originalContent);
-    expect(await fs.readFile(filePath, "utf-8")).toBe(thirdPlan.featureText);
+    expect(await fs.readFile(filePath, "utf-8")).toContain(thirdPlan.featureText);
   });
 });

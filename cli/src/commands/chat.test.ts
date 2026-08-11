@@ -37,7 +37,6 @@ describe("runCreatePlan", () => {
       inputInitialText: vi.fn(),
       askUser: vi.fn(),
       presentForApproval: vi.fn(),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
     await expect(runCreatePlan(prompts, tmpHome, tmpProject)).rejects.toThrow(/agente-qa init/);
@@ -58,7 +57,6 @@ describe("runCreatePlan", () => {
       inputInitialText: vi.fn().mockResolvedValue("quiero probar el login"),
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
@@ -66,6 +64,5 @@ describe("runCreatePlan", () => {
 
     expect(filePath).toBe(path.join(tmpProject, "tests", "features", "login.feature"));
     expect(await fs.readFile(filePath, "utf-8")).toContain("Feature: Login");
-    expect(prompts.offerSavePattern).not.toHaveBeenCalled();
   });
 });

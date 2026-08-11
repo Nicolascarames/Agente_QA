@@ -16,6 +16,5 @@ export interface ChatPrompts {
   inputInitialText(): Promise<string>;
   askUser(question: string): Promise<string>;
   presentForApproval(featureText: string): Promise<{ approved: boolean; feedback?: string }>;
-  offerSavePattern(): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
 }

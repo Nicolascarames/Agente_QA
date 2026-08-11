@@ -5,12 +5,10 @@ import { checkAmbiguity } from "./ambiguityChecker.js";
 import { matchPattern } from "../../patterns/matcher.js";
 import { generateGherkin } from "./gherkinGenerator.js";
 import { writeFeatureFile, featureFileExists, featureFilePath } from "./writeFeatureFile.js";
-import { saveProjectPattern } from "../../patterns/registry.js";
 
 export interface IntakeCallbacks {
   askUser(question: string): Promise<string>;
   presentForApproval(plan: GherkinPlan): Promise<{ approved: boolean; feedback?: string }>;
-  offerSavePattern(plan: GherkinPlan): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
 }
 
@@ -44,18 +42,6 @@ export async function runIntake(
     if (decision.approved) break;
     text = `${text}\n\nPlan anterior:\n"""\n${plan.featureText}\n"""\n\nCambios solicitados sobre el plan anterior:\n${decision.feedback ?? ""}`;
     plan = await generateGherkin(text, llm, matched);
-  }
-
-  if (!matched) {
-    const saveDecision = await callbacks.offerSavePattern(plan);
-    if (saveDecision.save && saveDecision.name && saveDecision.description) {
-      await saveProjectPattern(projectRoot, {
-        name: saveDecision.name,
-        description: saveDecision.description,
-        gherkinTemplate: plan.featureText,
-        pageObjectTemplate: "",
-      });
-    }
   }
 
   const alreadyExists = await featureFileExists(projectRoot, testsDir, plan.fileName);

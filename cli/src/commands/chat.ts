@@ -30,7 +30,6 @@ export async function runCreatePlan(
   const callbacks: IntakeCallbacks = {
     askUser: (question) => prompts.askUser(question),
     presentForApproval: (plan) => prompts.presentForApproval(plan.featureText),
-    offerSavePattern: () => prompts.offerSavePattern(),
     confirmOverwrite: (filePath) => prompts.confirmOverwrite(filePath),
   };
 

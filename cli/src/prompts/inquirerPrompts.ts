@@ -61,19 +61,6 @@ export function buildRealChatPrompts(): ChatPrompts {
       const feedback = await input({ message: "¿Qué cambios quieres?" });
       return { approved: false, feedback };
     },
-    async offerSavePattern() {
-      const save = await select({
-        message: "Esto parece un patrón reusable. ¿Lo guardo para la próxima vez?",
-        choices: [
-          { name: "Sí", value: true },
-          { name: "No", value: false },
-        ],
-      });
-      if (!save) return { save: false };
-      const name = await input({ message: "Nombre del patrón:" });
-      const description = await input({ message: "Descripción breve:" });
-      return { save: true, name, description };
-    },
     async confirmOverwrite(filePath) {
       return select({
         message: `Ya existe un archivo en ${filePath}. ¿Lo sobrescribo?`,
