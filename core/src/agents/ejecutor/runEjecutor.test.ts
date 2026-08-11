@@ -51,6 +51,33 @@ describe("runEjecutor", () => {
     expect(runner.receivedCalls[0].markerExpression).toBe("smoke");
   });
 
+  it("rejects a strict subset selection that includes a tag with characters invalid for pytest -m", async () => {
+    await writeFeature("login.feature", "@smoke-test\nFeature: Login\n  Scenario: x\n    Given a\n");
+    await writeFeature("checkout.feature", "@regression\nFeature: Checkout\n  Scenario: y\n    Given b\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn().mockResolvedValue(["@smoke-test"]),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    await expect(runEjecutor(tmpProject, "tests", runner, callbacks)).rejects.toThrow(/@smoke-test/);
+  });
+
+  it("does not throw for a strict subset selection using a plain identifier tag like '@smoke'", async () => {
+    await writeFeature("login.feature", "@smoke\nFeature: Login\n  Scenario: x\n    Given a\n");
+    await writeFeature("checkout.feature", "@regression\nFeature: Checkout\n  Scenario: y\n    Given b\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn().mockResolvedValue(["@smoke"]),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    await expect(runEjecutor(tmpProject, "tests", runner, callbacks)).resolves.toBeDefined();
+    expect(runner.receivedCalls[0].markerExpression).toBe("smoke");
+  });
+
   it("passes markerExpression: null when every available tag is selected (run everything)", async () => {
     await writeFeature("login.feature", "@smoke\nFeature: Login\n  Scenario: x\n    Given a\n");
     const runner = new FakeTestRunner([{ exitCode: 0 }]);

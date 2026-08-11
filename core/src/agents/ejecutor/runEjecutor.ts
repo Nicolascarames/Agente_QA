@@ -18,11 +18,23 @@ export interface EjecutorResult {
   browserSetupWarning?: string;
 }
 
+const PYTEST_MARKER_TOKEN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 function buildMarkerExpression(availableTags: string[], selectedTags: string[]): string | null {
   const allSelected =
     selectedTags.length === availableTags.length && availableTags.every((tag) => selectedTags.includes(tag));
   if (allSelected) return null;
-  return selectedTags.map((tag) => tag.replace(/^@/, "")).join(" or ");
+  return selectedTags
+    .map((tag) => {
+      const stripped = tag.replace(/^@/, "");
+      if (!PYTEST_MARKER_TOKEN.test(stripped)) {
+        throw new Error(
+          `El tag "${tag}" no se puede usar como filtro de pytest (solo se permiten letras, números y "_", empezando por letra o "_"). Selecciona otro subconjunto de tags.`
+        );
+      }
+      return stripped;
+    })
+    .join(" or ");
 }
 
 function captureModeToFlags(mode: CaptureMode): {
