@@ -18,6 +18,7 @@ export const realInitPrompts: InitPrompts = {
         { name: "Anthropic (Claude)", value: "anthropic" },
         { name: "OpenAI", value: "openai" },
         { name: "Google", value: "google" },
+        { name: "Otro (compatible con OpenAI: Groq, Together, Ollama local...)", value: "openai-compatible" },
       ],
     });
   },
@@ -25,6 +26,26 @@ export const realInitPrompts: InitPrompts = {
     return password({
       message: `Pega tu API key de ${provider}:`,
       validate: (value) => value.trim().length > 0 || "La API key no puede estar vacía.",
+    });
+  },
+  async inputBaseURL() {
+    return input({
+      message: "URL base de la API (compatible con OpenAI), ej. https://api.groq.com/openai/v1:",
+      validate: (value) => {
+        if (value.trim().length === 0) return "La URL no puede estar vacía.";
+        try {
+          new URL(value.trim());
+          return true;
+        } catch {
+          return "No parece una URL válida.";
+        }
+      },
+    });
+  },
+  async inputModel() {
+    return input({
+      message: "Nombre del modelo a usar (según lo que exponga ese proveedor), ej. llama-3.3-70b-versatile:",
+      validate: (value) => value.trim().length > 0 || "El nombre del modelo no puede estar vacío.",
     });
   },
   async inputTestsDir() {
