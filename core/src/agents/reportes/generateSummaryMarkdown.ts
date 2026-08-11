@@ -11,7 +11,7 @@ export function generateSummaryMarkdown(
   lines.push(`- Pasados: ${results.passed}`);
   lines.push(`- Fallidos: ${results.failed}`);
   lines.push(`- Omitidos: ${results.skipped}`);
-  lines.push(`- Duración: ${results.durationSeconds}s`);
+  lines.push(`- Duración: ${results.durationSeconds.toFixed(3)}s`);
   lines.push("");
   lines.push("## Fallos");
   lines.push("");
