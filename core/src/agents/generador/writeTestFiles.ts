@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { assertSafeRelativePath } from "../../util/assertSafeRelativePath.js";
 import type { GeneratedFile } from "./codeGenerator.js";
 
 export function testFilePath(projectRoot: string, testsDir: string, relativePath: string): string {
@@ -25,8 +26,11 @@ export async function writeTestFiles(
   files: GeneratedFile[]
 ): Promise<string[]> {
   const written: string[] = [];
+  const baseDir = path.join(projectRoot, testsDir);
 
   for (const file of files) {
+    assertSafeRelativePath(baseDir, file.path);
+
     const isSharedConftest = file.path === "conftest.py";
     if (isSharedConftest && (await testFileExists(projectRoot, testsDir, file.path))) {
       continue;

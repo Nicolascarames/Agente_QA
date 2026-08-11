@@ -28,6 +28,13 @@ describe("realCodeChecker missing tool handling", () => {
       checker.check([{ path: "tests/test_x.py", content: "x = 1\n" }])
     ).rejects.toThrow(MissingCodeToolError);
   });
+
+  it("rejects a file path that escapes the temp directory before spawning anything", async () => {
+    const checker = createRealCodeChecker();
+    await expect(
+      checker.check([{ path: "../../evil.py", content: "x = 1\n" }])
+    ).rejects.toThrow(/no permitida/);
+  });
 });
 
 describe.skipIf(!hasPython || !hasRuff)("realCodeChecker (requires Python + ruff on PATH)", () => {

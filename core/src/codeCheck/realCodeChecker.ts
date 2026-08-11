@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { assertSafeRelativePath } from "../util/assertSafeRelativePath.js";
 import type { CodeChecker, CodeFile, CodeCheckResult } from "./codeChecker.js";
 
 export class MissingCodeToolError extends Error {
@@ -64,6 +65,7 @@ export function createRealCodeChecker(options?: {
       try {
         const absolutePaths: string[] = [];
         for (const file of files) {
+          assertSafeRelativePath(tmpDir, file.path);
           const target = path.join(tmpDir, file.path);
           await fs.mkdir(path.dirname(target), { recursive: true });
           await fs.writeFile(target, file.content, "utf-8");

@@ -56,4 +56,10 @@ describe("writeTestFiles", () => {
     await writeTestFiles(tmpProject, "tests", [{ path: "tests/test_login.py", content: "x = 1\n" }]);
     expect(await testFileExists(tmpProject, "tests", "tests/test_login.py")).toBe(true);
   });
+
+  it("rejects a generated file path that escapes the tests directory", async () => {
+    await expect(
+      writeTestFiles(tmpProject, "tests", [{ path: "../../evil.py", content: "x = 1\n" }])
+    ).rejects.toThrow(/no permitida/);
+  });
 });
