@@ -4,7 +4,7 @@ import type { TestRunner, TestRunOptions, TestRunResult } from "./testRunner.js"
 export class MissingTestToolError extends Error {
   constructor(detail: string) {
     super(
-      `No se pudo ejecutar los tests: ${detail}. Instala las dependencias con "pip install pytest pytest-bdd pytest-playwright" y luego "playwright install".`
+      `No se pudo ejecutar los tests: ${detail}. Instala las dependencias con "pip install pytest pytest-bdd pytest-playwright pytest-html" y luego "playwright install".`
     );
     this.name = "MissingTestToolError";
   }
@@ -68,7 +68,7 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
       try {
         preflight = await runCapture(
           pythonCommand,
-          ["-c", "import pytest, pytest_bdd, pytest_playwright"],
+          ["-c", "import pytest, pytest_bdd, pytest_playwright, pytest_html"],
           runOptions.cwd
         );
       } catch (err) {
@@ -79,7 +79,7 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
       }
       if (preflight.code !== 0) {
         throw new MissingTestToolError(
-          `faltan dependencias Python (pytest, pytest-bdd o pytest-playwright)\n${preflight.stderr || preflight.stdout}`
+          `faltan dependencias Python (pytest, pytest-bdd, pytest-playwright o pytest-html)\n${preflight.stderr || preflight.stdout}`
         );
       }
 
@@ -90,6 +90,7 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
       args.push(`--screenshot=${runOptions.screenshotMode}`);
       args.push(`--video=${runOptions.videoMode}`);
       args.push(`--junitxml=${runOptions.junitXmlPath}`);
+      args.push(`--html=${runOptions.htmlReportPath}`, "--self-contained-html");
 
       const { code, combinedOutput } = await runStreaming(
         pythonCommand,

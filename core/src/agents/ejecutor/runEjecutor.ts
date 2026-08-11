@@ -77,6 +77,7 @@ export async function runEjecutor(
   const resultsDir = path.join(cwd, "results");
   await fs.mkdir(resultsDir, { recursive: true });
   const junitXmlPath = path.join(resultsDir, "latest.xml");
+  const htmlReportPath = path.join(resultsDir, "latest.html");
 
   const result = await runner.run({
     cwd,
@@ -84,6 +85,7 @@ export async function runEjecutor(
     screenshotMode,
     videoMode,
     junitXmlPath,
+    htmlReportPath,
     onOutput: callbacks.onOutput,
   });
 

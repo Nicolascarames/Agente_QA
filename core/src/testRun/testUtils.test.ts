@@ -9,6 +9,7 @@ function options(overrides: Partial<TestRunOptions> = {}): TestRunOptions {
     screenshotMode: "off",
     videoMode: "off",
     junitXmlPath: "/tmp/project/tests/results/latest.xml",
+    htmlReportPath: "/tmp/project/tests/results/latest.html",
     onOutput: () => {},
     ...overrides,
   };

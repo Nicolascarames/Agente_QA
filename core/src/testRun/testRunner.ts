@@ -4,6 +4,7 @@ export interface TestRunOptions {
   screenshotMode: "off" | "only-on-failure" | "on";
   videoMode: "off" | "retain-on-failure" | "on";
   junitXmlPath: string;
+  htmlReportPath: string;
   onOutput: (chunk: string) => void;
 }
 

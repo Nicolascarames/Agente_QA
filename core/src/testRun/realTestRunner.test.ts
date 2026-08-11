@@ -11,7 +11,7 @@ function commandExists(cmd: string): boolean {
 }
 
 function pytestStackAvailable(pythonCmd: string): boolean {
-  return spawnSync(pythonCmd, ["-c", "import pytest, pytest_bdd, pytest_playwright"]).status === 0;
+  return spawnSync(pythonCmd, ["-c", "import pytest, pytest_bdd, pytest_playwright, pytest_html"]).status === 0;
 }
 
 const hasPython = commandExists("python");
@@ -24,6 +24,7 @@ function baseOptions(overrides: Partial<TestRunOptions> = {}): TestRunOptions {
     screenshotMode: "off",
     videoMode: "off",
     junitXmlPath: path.join(os.tmpdir(), "agente-qa-realtestrunner-preflight.xml"),
+    htmlReportPath: path.join(os.tmpdir(), "agente-qa-realtestrunner-preflight.html"),
     onOutput: () => {},
     ...overrides,
   };
@@ -35,7 +36,7 @@ describe("realTestRunner missing tool handling", () => {
     await expect(runner.run(baseOptions())).rejects.toThrow(MissingTestToolError);
   });
 
-  it("throws MissingTestToolError when pytest/pytest-bdd/pytest-playwright aren't importable", async () => {
+  it("throws MissingTestToolError when pytest/pytest-bdd/pytest-playwright/pytest-html aren't importable", async () => {
     if (!hasPython || hasPytestStack) return; // can't reproduce "modules missing" without an interpreter that actually lacks them
     const runner = createRealTestRunner({ pythonCommand: "python" });
     await expect(runner.run(baseOptions())).rejects.toThrow(MissingTestToolError);
@@ -43,9 +44,9 @@ describe("realTestRunner missing tool handling", () => {
 });
 
 describe.skipIf(!hasPytestStack)(
-  "realTestRunner (requires Python + pytest + pytest-bdd + pytest-playwright on PATH)",
+  "realTestRunner (requires Python + pytest + pytest-bdd + pytest-playwright + pytest-html on PATH)",
   () => {
-    it("runs a trivial pytest-bdd scenario and writes the junit-xml", async () => {
+    it("runs a trivial pytest-bdd scenario and writes the junit-xml and the html report", async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-realtestrunner-"));
       try {
         await fs.mkdir(path.join(tmpDir, "features"), { recursive: true });
@@ -80,6 +81,7 @@ def _():
         );
 
         const junitXmlPath = path.join(tmpDir, "results", "latest.xml");
+        const htmlReportPath = path.join(tmpDir, "results", "latest.html");
         await fs.mkdir(path.dirname(junitXmlPath), { recursive: true });
 
         let output = "";
@@ -89,6 +91,7 @@ def _():
           screenshotMode: "off",
           videoMode: "off",
           junitXmlPath,
+          htmlReportPath,
           onOutput: (chunk) => {
             output += chunk;
           },
@@ -101,6 +104,11 @@ def _():
           () => false
         );
         expect(xmlExists).toBe(true);
+        const htmlExists = await fs.access(htmlReportPath).then(
+          () => true,
+          () => false
+        );
+        expect(htmlExists).toBe(true);
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
