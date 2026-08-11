@@ -45,7 +45,31 @@ agente-qa init
 agente-qa chat
 ```
 
-`init` lanza el asistente de configuración: pregunta por el proveedor LLM (Anthropic, OpenAI, Google, o "otro" compatible con la API de OpenAI — Groq, Together, Ollama local... pidiendo URL base y nombre de modelo en ese caso), tu API key y en qué carpeta del proyecto guardar los tests.
+`init` lanza el asistente de configuración: proveedor LLM, API key, (solo para "otro") URL base y modelo, y en qué carpeta del proyecto guardar los tests. Las credenciales se guardan en `~/.agente-qa/credentials.json` (fuera de cualquier repo, permisos 0600/0700 — nunca en el proyecto ni en git). Para cambiar de proveedor más adelante, vuelve a ejecutar `agente-qa init`.
+
+### Configurar el proveedor LLM — opciones y cómo conseguir cada API key
+
+| Opción en el menú | Proveedor real | Dónde conseguir la API key | Modelo por defecto |
+|---|---|---|---|
+| Anthropic (Claude) | Anthropic | https://console.anthropic.com/settings/keys | `claude-sonnet-5` |
+| OpenAI | OpenAI | https://platform.openai.com/api-keys | `gpt-5.1` |
+| Google | Google AI Studio (Gemini API, `generativelanguage.googleapis.com`) — **no** Vertex AI | https://aistudio.google.com/apikey | `gemini-3-pro-preview` |
+| Otro (compatible con OpenAI) | Cualquier API que implemente el protocolo de OpenAI: Groq, Together AI, Ollama en local, etc. | La del proveedor elegido | El que tú indiques — no hay uno por defecto |
+
+Para las tres primeras opciones solo hace falta pegar la API key cuando `init` la pida. Para "Otro" (`openai-compatible`), `init` pide dos datos más:
+
+- **URL base**: la que exponga ese proveedor, p. ej. `https://api.groq.com/openai/v1` (Groq) o `http://localhost:11434/v1` (Ollama en local).
+- **Modelo**: el nombre exacto que ese proveedor use para el modelo, p. ej. `llama-3.3-70b-versatile` (Groq) o `llama3.3` (Ollama).
+
+Ejemplo completo de `agente-qa init` eligiendo "Otro":
+
+```
+? ¿Qué proveedor de LLM quieres usar? Otro (compatible con OpenAI: Groq, Together, Ollama local...)
+? Pega tu API key de openai-compatible: ********
+? URL base de la API (compatible con OpenAI), ej. https://api.groq.com/openai/v1: https://api.groq.com/openai/v1
+? Nombre del modelo a usar (según lo que exponga ese proveedor), ej. llama-3.3-70b-versatile: llama-3.3-70b-versatile
+? ¿En qué carpeta guardamos los tests? (relativa al proyecto) tests
+```
 
 Alternativa en local desde el propio repositorio (para desarrollo o antes de instalar global):
 
