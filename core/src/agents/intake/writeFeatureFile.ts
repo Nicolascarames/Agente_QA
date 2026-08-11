@@ -27,6 +27,9 @@ export async function writeFeatureFile(
   const dir = path.join(projectRoot, testsDir, "features");
   await fs.mkdir(dir, { recursive: true });
   const filePath = featureFilePath(projectRoot, testsDir, plan.fileName);
-  await fs.writeFile(filePath, plan.featureText, "utf-8");
+  const content = plan.matchedPatternName
+    ? `# agente-qa:pattern=${plan.matchedPatternName}\n${plan.featureText}`
+    : plan.featureText;
+  await fs.writeFile(filePath, content, "utf-8");
   return filePath;
 }

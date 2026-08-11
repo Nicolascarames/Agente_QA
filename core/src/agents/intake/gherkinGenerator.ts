@@ -37,5 +37,5 @@ export async function generateGherkin(
 
   const fileName = `${slugify(extractFeatureTitle(featureText))}.feature`;
 
-  return { fileName, featureText };
+  return { fileName, featureText, matchedPatternName: matchedPattern?.name ?? null };
 }

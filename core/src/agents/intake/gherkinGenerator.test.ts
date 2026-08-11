@@ -48,4 +48,26 @@ describe("generateGherkin", () => {
     expect(plan.featureText.startsWith("@smoke")).toBe(true);
     expect(plan.fileName).toBe("login.feature");
   });
+
+  it("sets matchedPatternName to the matched pattern's name", async () => {
+    const llm = new FakeLLMProvider([
+      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+    ]);
+    const matchedPattern = {
+      name: "login",
+      description: "Inicio de sesión",
+      gherkinTemplate: "Feature: Login\n",
+      pageObjectTemplate: "",
+    };
+    const plan = await generateGherkin("probar login", llm, matchedPattern);
+    expect(plan.matchedPatternName).toBe("login");
+  });
+
+  it("sets matchedPatternName to null when no pattern matched", async () => {
+    const llm = new FakeLLMProvider([
+      "Feature: Checkout\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+    ]);
+    const plan = await generateGherkin("probar checkout", llm, null);
+    expect(plan.matchedPatternName).toBeNull();
+  });
 });
