@@ -37,6 +37,40 @@ describe("credentials", () => {
     expect(exists).toBe(false);
   });
 
+  it("saves and loads openai-compatible credentials with baseURL and model", async () => {
+    await saveCredentials(
+      {
+        provider: "openai-compatible",
+        apiKey: "k",
+        baseURL: "https://api.groq.com/openai/v1",
+        model: "llama-3.3-70b-versatile",
+      },
+      tmpHome
+    );
+
+    expect(await loadCredentials(tmpHome)).toEqual({
+      provider: "openai-compatible",
+      apiKey: "k",
+      baseURL: "https://api.groq.com/openai/v1",
+      model: "llama-3.3-70b-versatile",
+    });
+  });
+
+  it("rejects openai-compatible credentials missing baseURL", async () => {
+    await expect(
+      saveCredentials({ provider: "openai-compatible", apiKey: "k", model: "llama-3.3-70b-versatile" }, tmpHome)
+    ).rejects.toThrow();
+  });
+
+  it("rejects openai-compatible credentials missing model", async () => {
+    await expect(
+      saveCredentials(
+        { provider: "openai-compatible", apiKey: "k", baseURL: "https://api.groq.com/openai/v1" },
+        tmpHome
+      )
+    ).rejects.toThrow();
+  });
+
   describe.skipIf(process.platform === "win32")("file permissions (POSIX only)", () => {
     it("writes credentials.json with mode 0600 (owner read/write only)", async () => {
       await saveCredentials({ provider: "anthropic", apiKey: "sk-test-789" }, tmpHome);

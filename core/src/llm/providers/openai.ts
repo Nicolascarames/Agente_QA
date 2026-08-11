@@ -6,8 +6,12 @@ import { LLMRequestError } from "../errors.js";
 
 export const OPENAI_DEFAULT_MODEL = "gpt-5.1";
 
-export function createOpenAIProvider(apiKey: string, model: string = OPENAI_DEFAULT_MODEL): LLMProvider {
-  const openai = createOpenAI({ apiKey });
+export function createOpenAIProvider(
+  apiKey: string,
+  model: string = OPENAI_DEFAULT_MODEL,
+  baseURL?: string
+): LLMProvider {
+  const openai = createOpenAI(baseURL ? { apiKey, baseURL } : { apiKey });
   return {
     async generate(messages: Message[]): Promise<string> {
       const { instructions, rest } = splitSystemMessage(messages);

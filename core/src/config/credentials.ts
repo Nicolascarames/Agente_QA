@@ -2,13 +2,24 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
-export const ProviderNameSchema = z.enum(["anthropic", "openai", "google"]);
+export const ProviderNameSchema = z.enum(["anthropic", "openai", "google", "openai-compatible"]);
 export type ProviderName = z.infer<typeof ProviderNameSchema>;
 
-export const CredentialsSchema = z.object({
-  provider: ProviderNameSchema,
-  apiKey: z.string().min(1),
-});
+export const CredentialsSchema = z
+  .object({
+    provider: ProviderNameSchema,
+    apiKey: z.string().min(1),
+    baseURL: z.string().url().optional(),
+    model: z.string().min(1).optional(),
+  })
+  .refine((creds) => creds.provider !== "openai-compatible" || creds.baseURL !== undefined, {
+    message: "'baseURL' es obligatorio para el proveedor 'openai-compatible'.",
+    path: ["baseURL"],
+  })
+  .refine((creds) => creds.provider !== "openai-compatible" || creds.model !== undefined, {
+    message: "'model' es obligatorio para el proveedor 'openai-compatible'.",
+    path: ["model"],
+  });
 export type Credentials = z.infer<typeof CredentialsSchema>;
 
 export function credentialsPath(homeDir: string): string {

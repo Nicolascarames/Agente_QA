@@ -12,5 +12,13 @@ export function createProvider(credentials: Credentials): LLMProvider {
       return createOpenAIProvider(credentials.apiKey);
     case "google":
       return createGoogleProvider(credentials.apiKey);
+    case "openai-compatible": {
+      if (!credentials.baseURL || !credentials.model) {
+        throw new Error(
+          "Faltan 'baseURL' o 'model' en las credenciales del proveedor 'openai-compatible'. Ejecuta 'agente-qa init' de nuevo."
+        );
+      }
+      return createOpenAIProvider(credentials.apiKey, credentials.model, credentials.baseURL);
+    }
   }
 }

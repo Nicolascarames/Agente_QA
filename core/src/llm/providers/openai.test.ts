@@ -27,6 +27,14 @@ describe("createOpenAIProvider", () => {
     expect(createOpenAIMock).toHaveBeenCalledWith({ apiKey: "sk-oa-test" });
   });
 
+  it("configures the OpenAI client with a custom baseURL when given (for OpenAI-compatible providers)", () => {
+    createOpenAIProvider("sk-oa-test", OPENAI_DEFAULT_MODEL, "https://api.groq.com/openai/v1");
+    expect(createOpenAIMock).toHaveBeenCalledWith({
+      apiKey: "sk-oa-test",
+      baseURL: "https://api.groq.com/openai/v1",
+    });
+  });
+
   it("calls generateText with the default model and returns the text", async () => {
     generateTextMock.mockResolvedValue({ text: "hola" });
     const provider = createOpenAIProvider("sk-oa-test");
