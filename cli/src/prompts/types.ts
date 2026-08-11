@@ -18,3 +18,9 @@ export interface ChatPrompts {
   presentForApproval(featureText: string): Promise<{ approved: boolean; feedback?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
 }
+
+export interface GeneratorPrompts {
+  selectFeatureFile(files: string[]): Promise<string>;
+  offerSavePattern(): Promise<{ save: boolean; name?: string; description?: string }>;
+  confirmOverwrite(filePath: string): Promise<boolean>;
+}

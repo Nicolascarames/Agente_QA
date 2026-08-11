@@ -1,6 +1,6 @@
 import { select, input, password } from "@inquirer/prompts";
 import type { ProviderName } from "@agente-qa/core";
-import type { InitPrompts, MenuPrompts, MenuChoice, ChatPrompts } from "./types.js";
+import type { InitPrompts, MenuPrompts, MenuChoice, ChatPrompts, GeneratorPrompts } from "./types.js";
 
 export const realInitPrompts: InitPrompts = {
   async selectProvider() {
@@ -60,6 +60,40 @@ export function buildRealChatPrompts(): ChatPrompts {
       if (approved) return { approved: true };
       const feedback = await input({ message: "¿Qué cambios quieres?" });
       return { approved: false, feedback };
+    },
+    async confirmOverwrite(filePath) {
+      return select({
+        message: `Ya existe un archivo en ${filePath}. ¿Lo sobrescribo?`,
+        choices: [
+          { name: "Sí", value: true },
+          { name: "No", value: false },
+        ],
+      });
+    },
+  };
+}
+
+export function buildRealGeneratorPrompts(): GeneratorPrompts {
+  return {
+    async selectFeatureFile(files) {
+      if (files.length === 1) return files[0];
+      return select({
+        message: "¿Qué plan de pruebas (.feature) quieres convertir en tests?",
+        choices: files.map((f) => ({ name: f, value: f })),
+      });
+    },
+    async offerSavePattern() {
+      const save = await select({
+        message: "Esto parece un patrón reusable. ¿Lo guardo para la próxima vez?",
+        choices: [
+          { name: "Sí", value: true },
+          { name: "No", value: false },
+        ],
+      });
+      if (!save) return { save: false };
+      const name = await input({ message: "Nombre del patrón:" });
+      const description = await input({ message: "Descripción breve:" });
+      return { save: true, name, description };
     },
     async confirmOverwrite(filePath) {
       return select({
