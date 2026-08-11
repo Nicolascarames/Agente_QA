@@ -52,3 +52,11 @@ export type { GeneratorCallbacks } from "./agents/generador/runGenerador.js";
 export type { CodeFile, CodeCheckResult, CodeChecker } from "./codeCheck/codeChecker.js";
 export { FakeCodeChecker } from "./codeCheck/testUtils.js";
 export { createRealCodeChecker, realCodeChecker, MissingCodeToolError } from "./codeCheck/realCodeChecker.js";
+
+export { listAvailableTags } from "./agents/ejecutor/listAvailableTags.js";
+export { runEjecutor } from "./agents/ejecutor/runEjecutor.js";
+export type { ExecutorCallbacks, EjecutorResult, CaptureMode } from "./agents/ejecutor/runEjecutor.js";
+
+export type { TestRunOptions, TestRunResult, TestRunner } from "./testRun/testRunner.js";
+export { FakeTestRunner } from "./testRun/testUtils.js";
+export { createRealTestRunner, realTestRunner, MissingTestToolError } from "./testRun/realTestRunner.js";

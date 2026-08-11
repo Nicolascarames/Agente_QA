@@ -40,4 +40,13 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.realCodeChecker.check).toBe("function");
     expect(typeof core.MissingCodeToolError).toBe("function");
   });
+
+  it("exports the Agente 3 (ejecutor) surface", () => {
+    expect(typeof core.listAvailableTags).toBe("function");
+    expect(typeof core.runEjecutor).toBe("function");
+    expect(typeof core.FakeTestRunner).toBe("function");
+    expect(typeof core.createRealTestRunner).toBe("function");
+    expect(typeof core.realTestRunner.run).toBe("function");
+    expect(typeof core.MissingTestToolError).toBe("function");
+  });
 });
