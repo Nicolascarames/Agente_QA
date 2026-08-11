@@ -8,7 +8,7 @@ Pipeline de 4 agentes especializados, con lógica compartida (prompts, contratos
 
 1. **Agente de intake** — recibe el texto y diseña el plan de pruebas en Gherkin. Si la petición encaja con un patrón conocido (login, logout, signup, recuperar contraseña...), lo usa como punto de partida en vez de generar desde cero. Requiere tu aprobación explícita del plan antes de seguir.
 2. **Agente generador** (implementado) — convierte el Gherkin aprobado en tests Python + Playwright (pytest-bdd, Page Object Model), con autochequeo de compilación/lint antes de escribir nada al proyecto. Si el caso no encajaba en ningún patrón, pregunta si se guarda como patrón nuevo reusable para ese proyecto.
-3. **Agente ejecutor** — selecciona (por tags Gherkin) y lanza los tests generados; pregunta capturas/vídeo en cada ejecución.
+3. **Agente ejecutor** (implementado) — selecciona (por tags Gherkin) y lanza los tests generados con `pytest`; pregunta capturas/vídeo en cada ejecución (nativo de `pytest-playwright`, solo en fallo por defecto).
 4. **Agente de reportes** — genera un reporte extendido (pytest-html) y un resumen (Markdown) de la ejecución.
 
 Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, generadores, librería de patrones) y arrancan siempre con una presentación y un menú de opciones, tanto en la instalación como al usar los agentes. Detalle completo del diseño: [`docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md`](docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md).
@@ -17,12 +17,14 @@ Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, gener
 
 | | Plugin de Claude Code | CLI standalone (npm) |
 |---|---|---|
-| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python y `ruff` para "Generar tests Playwright") |
+| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python y `ruff` para "Generar tests Playwright"; + `pytest`, `pytest-bdd` y `pytest-playwright` para "Ejecutar tests") |
 | Modelo LLM | Solo Claude | Cualquiera (Claude, OpenAI, Google...) vía API key propia |
 | Coste | Incluido en tu suscripción Claude | Pago por uso de API del proveedor elegido |
 | Dónde corre | Dentro de una sesión Claude Code | Terminal, standalone, también en CI |
 
 > A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3 y `ruff`** (`pip install ruff`) en el `PATH` — se usan para verificar que el código generado compila y pasa lint antes de escribirlo al proyecto. No hace falta para "Crear plan de pruebas" (Agente 1).
+>
+> A partir de "Ejecutar tests" (Agente 3), la CLI standalone necesita además **`pytest`, `pytest-bdd` y `pytest-playwright`** (`pip install pytest pytest-bdd pytest-playwright` y luego `playwright install` para los navegadores) en el `PATH` — son las dependencias reales que ejecutan los tests generados por Agente 2 y capturan screenshots/vídeo solo en fallo.
 
 ## Instalación — Plugin de Claude Code
 

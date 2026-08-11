@@ -1,13 +1,21 @@
-import type { MenuPrompts, ChatPrompts, InitPrompts, GeneratorPrompts } from "./prompts/types.js";
+import type {
+  MenuPrompts,
+  ChatPrompts,
+  InitPrompts,
+  GeneratorPrompts,
+  ExecutorPrompts,
+} from "./prompts/types.js";
 import { runCreatePlan } from "./commands/chat.js";
 import { runInit } from "./commands/init.js";
 import { runGenerateTests } from "./commands/generate.js";
+import { runExecuteTests } from "./commands/execute.js";
 
 export interface MenuDeps {
   menuPrompts: MenuPrompts;
   chatPrompts: ChatPrompts;
   initPrompts: InitPrompts;
   generatorPrompts: GeneratorPrompts;
+  executorPrompts: ExecutorPrompts;
   homeDir: string;
   projectRoot: string;
 }
@@ -38,6 +46,19 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
         }
         break;
       }
+      case "run-tests": {
+        try {
+          const result = await runExecuteTests(deps.executorPrompts, deps.projectRoot);
+          const status = result.exitCode === 0 ? "Todos los tests pasaron." : "Algunos tests fallaron.";
+          console.log(`${status} Resultados en ${result.junitXmlPath}`);
+          if (result.browserSetupWarning) {
+            console.log(result.browserSetupWarning);
+          }
+        } catch (err) {
+          console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        break;
+      }
       case "config": {
         try {
           await runInit(deps.initPrompts, deps.homeDir, deps.projectRoot);
@@ -47,7 +68,6 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
         }
         break;
       }
-      case "run-tests":
       case "reports":
         console.log("Todavía no implementado en esta versión.");
         break;

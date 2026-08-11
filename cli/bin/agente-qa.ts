@@ -8,6 +8,7 @@ import {
   realMenuPrompts,
   buildRealChatPrompts,
   buildRealGeneratorPrompts,
+  buildRealExecutorPrompts,
 } from "../src/prompts/inquirerPrompts.js";
 
 const program = new Command();
@@ -30,6 +31,7 @@ program
       chatPrompts: buildRealChatPrompts(),
       initPrompts: realInitPrompts,
       generatorPrompts: buildRealGeneratorPrompts(),
+      executorPrompts: buildRealExecutorPrompts(),
       homeDir: os.homedir(),
       projectRoot: process.cwd(),
     });
