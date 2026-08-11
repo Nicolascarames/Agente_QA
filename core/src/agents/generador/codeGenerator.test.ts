@@ -68,4 +68,15 @@ describe("generateCode", () => {
     const llm = new FakeLLMProvider(["esto no tiene el formato esperado"]);
     await expect(generateCode(featureText, llm, null)).rejects.toThrow(/# FILE:/);
   });
+
+  it("throws a clear error when the response has the wrong number of file blocks", async () => {
+    const twoFileResponse = `# FILE: tests/test_login.py
+scenarios("../features/login.feature")
+# FILE: pages/login_page.py
+class LoginPage:
+    pass
+`;
+    const llm = new FakeLLMProvider([twoFileResponse]);
+    await expect(generateCode(featureText, llm, null)).rejects.toThrow(/3 esperados/);
+  });
 });
