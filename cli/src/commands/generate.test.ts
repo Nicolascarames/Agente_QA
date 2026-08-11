@@ -123,7 +123,7 @@ class LoginPage:
 
     await runGenerateTests(prompts, tmpHome, tmpProject);
 
-    expect(withLLMSpinnerMock).toHaveBeenCalledWith(fake);
-    expect(withCodeCheckerSpinnerMock).toHaveBeenCalledWith(realCodeChecker);
+    expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
+    expect(withCodeCheckerSpinnerMock.mock.calls[0][0]).toBe(realCodeChecker);
   });
 });

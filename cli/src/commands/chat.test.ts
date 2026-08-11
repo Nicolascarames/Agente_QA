@@ -93,6 +93,6 @@ describe("runCreatePlan", () => {
 
     await runCreatePlan(prompts, tmpHome, tmpProject);
 
-    expect(withLLMSpinnerMock).toHaveBeenCalledWith(fake);
+    expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
   });
 });

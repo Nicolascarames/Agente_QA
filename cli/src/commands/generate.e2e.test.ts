@@ -18,6 +18,10 @@ vi.mock("ai", () => ({
 vi.mock("@ai-sdk/anthropic", () => ({
   createAnthropic: () => (modelId: string) => ({ modelId }),
 }));
+vi.mock("../util/spinner.js", () => ({
+  withLLMSpinner: (provider: unknown) => provider,
+  withCodeCheckerSpinner: (checker: unknown) => checker,
+}));
 
 import { runGenerateTests } from "./generate.js";
 import type { GeneratorPrompts } from "../prompts/types.js";

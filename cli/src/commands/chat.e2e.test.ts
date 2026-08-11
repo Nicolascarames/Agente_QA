@@ -11,6 +11,9 @@ vi.mock("ai", () => ({
 vi.mock("@ai-sdk/anthropic", () => ({
   createAnthropic: () => (modelId: string) => ({ modelId }),
 }));
+vi.mock("../util/spinner.js", () => ({
+  withLLMSpinner: (provider: unknown) => provider,
+}));
 
 import { runCreatePlan } from "./chat.js";
 import type { ChatPrompts } from "../prompts/types.js";
