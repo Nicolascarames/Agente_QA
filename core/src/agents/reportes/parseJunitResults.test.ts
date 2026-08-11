@@ -64,6 +64,20 @@ describe("parseJunitResults", () => {
     expect(results.testCases[0]).toEqual({ name: "test_only", status: "passed" });
   });
 
+  it("treats a non-numeric testsuite time attribute as 0 instead of poisoning the sum with NaN", () => {
+    const badTimeXml = `<testsuites>
+  <testsuite name="a" tests="1" time="not-a-number">
+    <testcase classname="a" name="test_a" time="0.1" />
+  </testsuite>
+  <testsuite name="b" tests="1" time="2.5">
+    <testcase classname="b" name="test_b" time="2.5" />
+  </testsuite>
+</testsuites>`;
+    const results = parseJunitResults(badTimeXml);
+    expect(Number.isNaN(results.durationSeconds)).toBe(false);
+    expect(results.durationSeconds).toBe(2.5);
+  });
+
   it("sums durations across multiple <testsuite> elements", () => {
     const multiSuiteXml = `<testsuites>
   <testsuite name="a" tests="1" time="1.0">
@@ -86,5 +100,41 @@ describe("parseJunitResults", () => {
     expect(() => parseJunitResults("<not-junit><foo>bar</foo></not-junit>")).toThrow(
       /formato esperado/
     );
+  });
+
+  it("classifies a self-closed <failure/> with no attributes as failed, not passed", () => {
+    const selfClosedFailureXml = `<testsuites>
+  <testsuite name="pytest" tests="1" time="0.2">
+    <testcase classname="tests.test_x" name="test_broken" time="0.2">
+      <failure/>
+    </testcase>
+  </testsuite>
+</testsuites>`;
+    const results = parseJunitResults(selfClosedFailureXml);
+    expect(results.testCases[0]).toEqual({
+      name: "test_broken",
+      status: "failed",
+      message: undefined,
+    });
+    expect(results.failed).toBe(1);
+    expect(results.passed).toBe(0);
+  });
+
+  it("keeps the first message when a testcase has two <error> children", () => {
+    const doubleErrorXml = `<testsuites>
+  <testsuite name="pytest" tests="1" time="0.2">
+    <testcase classname="tests.test_x" name="test_double_error" time="0.2">
+      <error message="first">setup crashed</error>
+      <error message="second">teardown crashed</error>
+    </testcase>
+  </testsuite>
+</testsuites>`;
+    const results = parseJunitResults(doubleErrorXml);
+    expect(results.testCases[0]).toEqual({
+      name: "test_double_error",
+      status: "failed",
+      message: "first",
+    });
+    expect(results.failed).toBe(1);
   });
 });
