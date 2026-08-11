@@ -9,7 +9,7 @@ export class FakeCodeChecker implements CodeChecker {
   }
 
   async check(files: CodeFile[]): Promise<CodeCheckResult> {
-    this.receivedCalls.push(files);
+    this.receivedCalls.push([...files]);
     const next = this.results.shift();
     if (next === undefined) {
       throw new Error("FakeCodeChecker: no hay más resultados programados");
