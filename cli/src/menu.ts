@@ -4,11 +4,13 @@ import type {
   InitPrompts,
   GeneratorPrompts,
   ExecutorPrompts,
+  ReportesPrompts,
 } from "./prompts/types.js";
 import { runCreatePlan } from "./commands/chat.js";
 import { runInit } from "./commands/init.js";
 import { runGenerateTests } from "./commands/generate.js";
 import { runExecuteTests } from "./commands/execute.js";
+import { runGenerateReports } from "./commands/reports.js";
 
 export interface MenuDeps {
   menuPrompts: MenuPrompts;
@@ -16,6 +18,7 @@ export interface MenuDeps {
   initPrompts: InitPrompts;
   generatorPrompts: GeneratorPrompts;
   executorPrompts: ExecutorPrompts;
+  reportesPrompts: ReportesPrompts;
   homeDir: string;
   projectRoot: string;
 }
@@ -73,6 +76,19 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
         }
         break;
       }
+      case "reports": {
+        try {
+          const result = await runGenerateReports(deps.reportesPrompts, deps.projectRoot);
+          console.log(
+            `Resumen: ${result.passed} pasados, ${result.failed} fallidos, ${result.skipped} omitidos (${result.totalTests} en total).`
+          );
+          console.log(`Resumen Markdown: ${result.summaryPath}`);
+          console.log(`Reporte extendido (HTML): ${result.htmlReportPath}`);
+        } catch (err) {
+          console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        break;
+      }
       case "config": {
         try {
           await runInit(deps.initPrompts, deps.homeDir, deps.projectRoot);
@@ -82,9 +98,6 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
         }
         break;
       }
-      case "reports":
-        console.log("Todavía no implementado en esta versión.");
-        break;
       case "exit":
         running = false;
         break;

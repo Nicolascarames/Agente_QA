@@ -9,7 +9,7 @@ Pipeline de 4 agentes especializados, con lógica compartida (prompts, contratos
 1. **Agente de intake** — recibe el texto y diseña el plan de pruebas en Gherkin. Si la petición encaja con un patrón conocido (login, logout, signup, recuperar contraseña...), lo usa como punto de partida en vez de generar desde cero. Requiere tu aprobación explícita del plan antes de seguir.
 2. **Agente generador** (implementado) — convierte el Gherkin aprobado en tests Python + Playwright (pytest-bdd, Page Object Model), con autochequeo de compilación/lint antes de escribir nada al proyecto. Si el caso no encajaba en ningún patrón, pregunta si se guarda como patrón nuevo reusable para ese proyecto.
 3. **Agente ejecutor** (implementado) — selecciona (por tags Gherkin) y lanza los tests generados con `pytest`; pregunta capturas/vídeo en cada ejecución (nativo de `pytest-playwright`, solo en fallo por defecto).
-4. **Agente de reportes** — genera un reporte extendido (pytest-html) y un resumen (Markdown) de la ejecución.
+4. **Agente de reportes** (implementado) — lee el `junit-xml` que deja Agente 3, confirma la ruta del reporte extendido (`pytest-html`, generado por el propio Agente 3) y genera un resumen en Markdown (conteos, duración, listado de fallos), con nivel de detalle a elegir en cada generación.
 
 Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, generadores, librería de patrones) y arrancan siempre con una presentación y un menú de opciones, tanto en la instalación como al usar los agentes. Detalle completo del diseño: [`docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md`](docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md).
 
@@ -17,14 +17,14 @@ Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, gener
 
 | | Plugin de Claude Code | CLI standalone (npm) |
 |---|---|---|
-| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python y `ruff` para "Generar tests Playwright"; + `pytest`, `pytest-bdd` y `pytest-playwright` para "Ejecutar tests") |
+| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python y `ruff` para "Generar tests Playwright"; + `pytest`, `pytest-bdd`, `pytest-playwright` y `pytest-html` para "Ejecutar tests") |
 | Modelo LLM | Solo Claude | Cualquiera (Claude, OpenAI, Google...) vía API key propia |
 | Coste | Incluido en tu suscripción Claude | Pago por uso de API del proveedor elegido |
 | Dónde corre | Dentro de una sesión Claude Code | Terminal, standalone, también en CI |
 
 > A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3 y `ruff`** (`pip install ruff`) en el `PATH` — se usan para verificar que el código generado compila y pasa lint antes de escribirlo al proyecto. No hace falta para "Crear plan de pruebas" (Agente 1).
 >
-> A partir de "Ejecutar tests" (Agente 3), la CLI standalone necesita además **`pytest`, `pytest-bdd` y `pytest-playwright`** (`pip install pytest pytest-bdd pytest-playwright` y luego `playwright install` para los navegadores) en el `PATH` — son las dependencias reales que ejecutan los tests generados por Agente 2 y capturan screenshots/vídeo solo en fallo.
+> A partir de "Ejecutar tests" (Agente 3), la CLI standalone necesita además **`pytest`, `pytest-bdd`, `pytest-playwright` y `pytest-html`** (`pip install pytest pytest-bdd pytest-playwright pytest-html` y luego `playwright install` para los navegadores) en el `PATH` — son las dependencias reales que ejecutan los tests generados por Agente 2, capturan screenshots/vídeo solo en fallo, y generan el reporte extendido que "Ver/generar reportes" (Agente 4) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 3 ya dejó escritos.
 
 ## Instalación — Plugin de Claude Code
 
@@ -50,7 +50,7 @@ node cli/dist/bin/agente-qa.js init
 node cli/dist/bin/agente-qa.js chat
 ```
 
-`init` lanza el asistente de configuración: en esta versión pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests. Las preferencias de reportes llegarán con el Agente 4, todavía no implementado (ver "Estado del proyecto" abajo).
+`init` lanza el asistente de configuración: pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests.
 
 Cuando el paquete se publique en npm, `npm install -g agente-qa` funcionará como atajo equivalente a los pasos anteriores.
 
@@ -60,4 +60,4 @@ Ambas formas se usan igual: la conversación siempre empieza con una presentaci�
 
 ## Estado del proyecto
 
-El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida), el Agente 2 (generador de tests Playwright) y el Agente 3 (ejecutor) están implementados; la suite pasa 131 passed, 5 skipped tests (los `skipped` dependen de tener `ruff` y el stack de Python (`pytest`, `pytest-bdd`, `pytest-playwright`) instalados en la máquina). El Agente 4 (reportes) y la superficie de plugin de Claude Code quedan pendientes como planes futuros independientes. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida), el Agente 2 (generador de tests Playwright), el Agente 3 (ejecutor) y el Agente 4 (reportes) están implementados; la suite pasa 154 passed, 6 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python (`pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html`) instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).

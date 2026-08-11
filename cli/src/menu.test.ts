@@ -4,6 +4,7 @@ const runCreatePlanMock = vi.fn();
 const runInitMock = vi.fn();
 const runGenerateTestsMock = vi.fn();
 const runExecuteTestsMock = vi.fn();
+const runGenerateReportsMock = vi.fn();
 
 vi.mock("./commands/chat.js", () => ({
   runCreatePlan: (...args: unknown[]) => runCreatePlanMock(...args),
@@ -17,6 +18,9 @@ vi.mock("./commands/generate.js", () => ({
 vi.mock("./commands/execute.js", () => ({
   runExecuteTests: (...args: unknown[]) => runExecuteTestsMock(...args),
 }));
+vi.mock("./commands/reports.js", () => ({
+  runGenerateReports: (...args: unknown[]) => runGenerateReportsMock(...args),
+}));
 
 import { runMenuLoop } from "./menu.js";
 import type { MenuChoice } from "./prompts/types.js";
@@ -27,6 +31,7 @@ describe("runMenuLoop", () => {
     runInitMock.mockReset();
     runGenerateTestsMock.mockReset();
     runExecuteTestsMock.mockReset();
+    runGenerateReportsMock.mockReset();
   });
 
   it("routes 'create-plan' to runCreatePlan and exits on 'exit'", async () => {
@@ -40,6 +45,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -61,6 +67,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -83,6 +90,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -101,6 +109,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -120,6 +129,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -146,6 +156,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -168,6 +179,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -191,6 +203,7 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -202,9 +215,19 @@ describe("runMenuLoop", () => {
     logSpy.mockRestore();
   });
 
-  it("loops through remaining unimplemented choices before exiting", async () => {
+  it("routes 'reports' to runGenerateReports and prints the summary", async () => {
     const choices: MenuChoice[] = ["reports", "exit"];
     let i = 0;
+    runGenerateReportsMock.mockResolvedValue({
+      junitXmlPath: "/tmp/tests/results/latest.xml",
+      htmlReportPath: "/tmp/tests/results/latest.html",
+      summaryPath: "/tmp/tests/results/summary.md",
+      totalTests: 3,
+      passed: 2,
+      failed: 1,
+      skipped: 0,
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await runMenuLoop({
       menuPrompts: { selectMenuChoice: async () => choices[i++] },
@@ -212,14 +235,40 @@ describe("runMenuLoop", () => {
       initPrompts: {} as never,
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
+      reportesPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
-    expect(i).toBe(2);
-    expect(runCreatePlanMock).not.toHaveBeenCalled();
-    expect(runInitMock).not.toHaveBeenCalled();
-    expect(runGenerateTestsMock).not.toHaveBeenCalled();
-    expect(runExecuteTestsMock).not.toHaveBeenCalled();
+    expect(runGenerateReportsMock).toHaveBeenCalledTimes(1);
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("2 pasados, 1 fallidos, 0 omitidos (3 en total)")
+    );
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("/tmp/tests/results/summary.md"));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("/tmp/tests/results/latest.html"));
+
+    logSpy.mockRestore();
+  });
+
+  it("catches errors from runGenerateReports and prints them", async () => {
+    const choices: MenuChoice[] = ["reports", "exit"];
+    let i = 0;
+    runGenerateReportsMock.mockRejectedValue(new Error("No hay resultados de ejecución todavía. Usa 'Ejecutar tests' primero."));
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runMenuLoop({
+      menuPrompts: { selectMenuChoice: async () => choices[i++] },
+      chatPrompts: {} as never,
+      initPrompts: {} as never,
+      generatorPrompts: {} as never,
+      executorPrompts: {} as never,
+      reportesPrompts: {} as never,
+      homeDir: "/home/test",
+      projectRoot: "/project/test",
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Error: No hay resultados de ejecución"));
+
+    logSpy.mockRestore();
   });
 });
