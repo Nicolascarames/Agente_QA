@@ -39,10 +39,18 @@ Requiere tener [Claude Code](https://code.claude.com) instalado y una sesión in
 
 ## Instalación — CLI standalone (npm)
 
-> El paquete todavía no está publicado en npm. Mientras tanto se instala en local desde el propio repositorio:
+```
+npm install -g agente-qa
+agente-qa init
+agente-qa chat
+```
+
+`init` lanza el asistente de configuración: pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests.
+
+Alternativa en local desde el propio repositorio (para desarrollo o antes de instalar global):
 
 ```
-git clone <url-del-repositorio>
+git clone https://github.com/Nicolascarames/Agente_QA.git
 cd Agente_QA
 npm install
 npm run build
@@ -50,14 +58,10 @@ node cli/dist/bin/agente-qa.js init
 node cli/dist/bin/agente-qa.js chat
 ```
 
-`init` lanza el asistente de configuración: pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests.
-
-Cuando el paquete se publique en npm, `npm install -g agente-qa` funcionará como atajo equivalente a los pasos anteriores.
-
 ## Uso
 
 Ambas formas se usan igual: la conversación siempre empieza con una presentación y un menú de opciones (crear plan de pruebas, generar tests, ejecutar tests, ver reportes, configurar).
 
 ## Estado del proyecto
 
-El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida), el Agente 2 (generador de tests Playwright), el Agente 3 (ejecutor) y el Agente 4 (reportes) están implementados; la suite pasa 154 passed, 6 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python (`pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html`) instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El pipeline de 4 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.0`. La suite pasa 157 passed, 9 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
