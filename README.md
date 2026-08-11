@@ -22,9 +22,32 @@ Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, gener
 | Coste | Incluido en tu suscripción Claude | Pago por uso de API del proveedor elegido |
 | Dónde corre | Dentro de una sesión Claude Code | Terminal, standalone, también en CI |
 
-> A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3 y `ruff`** (`pip install ruff`) en el `PATH` — se usan para verificar que el código generado compila y pasa lint antes de escribirlo al proyecto. No hace falta para "Crear plan de pruebas" (Agente 1).
+> A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3 y `ruff`** en el `PATH` — se usan para verificar que el código generado compila y pasa lint antes de escribirlo al proyecto. No hace falta para "Crear plan de pruebas" (Agente 1).
 >
-> A partir de "Ejecutar tests" (Agente 3), la CLI standalone necesita además **`pytest`, `pytest-bdd`, `pytest-playwright` y `pytest-html`** (`pip install pytest pytest-bdd pytest-playwright pytest-html` y luego `playwright install` para los navegadores) en el `PATH` — son las dependencias reales que ejecutan los tests generados por Agente 2, capturan screenshots/vídeo solo en fallo, y generan el reporte extendido que "Ver/generar reportes" (Agente 4) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 3 ya dejó escritos.
+> A partir de "Ejecutar tests" (Agente 3), la CLI standalone necesita además **`pytest`, `pytest-bdd`, `pytest-playwright` y `pytest-html`** en el `PATH` — son las dependencias reales que ejecutan los tests generados por Agente 2, capturan screenshots/vídeo solo en fallo, y generan el reporte extendido que "Ver/generar reportes" (Agente 4) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 3 ya dejó escritos.
+
+### Instalar Python y las dependencias de test
+
+Solo hace falta si vas a usar "Generar tests Playwright" o "Ejecutar tests" (Agente 1, crear plan de pruebas, no lo necesita).
+
+**1. Python 3** (si no lo tienes ya — compruébalo con `python --version` o `python3 --version`):
+
+- **Windows**: instala desde [python.org/downloads](https://www.python.org/downloads/) (marca "Add python.exe to PATH" en el instalador) o `winget install Python.Python.3.13`.
+- **macOS**: `brew install python3`.
+- **Linux (Debian/Ubuntu)**: `sudo apt install python3 python3-pip`.
+
+**2. Dependencias Python**, una vez tengas Python y `pip` en el `PATH`:
+
+```
+pip install ruff pytest pytest-bdd pytest-playwright pytest-html
+playwright install
+```
+
+- `ruff` — lo usa Agente 2 (Generar tests) para verificar lint/compilación antes de escribir nada al proyecto.
+- `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — los usa Agente 3 (Ejecutar tests) para correr los tests generados y producir el reporte extendido.
+- `playwright install` descarga los navegadores (Chromium/Firefox/WebKit) que usan los tests — sin esto, `pytest-playwright` falla al lanzar el primer test aunque el paquete esté instalado.
+
+Verifica que todo quedó en el `PATH`: `ruff --version` y `pytest --version` deben responder sin error.
 
 ## Instalación — Plugin de Claude Code
 
