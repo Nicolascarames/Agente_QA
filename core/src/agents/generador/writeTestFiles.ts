@@ -31,11 +31,6 @@ export async function writeTestFiles(
   for (const file of files) {
     assertSafeRelativePath(baseDir, file.path);
 
-    const isSharedConftest = file.path === "conftest.py";
-    if (isSharedConftest && (await testFileExists(projectRoot, testsDir, file.path))) {
-      continue;
-    }
-
     const targetPath = testFilePath(projectRoot, testsDir, file.path);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
     await fs.writeFile(targetPath, file.content, "utf-8");

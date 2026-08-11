@@ -54,7 +54,6 @@ export async function runGenerador(
   }
 
   for (const file of files) {
-    if (file.path === "conftest.py") continue;
     if (await testFileExists(projectRoot, testsDir, file.path)) {
       const targetPath = testFilePath(projectRoot, testsDir, file.path);
       const overwrite = await callbacks.confirmOverwrite(targetPath);

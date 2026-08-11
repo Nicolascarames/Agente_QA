@@ -30,25 +30,17 @@ describe("writeTestFiles", () => {
     expect(await fs.readFile(path.join(tmpProject, "tests", "tests", "test_login.py"), "utf-8")).toBe("x = 1\n");
   });
 
-  it("writes conftest.py when it doesn't exist yet", async () => {
-    const written = await writeTestFiles(tmpProject, "tests", [
-      { path: "conftest.py", content: "import pytest\n" },
-    ]);
-
-    expect(written).toEqual([path.join(tmpProject, "tests", "conftest.py")]);
-  });
-
-  it("does not overwrite an existing conftest.py, and doesn't report it as written", async () => {
+  it("treats conftest.py like any other file (no longer skipped when it already exists)", async () => {
     const conftestPath = testFilePath(tmpProject, "tests", "conftest.py");
     await fs.mkdir(path.dirname(conftestPath), { recursive: true });
-    await fs.writeFile(conftestPath, "# fixtures personalizadas\n", "utf-8");
+    await fs.writeFile(conftestPath, "# fixtures antiguas\n", "utf-8");
 
     const written = await writeTestFiles(tmpProject, "tests", [
       { path: "conftest.py", content: "import pytest\n" },
     ]);
 
-    expect(written).toEqual([]);
-    expect(await fs.readFile(conftestPath, "utf-8")).toBe("# fixtures personalizadas\n");
+    expect(written).toEqual([conftestPath]);
+    expect(await fs.readFile(conftestPath, "utf-8")).toBe("import pytest\n");
   });
 
   it("testFileExists reports existence correctly", async () => {
