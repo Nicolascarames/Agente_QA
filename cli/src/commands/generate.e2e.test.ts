@@ -48,7 +48,7 @@ describe.skipIf(!hasPython || !hasRuff)(
       await fs.rm(tmpProject, { recursive: true, force: true });
     });
 
-    it("generates and writes tests/pages/conftest.py for the built-in login pattern", async () => {
+    it("generates and writes tests/pages for the built-in login pattern", async () => {
       generateTextMock.mockResolvedValueOnce({
         text: `# FILE: tests/test_login.py
 from pytest_bdd import scenarios
@@ -58,13 +58,6 @@ scenarios("../features/login.feature")
 class LoginPage:
     def __init__(self, page):
         self.page = page
-# FILE: conftest.py
-import pytest
-
-
-@pytest.fixture
-def base_url():
-    return "http://localhost:3000"
 `,
       });
 
@@ -76,7 +69,7 @@ def base_url():
 
       const writtenPaths = await runGenerateTests(prompts, tmpHome, tmpProject);
 
-      expect(writtenPaths).toHaveLength(3);
+      expect(writtenPaths).toHaveLength(2);
       expect(prompts.offerSavePattern).not.toHaveBeenCalled();
     });
   }

@@ -68,8 +68,6 @@ scenarios("../features/login.feature")
 # FILE: pages/login_page.py
 class LoginPage:
     pass
-# FILE: conftest.py
-import pytest
 `;
     createProviderMock.mockReturnValue(new FakeLLMProvider([scriptedResponse]));
     realCodeCheckerCheckMock.mockResolvedValue({ ok: true });
@@ -83,7 +81,7 @@ import pytest
     const writtenPaths = await runGenerateTests(prompts, tmpHome, tmpProject);
 
     expect(prompts.selectFeatureFile).toHaveBeenCalledWith(["login.feature"]);
-    expect(writtenPaths).toHaveLength(3);
+    expect(writtenPaths).toHaveLength(2);
     expect(
       await fs.readFile(path.join(tmpProject, "tests", "tests", "test_login.py"), "utf-8")
     ).toContain("scenarios(");

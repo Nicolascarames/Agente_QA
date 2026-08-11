@@ -19,27 +19,18 @@ def a():
 class LoginPage:
     def __init__(self, page):
         self.page = page
-# FILE: conftest.py
-import pytest
-
-
-@pytest.fixture
-def page():
-    pass
 `;
 
 describe("generateCode", () => {
-  it("parses the three # FILE: blocks into separate files", async () => {
+  it("parses the two # FILE: blocks into separate files", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
     const files = await generateCode(featureText, llm, null, naming);
 
-    expect(files).toHaveLength(3);
+    expect(files).toHaveLength(2);
     expect(files[0].path).toBe("tests/test_login.py");
     expect(files[0].content).toContain("from pytest_bdd import scenarios");
     expect(files[1].path).toBe("pages/login_page.py");
     expect(files[1].content).toContain("class LoginPage");
-    expect(files[2].path).toBe("conftest.py");
-    expect(files[2].content).toContain("import pytest");
   });
 
   it("sends the feature text, pattern skeleton, and exact naming to the model when a pattern matched", async () => {
@@ -65,7 +56,6 @@ describe("generateCode", () => {
     const previousFiles = [
       { path: "tests/test_login.py", content: "broken code here\n" },
       { path: "pages/login_page.py", content: "class LoginPage:\n    pass\n" },
-      { path: "conftest.py", content: "import pytest\n" },
     ];
     await generateCode(featureText, llm, null, naming, {
       previousFiles,
@@ -83,13 +73,15 @@ describe("generateCode", () => {
   });
 
   it("throws a clear error when the response has the wrong number of file blocks", async () => {
-    const twoFileResponse = `# FILE: tests/test_login.py
+    const threeFileResponse = `# FILE: tests/test_login.py
 scenarios("../features/login.feature")
 # FILE: pages/login_page.py
 class LoginPage:
     pass
+# FILE: conftest.py
+import pytest
 `;
-    const llm = new FakeLLMProvider([twoFileResponse]);
-    await expect(generateCode(featureText, llm, null, naming)).rejects.toThrow(/3 esperados/);
+    const llm = new FakeLLMProvider([threeFileResponse]);
+    await expect(generateCode(featureText, llm, null, naming)).rejects.toThrow(/2 esperados/);
   });
 });

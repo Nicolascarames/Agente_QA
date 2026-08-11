@@ -20,8 +20,6 @@ scenarios("../features/login.feature")
 class LoginPage:
     def __init__(self, page):
         self.page = page
-# FILE: conftest.py
-import pytest
 `;
 
 describe("runGenerador", () => {
@@ -62,7 +60,7 @@ describe("runGenerador", () => {
       callbacks
     );
 
-    expect(writtenPaths).toHaveLength(3);
+    expect(writtenPaths).toHaveLength(2);
     expect(callbacks.offerSavePattern).not.toHaveBeenCalled();
     expect(
       await fs.readFile(path.join(tmpProject, "tests", "tests", "test_login.py"), "utf-8")

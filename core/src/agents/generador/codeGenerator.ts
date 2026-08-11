@@ -28,9 +28,9 @@ function parseGeneratedFiles(raw: string): GeneratedFile[] {
     );
   }
 
-  if (files.length !== 3) {
+  if (files.length !== 2) {
     throw new Error(
-      `La respuesta del modelo generó ${files.length} archivo(s) en vez de los 3 esperados (step definitions, Page Object y conftest.py): ${cleaned.slice(0, 80)}...`
+      `La respuesta del modelo generó ${files.length} archivo(s) en vez de los 2 esperados (step definitions y Page Object): ${cleaned.slice(0, 80)}...`
     );
   }
 
