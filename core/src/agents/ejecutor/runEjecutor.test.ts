@@ -174,6 +174,22 @@ describe("runEjecutor", () => {
     expect(dirExists).toBe(true);
   });
 
+  it("computes htmlReportPath under <testsDir>/results/latest.html and passes it to the TestRunner", async () => {
+    await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    const result = await runEjecutor(tmpProject, "tests", runner, callbacks);
+
+    const expectedHtmlPath = path.join(tmpProject, "tests", "results", "latest.html");
+    expect(result.htmlReportPath).toBe(expectedHtmlPath);
+    expect(runner.receivedCalls[0].htmlReportPath).toBe(expectedHtmlPath);
+  });
+
   it("returns exitCode and browserSetupWarning from the TestRunner result", async () => {
     await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
     const runner = new FakeTestRunner([

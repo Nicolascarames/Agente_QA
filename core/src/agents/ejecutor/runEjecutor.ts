@@ -15,6 +15,7 @@ export interface ExecutorCallbacks {
 export interface EjecutorResult {
   exitCode: number;
   junitXmlPath: string;
+  htmlReportPath: string;
   browserSetupWarning?: string;
 }
 
@@ -89,5 +90,10 @@ export async function runEjecutor(
     onOutput: callbacks.onOutput,
   });
 
-  return { exitCode: result.exitCode, junitXmlPath, browserSetupWarning: result.browserSetupWarning };
+  return {
+    exitCode: result.exitCode,
+    junitXmlPath,
+    htmlReportPath,
+    browserSetupWarning: result.browserSetupWarning,
+  };
 }

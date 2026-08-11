@@ -11,7 +11,7 @@ function commandExists(cmd: string): boolean {
   return spawnSync(cmd, ["--version"]).error === undefined;
 }
 function pytestStackAvailable(pythonCmd: string): boolean {
-  return spawnSync(pythonCmd, ["-c", "import pytest, pytest_bdd, pytest_playwright"]).status === 0;
+  return spawnSync(pythonCmd, ["-c", "import pytest, pytest_bdd, pytest_playwright, pytest_html"]).status === 0;
 }
 const hasPython = commandExists("python");
 const hasPytestStack = hasPython && pytestStackAvailable("python");
@@ -62,7 +62,7 @@ def _():
       await fs.rm(tmpProject, { recursive: true, force: true });
     });
 
-    it("runs the generated test and writes the junit-xml", async () => {
+    it("runs the generated test and writes the junit-xml and the html report", async () => {
       const prompts: ExecutorPrompts = {
         selectTags: async (availableTags) => availableTags,
         selectCaptureMode: async () => "off",
@@ -76,6 +76,11 @@ def _():
         () => false
       );
       expect(xmlExists).toBe(true);
+      const htmlExists = await fs.access(result.htmlReportPath).then(
+        () => true,
+        () => false
+      );
+      expect(htmlExists).toBe(true);
     });
   }
 );
