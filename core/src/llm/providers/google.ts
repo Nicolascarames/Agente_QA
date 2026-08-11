@@ -4,7 +4,7 @@ import type { LLMProvider, Message } from "../provider.js";
 import { splitSystemMessage } from "../provider.js";
 import { LLMRequestError } from "../errors.js";
 
-export const GOOGLE_DEFAULT_MODEL = "gemini-3-pro-preview";
+export const GOOGLE_DEFAULT_MODEL = "gemini-3.6-flash";
 
 export function createGoogleProvider(apiKey: string, model: string = GOOGLE_DEFAULT_MODEL): LLMProvider {
   const google = createGoogleGenerativeAI({ apiKey });

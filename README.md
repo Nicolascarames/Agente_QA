@@ -53,7 +53,7 @@ agente-qa chat
 |---|---|---|---|
 | Anthropic (Claude) | Anthropic | https://console.anthropic.com/settings/keys | `claude-sonnet-5` |
 | OpenAI | OpenAI | https://platform.openai.com/api-keys | `gpt-5.1` |
-| Google | Google AI Studio (Gemini API, `generativelanguage.googleapis.com`) — **no** Vertex AI | https://aistudio.google.com/apikey | `gemini-3-pro-preview` |
+| Google | Google AI Studio (Gemini API, `generativelanguage.googleapis.com`) — **no** Vertex AI | https://aistudio.google.com/apikey | `gemini-3.6-flash` |
 | Otro (compatible con OpenAI) | Cualquier API que implemente el protocolo de OpenAI: Groq, Together AI, Ollama en local, etc. | La del proveedor elegido | El que tú indiques — no hay uno por defecto |
 
 Para las tres primeras opciones solo hace falta pegar la API key cuando `init` la pida. Para "Otro" (`openai-compatible`), `init` pide dos datos más:
@@ -88,4 +88,4 @@ Ambas formas se usan igual: la conversación siempre empieza con una presentaci�
 
 ## Estado del proyecto
 
-El pipeline de 4 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.0`. La suite pasa 175 passed, 9 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El pipeline de 4 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.3`. La suite pasa 175 passed, 9 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
