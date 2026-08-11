@@ -58,6 +58,12 @@ describe("credentials", () => {
         mode: 0o644,
       });
 
+      // Guard against an unusually strict umask (e.g. 077) masking the seeded mode down
+      // to the target already, which would let this test pass without exercising the
+      // tightening behavior it claims to prove.
+      expect((await fs.stat(dirPath)).mode & 0o777).not.toBe(0o700);
+      expect((await fs.stat(filePath)).mode & 0o777).not.toBe(0o600);
+
       await saveCredentials({ provider: "anthropic", apiKey: "new-key" }, tmpHome);
 
       const dirStats = await fs.stat(dirPath);

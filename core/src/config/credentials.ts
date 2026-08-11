@@ -19,11 +19,12 @@ export async function saveCredentials(creds: Credentials, homeDir: string): Prom
   CredentialsSchema.parse(creds);
   const filePath = credentialsPath(homeDir);
   const dirPath = path.dirname(filePath);
-  await fs.mkdir(dirPath, { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(creds, null, 2), "utf-8");
-  // chmod explicitly, not just via the mode option on mkdir/writeFile, so an existing
-  // directory/file from before this change also gets tightened on the next save —
-  // the mode option only applies at creation time and is a no-op on an existing path.
+  // mode options on mkdir/writeFile keep a freshly created directory/file from ever
+  // existing at loose (OS-default) permissions, even momentarily. The chmod calls
+  // below are still needed on top: mode only applies at creation time, so it's a
+  // no-op on a pre-existing directory/file from before this change.
+  await fs.mkdir(dirPath, { recursive: true, mode: 0o700 });
+  await fs.writeFile(filePath, JSON.stringify(creds, null, 2), { encoding: "utf-8", mode: 0o600 });
   await fs.chmod(dirPath, 0o700);
   await fs.chmod(filePath, 0o600);
 }
