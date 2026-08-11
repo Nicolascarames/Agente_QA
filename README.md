@@ -7,7 +7,7 @@ Sistema agéntico de automatización de QA: convierte una descripción de prueba
 Pipeline de 4 agentes especializados, con lógica compartida (prompts, contratos de datos entre agentes, generadores de Gherkin/Playwright) reutilizada por dos formas de uso:
 
 1. **Agente de intake** — recibe el texto y diseña el plan de pruebas en Gherkin. Si la petición encaja con un patrón conocido (login, logout, signup, recuperar contraseña...), lo usa como punto de partida en vez de generar desde cero. Requiere tu aprobación explícita del plan antes de seguir.
-2. **Agente generador** — convierte el Gherkin aprobado en tests Python + Playwright (convención fija: Page Object Model). Si el caso no encajaba en ningún patrón, pregunta si se guarda como patrón nuevo reusable para ese proyecto.
+2. **Agente generador** (implementado) — convierte el Gherkin aprobado en tests Python + Playwright (pytest-bdd, Page Object Model), con autochequeo de compilación/lint antes de escribir nada al proyecto. Si el caso no encajaba en ningún patrón, pregunta si se guarda como patrón nuevo reusable para ese proyecto.
 3. **Agente ejecutor** — selecciona (por tags Gherkin) y lanza los tests generados; pregunta capturas/vídeo en cada ejecución.
 4. **Agente de reportes** — genera un reporte extendido (pytest-html) y un resumen (Markdown) de la ejecución.
 
@@ -17,10 +17,12 @@ Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, gener
 
 | | Plugin de Claude Code | CLI standalone (npm) |
 |---|---|---|
-| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code |
+| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python y `ruff` para "Generar tests Playwright") |
 | Modelo LLM | Solo Claude | Cualquiera (Claude, OpenAI, Google...) vía API key propia |
 | Coste | Incluido en tu suscripción Claude | Pago por uso de API del proveedor elegido |
 | Dónde corre | Dentro de una sesión Claude Code | Terminal, standalone, también en CI |
+
+> A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3 y `ruff`** (`pip install ruff`) en el `PATH` — se usan para verificar que el código generado compila y pasa lint antes de escribirlo al proyecto. No hace falta para "Crear plan de pruebas" (Agente 1).
 
 ## Instalación — Plugin de Claude Code
 
@@ -46,7 +48,7 @@ node cli/dist/bin/agente-qa.js init
 node cli/dist/bin/agente-qa.js chat
 ```
 
-`init` lanza el asistente de configuración: en esta versión pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests. Las preferencias de capturas/vídeo/reportes llegarán con los Agentes 2-4, todavía no implementados (ver "Estado del proyecto" abajo).
+`init` lanza el asistente de configuración: en esta versión pregunta por el proveedor LLM, tu API key y en qué carpeta del proyecto guardar los tests. Las preferencias de capturas/vídeo/reportes llegarán con los Agentes 3-4, todavía no implementados (ver "Estado del proyecto" abajo).
 
 Cuando el paquete se publique en npm, `npm install -g agente-qa` funcionará como atajo equivalente a los pasos anteriores.
 
@@ -56,4 +58,4 @@ Ambas formas se usan igual: la conversación siempre empieza con una presentaci�
 
 ## Estado del proyecto
 
-El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida) está implementado y pasa 55 tests. Los Agentes 2-4 (generador de tests Playwright, ejecutor y reportes) y la superficie de plugin de Claude Code quedan pendientes como planes futuros independientes. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El Plan 1 (motor core + Agente de intake — Agente 1 —, superficie CLI incluida) y el Agente 2 (generador de tests Playwright) están implementados; la suite pasa 103 passed, 3 skipped tests (los `skipped` dependen de tener `ruff` instalado en la máquina). Los Agentes 3-4 (ejecutor y reportes) y la superficie de plugin de Claude Code quedan pendientes como planes futuros independientes. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).

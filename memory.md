@@ -21,6 +21,9 @@ Memoria viva del proyecto y del usuario. Leer entera al inicio de cada sesión.
 - Librería de patrones: incorporados (`core/src/patterns/builtin/`: login, logout, signup, password-reset) + aprendidos por proyecto en `<proyecto>/.agente-qa/templates/`, solo tras confirmación explícita del usuario (nunca guardado en silencio).
 - Config: credenciales globales en `~/.agente-qa/credentials.json` (fuera de cualquier repo); preferencias de proyecto en `<proyecto>/.agente-qa/config.json`.
 - Node floor: `>=22` (subido desde `>=20` durante Plan 1 — `@ai-sdk/*` lo exige de verdad).
+- Agente 2 (Generador) implementado (2026-08-11): Gherkin aprobado → tests Playwright (Python, pytest-bdd, Page Object Model). Runtime fijado en pytest-bdd (no pytest-playwright a secas) porque Agente 3 necesita tags Gherkin→pytest markers automáticos. Detalle: `docs/superpowers/specs/2026-08-10-agente-2-generador-design.md`.
+- CodeChecker (2026-08-11): mismo patrón DI que `LLMProvider` — interfaz + `FakeCodeChecker` (tests) + `realCodeChecker` (shell a `ruff check` + `python -m py_compile` en directorio temporal). Nuevo prerequisito de entorno: Python+ruff en el `PATH`, no existía en Plan 1 (100% Node/TS). Tests que ejercitan el real están gated (`describe.skipIf`) si no hay `ruff` instalado.
+- Round-trip de patrón entre agentes (2026-08-11): Agente 1 estampa `# agente-qa:pattern=<nombre>` como primera línea del `.feature` cuando hubo match; Agente 2 lo lee (`parseFeatureHeader`) para reusar el `pageObjectTemplate` sin re-matchear. Guardar patrón nuevo (`offerSavePattern`) es responsabilidad de Agente 2 ahora, no de Agente 1 — corrección de alcance sobre lo implementado en Plan 1 (spec §5 ya lo asignaba a Agente 2; Plan 1 lo había hecho en Agente 1 con `pageObjectTemplate` vacío).
 
 ## Decisiones pendientes
 
@@ -28,7 +31,7 @@ Memoria viva del proyecto y del usuario. Leer entera al inicio de cada sesión.
 - Empaquetado real para publicar en npm: falta `files: ["dist"]` en ambos `package.json`, excluir `*.test.ts` del build, y cambiar `"@agente-qa/core": "*"` por un rango real — hallazgo de la review final de Plan 1, aparcado (nadie va a hacer `npm publish` todavía).
 - Permisos del fichero de credenciales (`0600`/`0700`) — aparcado dos veces (Task 2 y review final), decisión consciente de dejarlo para más adelante.
 - Spec §5 dice que al encontrar un patrón coincidente el agente debe "ofrecerlo y pedir solo los datos específicos del proyecto" — Plan 1 lo simplificó a inyectar el patrón directo en el prompt sin ese paso conversacional. Queda para que la spec de Plan 2 lo revise explícitamente, no es bug de implementación.
-- Plan 2 = Agentes 2-4 (generador Playwright, ejecutor, reportes), confirmado como objetivo de las próximas sesiones (2026-08-10).
+- Agente 2 (Generador) implementado (2026-08-11), en `main`. Agentes 3-4 (ejecutor, reportes) siguen pendientes, specs propias.
 
 ## Correcciones
 
@@ -46,3 +49,8 @@ Memoria viva del proyecto y del usuario. Leer entera al inicio de cada sesión.
 - Qué pasó: 21 tareas de Plan 1, cada una revisada y aprobada por separado, dejaron el CLI entero sin un solo `try`/`catch` — cualquier fallo de red/API mataba la sesión con un stack trace crudo. Ninguna review de tarea lo vio porque cada una miraba solo su propio diff.
 - Qué lo detectó: la review final de rama (mirando los 21 diffs juntos), no ninguna review individual.
 - Regla: la review final de rama después de completar todas las tareas de un plan no es un trámite — es la única red que atrapa fallos que solo existen "en agregado". No saltarla nunca, aunque cada tarea individual haya salido limpia.
+
+## [2026-08-11] `isolation: "worktree"` en el Agent tool ignora la elección de "sin worktree" del usuario
+- Qué se hizo mal: el usuario declinó worktree aislado para la sesión ("trabajar directo en main"); el primer despacho de subagente implementador en `subagent-driven-development` se hizo igualmente con `isolation: "worktree"`, creando rama+carpeta aparte sin que el usuario lo supiera.
+- Qué se corrigió: cherry-pick del commit a `main`, borrado del worktree y la rama sueltos. El report file del implementador (escrito con ruta absoluta fuera del worktree) se perdió igualmente al borrar el worktree — tuvo que reconstruirse desde el contrato final que el propio agente devolvió.
+- Regla: si el usuario declina worktree en la sesión, nunca pasar `isolation: "worktree"` al despachar subagentes de implementación — trabajar siempre en el checkout actual. Si además se usa `subagent-driven-development`, el flujo de reports/ledger asume que el checkout persiste; un worktree que se borra a media tarea destruye evidencia no comiteada.
