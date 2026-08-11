@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const runCreatePlanMock = vi.fn();
 const runInitMock = vi.fn();
+const runGenerateTestsMock = vi.fn();
 
 vi.mock("./commands/chat.js", () => ({
   runCreatePlan: (...args: unknown[]) => runCreatePlanMock(...args),
 }));
 vi.mock("./commands/init.js", () => ({
   runInit: (...args: unknown[]) => runInitMock(...args),
+}));
+vi.mock("./commands/generate.js", () => ({
+  runGenerateTests: (...args: unknown[]) => runGenerateTestsMock(...args),
 }));
 
 import { runMenuLoop } from "./menu.js";
@@ -17,6 +21,7 @@ describe("runMenuLoop", () => {
   beforeEach(() => {
     runCreatePlanMock.mockReset();
     runInitMock.mockReset();
+    runGenerateTestsMock.mockReset();
   });
 
   it("routes 'create-plan' to runCreatePlan and exits on 'exit'", async () => {
@@ -28,6 +33,7 @@ describe("runMenuLoop", () => {
       menuPrompts: { selectMenuChoice: async () => choices[i++] },
       chatPrompts: {} as never,
       initPrompts: {} as never,
+      generatorPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -47,6 +53,7 @@ describe("runMenuLoop", () => {
       menuPrompts: { selectMenuChoice: async () => choices[i++] },
       chatPrompts: {} as never,
       initPrompts: {} as never,
+      generatorPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -67,6 +74,7 @@ describe("runMenuLoop", () => {
       menuPrompts: { selectMenuChoice: async () => choices[i++] },
       chatPrompts: {} as never,
       initPrompts: {} as never,
+      generatorPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
@@ -74,20 +82,39 @@ describe("runMenuLoop", () => {
     expect(runInitMock).toHaveBeenCalledTimes(1);
   });
 
-  it("loops through multiple choices before exiting", async () => {
-    const choices: MenuChoice[] = ["generate-tests", "run-tests", "reports", "exit"];
+  it("routes 'generate-tests' to runGenerateTests", async () => {
+    const choices: MenuChoice[] = ["generate-tests", "exit"];
+    let i = 0;
+    runGenerateTestsMock.mockResolvedValue(["/tmp/tests/tests/test_login.py"]);
+
+    await runMenuLoop({
+      menuPrompts: { selectMenuChoice: async () => choices[i++] },
+      chatPrompts: {} as never,
+      initPrompts: {} as never,
+      generatorPrompts: {} as never,
+      homeDir: "/home/test",
+      projectRoot: "/project/test",
+    });
+
+    expect(runGenerateTestsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("loops through remaining unimplemented choices before exiting", async () => {
+    const choices: MenuChoice[] = ["run-tests", "reports", "exit"];
     let i = 0;
 
     await runMenuLoop({
       menuPrompts: { selectMenuChoice: async () => choices[i++] },
       chatPrompts: {} as never,
       initPrompts: {} as never,
+      generatorPrompts: {} as never,
       homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
-    expect(i).toBe(4);
+    expect(i).toBe(3);
     expect(runCreatePlanMock).not.toHaveBeenCalled();
     expect(runInitMock).not.toHaveBeenCalled();
+    expect(runGenerateTestsMock).not.toHaveBeenCalled();
   });
 });

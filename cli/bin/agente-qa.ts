@@ -3,7 +3,12 @@ import { Command } from "commander";
 import os from "node:os";
 import { runInit } from "../src/commands/init.js";
 import { runMenuLoop } from "../src/menu.js";
-import { realInitPrompts, realMenuPrompts, buildRealChatPrompts } from "../src/prompts/inquirerPrompts.js";
+import {
+  realInitPrompts,
+  realMenuPrompts,
+  buildRealChatPrompts,
+  buildRealGeneratorPrompts,
+} from "../src/prompts/inquirerPrompts.js";
 
 const program = new Command();
 program.name("agente-qa").description("Asistente agéntico de automatización de QA");
@@ -24,6 +29,7 @@ program
       menuPrompts: realMenuPrompts,
       chatPrompts: buildRealChatPrompts(),
       initPrompts: realInitPrompts,
+      generatorPrompts: buildRealGeneratorPrompts(),
       homeDir: os.homedir(),
       projectRoot: process.cwd(),
     });
