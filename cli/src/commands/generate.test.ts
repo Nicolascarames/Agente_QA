@@ -20,8 +20,8 @@ vi.mock("@agente-qa/core", async () => {
 });
 
 vi.mock("../util/spinner.js", () => ({
-  withLLMSpinner: (...args: unknown[]) => withLLMSpinnerMock(...args),
-  withCodeCheckerSpinner: (...args: unknown[]) => withCodeCheckerSpinnerMock(...args),
+  withLLMSpinner: (provider: unknown) => withLLMSpinnerMock(provider),
+  withCodeCheckerSpinner: (checker: unknown) => withCodeCheckerSpinnerMock(checker),
 }));
 
 import { runGenerateTests } from "./generate.js";

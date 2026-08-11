@@ -17,7 +17,7 @@ vi.mock("@agente-qa/core", async () => {
 });
 
 vi.mock("../util/spinner.js", () => ({
-  withLLMSpinner: (...args: unknown[]) => withLLMSpinnerMock(...args),
+  withLLMSpinner: (provider: unknown) => withLLMSpinnerMock(provider),
 }));
 
 import { runCreatePlan } from "./chat.js";

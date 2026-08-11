@@ -8,10 +8,10 @@ const spinnerInstance = {
 };
 spinnerInstance.start.mockReturnValue(spinnerInstance);
 
-const oraFactory = vi.fn(() => spinnerInstance);
+const oraFactory = vi.fn((_text: string) => spinnerInstance);
 
 vi.mock("ora", () => ({
-  default: (...args: unknown[]) => oraFactory(...args),
+  default: (text: string) => oraFactory(text),
 }));
 
 import { withLLMSpinner, withCodeCheckerSpinner } from "./spinner.js";
