@@ -25,6 +25,7 @@
   "dependencies": {
     "@agente-qa/core": "^0.1.0",
     "@inquirer/prompts": "^8.5.2",
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "ora": "^9.4.1"
   }
 }
