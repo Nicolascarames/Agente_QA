@@ -29,3 +29,7 @@ export interface ExecutorPrompts {
   selectTags(availableTags: string[]): Promise<string[]>;
   selectCaptureMode(): Promise<"off" | "only-on-failure" | "always">;
 }
+
+export interface ReportesPrompts {
+  selectDetailLevel(): Promise<"resumen" | "completo">;
+}

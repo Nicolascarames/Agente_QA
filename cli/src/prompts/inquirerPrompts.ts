@@ -7,6 +7,7 @@ import type {
   ChatPrompts,
   GeneratorPrompts,
   ExecutorPrompts,
+  ReportesPrompts,
 } from "./types.js";
 
 export const realInitPrompts: InitPrompts = {
@@ -132,6 +133,21 @@ export function buildRealExecutorPrompts(): ExecutorPrompts {
           { name: "Nunca", value: "off" },
         ],
         default: "only-on-failure",
+      });
+    },
+  };
+}
+
+export function buildRealReportesPrompts(): ReportesPrompts {
+  return {
+    async selectDetailLevel() {
+      return select<"resumen" | "completo">({
+        message: "¿Qué nivel de detalle quieres en el resumen?",
+        choices: [
+          { name: "Resumen (conteos + fallos)", value: "resumen" },
+          { name: "Completo (+ listado de tests pasados)", value: "completo" },
+        ],
+        default: "resumen",
       });
     },
   };
