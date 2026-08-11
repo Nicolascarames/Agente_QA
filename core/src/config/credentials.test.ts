@@ -36,4 +36,34 @@ describe("credentials", () => {
     const exists = await fs.stat(credentialsPath(tmpHome)).then(() => true, () => false);
     expect(exists).toBe(false);
   });
+
+  describe.skipIf(process.platform === "win32")("file permissions (POSIX only)", () => {
+    it("writes credentials.json with mode 0600 (owner read/write only)", async () => {
+      await saveCredentials({ provider: "anthropic", apiKey: "sk-test-789" }, tmpHome);
+      const stats = await fs.stat(credentialsPath(tmpHome));
+      expect(stats.mode & 0o777).toBe(0o600);
+    });
+
+    it("creates the .agente-qa directory with mode 0700 (owner only)", async () => {
+      await saveCredentials({ provider: "anthropic", apiKey: "sk-test-789" }, tmpHome);
+      const dirStats = await fs.stat(path.join(tmpHome, ".agente-qa"));
+      expect(dirStats.mode & 0o777).toBe(0o700);
+    });
+
+    it("tightens permissions on a pre-existing file/dir from before this change, not just on first creation", async () => {
+      const dirPath = path.join(tmpHome, ".agente-qa");
+      const filePath = credentialsPath(tmpHome);
+      await fs.mkdir(dirPath, { recursive: true, mode: 0o755 });
+      await fs.writeFile(filePath, JSON.stringify({ provider: "anthropic", apiKey: "old-key" }), {
+        mode: 0o644,
+      });
+
+      await saveCredentials({ provider: "anthropic", apiKey: "new-key" }, tmpHome);
+
+      const dirStats = await fs.stat(dirPath);
+      const fileStats = await fs.stat(filePath);
+      expect(dirStats.mode & 0o777).toBe(0o700);
+      expect(fileStats.mode & 0o777).toBe(0o600);
+    });
+  });
 });

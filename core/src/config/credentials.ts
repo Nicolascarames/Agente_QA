@@ -18,8 +18,14 @@ export function credentialsPath(homeDir: string): string {
 export async function saveCredentials(creds: Credentials, homeDir: string): Promise<void> {
   CredentialsSchema.parse(creds);
   const filePath = credentialsPath(homeDir);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const dirPath = path.dirname(filePath);
+  await fs.mkdir(dirPath, { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(creds, null, 2), "utf-8");
+  // chmod explicitly, not just via the mode option on mkdir/writeFile, so an existing
+  // directory/file from before this change also gets tightened on the next save —
+  // the mode option only applies at creation time and is a no-op on an existing path.
+  await fs.chmod(dirPath, 0o700);
+  await fs.chmod(filePath, 0o600);
 }
 
 export async function loadCredentials(homeDir: string): Promise<Credentials | null> {
