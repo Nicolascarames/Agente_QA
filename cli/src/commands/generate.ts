@@ -10,6 +10,7 @@ import {
   type GeneratorCallbacks,
 } from "@agente-qa/core";
 import type { GeneratorPrompts } from "../prompts/types.js";
+import { withLLMSpinner, withCodeCheckerSpinner } from "../util/spinner.js";
 
 export async function runGenerateTests(
   prompts: GeneratorPrompts,
@@ -36,7 +37,7 @@ export async function runGenerateTests(
   const chosen = await prompts.selectFeatureFile(featureFiles);
   const featureFilePath = path.join(projectRoot, projectConfig.testsDir, "features", chosen);
 
-  const llm = createProvider(credentials);
+  const llm = withLLMSpinner(createProvider(credentials));
   const patterns = await loadAllPatterns(projectRoot);
 
   const callbacks: GeneratorCallbacks = {
@@ -48,7 +49,7 @@ export async function runGenerateTests(
     featureFilePath,
     llm,
     patterns,
-    realCodeChecker,
+    withCodeCheckerSpinner(realCodeChecker),
     projectRoot,
     projectConfig.testsDir,
     callbacks

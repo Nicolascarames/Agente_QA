@@ -7,6 +7,7 @@ import {
   type IntakeCallbacks,
 } from "@agente-qa/core";
 import type { ChatPrompts } from "../prompts/types.js";
+import { withLLMSpinner } from "../util/spinner.js";
 
 export async function runCreatePlan(
   prompts: ChatPrompts,
@@ -23,7 +24,7 @@ export async function runCreatePlan(
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
 
-  const llm = createProvider(credentials);
+  const llm = withLLMSpinner(createProvider(credentials));
   const patterns = await loadAllPatterns(projectRoot);
   const initialText = await prompts.inputInitialText();
 

@@ -6,6 +6,7 @@ import { saveCredentials, saveProjectConfig, FakeLLMProvider } from "@agente-qa/
 import type { ChatPrompts } from "../prompts/types.js";
 
 const createProviderMock = vi.fn();
+const withLLMSpinnerMock = vi.fn((provider: unknown) => provider);
 
 vi.mock("@agente-qa/core", async () => {
   const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
@@ -14,6 +15,10 @@ vi.mock("@agente-qa/core", async () => {
     createProvider: (...args: unknown[]) => createProviderMock(...args),
   };
 });
+
+vi.mock("../util/spinner.js", () => ({
+  withLLMSpinner: (...args: unknown[]) => withLLMSpinnerMock(...args),
+}));
 
 import { runCreatePlan } from "./chat.js";
 
@@ -25,6 +30,8 @@ describe("runCreatePlan", () => {
     tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-home-"));
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-project-"));
     createProviderMock.mockReset();
+    withLLMSpinnerMock.mockClear();
+    withLLMSpinnerMock.mockImplementation((provider: unknown) => provider);
   });
 
   afterEach(async () => {
@@ -64,5 +71,28 @@ describe("runCreatePlan", () => {
 
     expect(filePath).toBe(path.join(tmpProject, "tests", "features", "login.feature"));
     expect(await fs.readFile(filePath, "utf-8")).toContain("Feature: Login");
+  });
+
+  it("wraps the LLM provider with the spinner decorator before using it", async () => {
+    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+
+    const fake = new FakeLLMProvider([
+      '{"ambiguous": false, "questions": []}',
+      '{"matchedPatternName": "login"}',
+      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+    ]);
+    createProviderMock.mockReturnValue(fake);
+
+    const prompts: ChatPrompts = {
+      inputInitialText: vi.fn().mockResolvedValue("quiero probar el login"),
+      askUser: vi.fn(),
+      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+
+    await runCreatePlan(prompts, tmpHome, tmpProject);
+
+    expect(withLLMSpinnerMock).toHaveBeenCalledWith(fake);
   });
 });
