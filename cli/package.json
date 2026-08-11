@@ -10,7 +10,8 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "rimraf dist && npm run build"
   },
   "dependencies": {
     "@agente-qa/core": "^0.1.0",
