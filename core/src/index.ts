@@ -60,3 +60,9 @@ export type { ExecutorCallbacks, EjecutorResult, CaptureMode } from "./agents/ej
 export type { TestRunOptions, TestRunResult, TestRunner } from "./testRun/testRunner.js";
 export { FakeTestRunner } from "./testRun/testUtils.js";
 export { createRealTestRunner, realTestRunner, MissingTestToolError } from "./testRun/realTestRunner.js";
+
+export { parseJunitResults } from "./agents/reportes/parseJunitResults.js";
+export type { JunitResults, JunitTestCase } from "./agents/reportes/parseJunitResults.js";
+export { generateSummaryMarkdown } from "./agents/reportes/generateSummaryMarkdown.js";
+export { runReportes } from "./agents/reportes/runReportes.js";
+export type { ReportesCallbacks, ReportesResult } from "./agents/reportes/runReportes.js";

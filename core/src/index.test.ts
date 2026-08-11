@@ -49,4 +49,10 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.realTestRunner.run).toBe("function");
     expect(typeof core.MissingTestToolError).toBe("function");
   });
+
+  it("exports the Agente 4 (reportes) surface", () => {
+    expect(typeof core.parseJunitResults).toBe("function");
+    expect(typeof core.generateSummaryMarkdown).toBe("function");
+    expect(typeof core.runReportes).toBe("function");
+  });
 });
