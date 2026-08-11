@@ -31,7 +31,19 @@ jobs:
       - run: npm test
 
       - name: Publish @agente-qa/core
-        run: npm publish --workspace core --access public
+        run: |
+          VERSION=$(node -p "require('./core/package.json').version")
+          if npm view "@agente-qa/core@$VERSION" version >/dev/null 2>&1; then
+            echo "@agente-qa/core@$VERSION is already on the registry, skipping."
+          else
+            npm publish --workspace core --access public
+          fi
 
       - name: Publish agente-qa
-        run: npm publish --workspace cli --access public
+        run: |
+          VERSION=$(node -p "require('./cli/package.json').version")
+          if npm view "agente-qa@$VERSION" version >/dev/null 2>&1; then
+            echo "agente-qa@$VERSION is already on the registry, skipping."
+          else
+            npm publish --workspace cli --access public
+          fi
