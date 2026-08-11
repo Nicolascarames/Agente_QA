@@ -26,4 +26,18 @@ describe("@agente-qa/core public API", () => {
   it("exports the intake orchestrator", () => {
     expect(typeof core.runIntake).toBe("function");
   });
+
+  it("exports the Agente 2 (generador) surface", () => {
+    expect(typeof core.parseFeatureHeader).toBe("function");
+    expect(typeof core.generateCode).toBe("function");
+    expect(typeof core.writeTestFiles).toBe("function");
+    expect(typeof core.testFileExists).toBe("function");
+    expect(typeof core.testFilePath).toBe("function");
+    expect(typeof core.listFeatureFiles).toBe("function");
+    expect(typeof core.runGenerador).toBe("function");
+    expect(typeof core.FakeCodeChecker).toBe("function");
+    expect(typeof core.createRealCodeChecker).toBe("function");
+    expect(typeof core.realCodeChecker.check).toBe("function");
+    expect(typeof core.MissingCodeToolError).toBe("function");
+  });
 });

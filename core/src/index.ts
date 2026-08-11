@@ -40,3 +40,15 @@ export { generateGherkin } from "./agents/intake/gherkinGenerator.js";
 export { writeFeatureFile } from "./agents/intake/writeFeatureFile.js";
 export { runIntake } from "./agents/intake/runIntake.js";
 export type { IntakeCallbacks } from "./agents/intake/runIntake.js";
+
+export { parseFeatureHeader } from "./agents/generador/parseFeatureHeader.js";
+export { generateCode } from "./agents/generador/codeGenerator.js";
+export type { GeneratedFile } from "./agents/generador/codeGenerator.js";
+export { writeTestFiles, testFileExists, testFilePath } from "./agents/generador/writeTestFiles.js";
+export { listFeatureFiles } from "./agents/generador/listFeatureFiles.js";
+export { runGenerador } from "./agents/generador/runGenerador.js";
+export type { GeneratorCallbacks } from "./agents/generador/runGenerador.js";
+
+export type { CodeFile, CodeCheckResult, CodeChecker } from "./codeCheck/codeChecker.js";
+export { FakeCodeChecker } from "./codeCheck/testUtils.js";
+export { createRealCodeChecker, realCodeChecker, MissingCodeToolError } from "./codeCheck/realCodeChecker.js";
