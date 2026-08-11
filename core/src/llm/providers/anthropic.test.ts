@@ -35,9 +35,25 @@ describe("createAnthropicProvider", () => {
     expect(anthropicModelMock).toHaveBeenCalledWith(ANTHROPIC_DEFAULT_MODEL);
     expect(generateTextMock).toHaveBeenCalledWith({
       model: { modelId: ANTHROPIC_DEFAULT_MODEL },
+      instructions: undefined,
       messages: [{ role: "user", content: "hi" }],
     });
     expect(result).toBe("hola");
+  });
+
+  it("passes a leading system message as instructions instead of inside messages", async () => {
+    generateTextMock.mockResolvedValue({ text: "hola" });
+    const provider = createAnthropicProvider("sk-ant-test");
+    await provider.generate([
+      { role: "system", content: "Eres un asistente útil." },
+      { role: "user", content: "hi" },
+    ]);
+
+    expect(generateTextMock).toHaveBeenCalledWith({
+      model: { modelId: ANTHROPIC_DEFAULT_MODEL },
+      instructions: "Eres un asistente útil.",
+      messages: [{ role: "user", content: "hi" }],
+    });
   });
 
   it("wraps generateText failures in an LLMRequestError naming the provider", async () => {
