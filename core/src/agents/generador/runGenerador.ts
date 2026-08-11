@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import path from "node:path";
 import type { LLMProvider } from "../../llm/provider.js";
 import type { Pattern } from "../../schemas/pattern.js";
 import type { CodeChecker } from "../../codeCheck/codeChecker.js";
@@ -29,22 +30,22 @@ export async function runGenerador(
     ? (patterns.find((p) => p.name === matchedPatternName) ?? null)
     : null;
 
-  let feedback: string | undefined;
+  const featureFileName = path.basename(featureFilePath);
+  const naming = { slug: featureFileName.replace(/\.feature$/, ""), featureFileName };
+
+  let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    files = await generateCode(featureText, llm, matchedPattern, feedback);
+    files = await generateCode(featureText, llm, matchedPattern, naming, retry);
     const result = await checker.check(files);
-    if (result.ok) {
-      feedback = undefined;
-      break;
-    }
+    if (result.ok) break;
 
     const errors = result.errors ?? "Error desconocido de verificación de código.";
     if (attempt === MAX_ATTEMPTS) {
       throw new Error(`El código generado no pasó la verificación tras ${MAX_ATTEMPTS} intentos. Último error:\n${errors}`);
     }
-    feedback = errors;
+    retry = { previousFiles: files, feedback: errors };
   }
 
   for (const file of files) {

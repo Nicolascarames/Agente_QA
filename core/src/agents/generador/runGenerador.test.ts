@@ -108,6 +108,7 @@ describe("runGenerador", () => {
     expect(checker.receivedCalls).toHaveLength(3);
     const secondAttemptPrompt = llm.receivedCalls[1].find((m) => m.role === "user")?.content;
     expect(secondAttemptPrompt).toContain("SyntaxError: line 1");
+    expect(secondAttemptPrompt).toContain("class LoginPage"); // the previous attempt's actual generated code, not just the error
   });
 
   it("aborts without writing anything after 3 failed corrections (4 total attempts)", async () => {
@@ -158,5 +159,22 @@ describe("runGenerador", () => {
     expect(await fs.readFile(path.join(tmpProject, "tests", "tests", "test_login.py"), "utf-8")).toBe(
       "# ya existente\n"
     );
+  });
+
+  it("passes the feature's exact filename and slug to the code generator", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const callbacks: GeneratorCallbacks = {
+      offerSavePattern: vi.fn(),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+
+    await runGenerador(featureFilePath, llm, [loginPattern], checker, tmpProject, "tests", callbacks);
+
+    const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
+    expect(promptContent).toContain("features/login.feature");
+    expect(promptContent).toContain("test_login.py");
+    expect(promptContent).toContain("login_page.py");
   });
 });

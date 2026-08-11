@@ -4,6 +4,7 @@ import { generateCode } from "./codeGenerator.js";
 import type { Pattern } from "../../schemas/pattern.js";
 
 const featureText = "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n";
+const naming = { slug: "login", featureFileName: "login.feature" };
 
 const scriptedResponse = `# FILE: tests/test_login.py
 from pytest_bdd import scenarios, given, when, then
@@ -30,7 +31,7 @@ def page():
 describe("generateCode", () => {
   it("parses the three # FILE: blocks into separate files", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    const files = await generateCode(featureText, llm, null);
+    const files = await generateCode(featureText, llm, null, naming);
 
     expect(files).toHaveLength(3);
     expect(files[0].path).toBe("tests/test_login.py");
@@ -41,7 +42,7 @@ describe("generateCode", () => {
     expect(files[2].content).toContain("import pytest");
   });
 
-  it("sends the feature text and pattern skeleton to the model when a pattern matched", async () => {
+  it("sends the feature text, pattern skeleton, and exact naming to the model when a pattern matched", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
     const matchedPattern: Pattern = {
       name: "login",
@@ -49,24 +50,36 @@ describe("generateCode", () => {
       gherkinTemplate: "Feature: Login\n",
       pageObjectTemplate: "class LoginPage:\n    pass\n",
     };
-    await generateCode(featureText, llm, matchedPattern);
+    await generateCode(featureText, llm, matchedPattern, naming);
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain(featureText);
     expect(userMessage?.content).toContain("class LoginPage:\n    pass");
+    expect(userMessage?.content).toContain("features/login.feature");
+    expect(userMessage?.content).toContain("test_login.py");
+    expect(userMessage?.content).toContain("login_page.py");
   });
 
-  it("includes retry feedback in the prompt when provided", async () => {
+  it("includes the previous attempt's code and the retry feedback in the prompt when provided", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    await generateCode(featureText, llm, null, "SyntaxError: unexpected token");
+    const previousFiles = [
+      { path: "tests/test_login.py", content: "broken code here\n" },
+      { path: "pages/login_page.py", content: "class LoginPage:\n    pass\n" },
+      { path: "conftest.py", content: "import pytest\n" },
+    ];
+    await generateCode(featureText, llm, null, naming, {
+      previousFiles,
+      feedback: "SyntaxError: unexpected token",
+    });
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain("SyntaxError: unexpected token");
+    expect(userMessage?.content).toContain("broken code here");
   });
 
   it("throws a clear error when the response has no # FILE: blocks", async () => {
     const llm = new FakeLLMProvider(["esto no tiene el formato esperado"]);
-    await expect(generateCode(featureText, llm, null)).rejects.toThrow(/# FILE:/);
+    await expect(generateCode(featureText, llm, null, naming)).rejects.toThrow(/# FILE:/);
   });
 
   it("throws a clear error when the response has the wrong number of file blocks", async () => {
@@ -77,6 +90,6 @@ class LoginPage:
     pass
 `;
     const llm = new FakeLLMProvider([twoFileResponse]);
-    await expect(generateCode(featureText, llm, null)).rejects.toThrow(/3 esperados/);
+    await expect(generateCode(featureText, llm, null, naming)).rejects.toThrow(/3 esperados/);
   });
 });
