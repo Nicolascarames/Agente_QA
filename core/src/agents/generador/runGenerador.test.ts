@@ -177,4 +177,25 @@ describe("runGenerador", () => {
     expect(promptContent).toContain("test_login.py");
     expect(promptContent).toContain("login_page.py");
   });
+
+  it("sanitizes a multi-word feature filename into a valid Python module slug", async () => {
+    const dir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(dir, { recursive: true });
+    const featureFilePath = path.join(dir, "recuperar-contrasena.feature");
+    await fs.writeFile(featureFilePath, "Feature: Recuperar contraseña\n", "utf-8");
+
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const callbacks: GeneratorCallbacks = {
+      offerSavePattern: vi.fn().mockResolvedValue({ save: false }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+
+    await runGenerador(featureFilePath, llm, [], checker, tmpProject, "tests", callbacks);
+
+    const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
+    expect(promptContent).toContain("test_recuperar_contrasena.py");
+    expect(promptContent).toContain("recuperar_contrasena_page.py");
+    expect(promptContent).toContain("features/recuperar-contrasena.feature");
+  });
 });

@@ -8,6 +8,11 @@ import { parseFeatureHeader } from "./parseFeatureHeader.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
 import { testFileExists, testFilePath, writeTestFiles } from "./writeTestFiles.js";
 
+function toPythonModuleSlug(rawSlug: string): string {
+  const sanitized = rawSlug.replace(/[^A-Za-z0-9_]/g, "_");
+  return /^[0-9]/.test(sanitized) ? `_${sanitized}` : sanitized;
+}
+
 const MAX_ATTEMPTS = 4; // 1 initial generation + up to 3 corrections
 
 export interface GeneratorCallbacks {
@@ -31,7 +36,7 @@ export async function runGenerador(
     : null;
 
   const featureFileName = path.basename(featureFilePath);
-  const naming = { slug: featureFileName.replace(/\.feature$/, ""), featureFileName };
+  const naming = { slug: toPythonModuleSlug(featureFileName.replace(/\.feature$/, "")), featureFileName };
 
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];
