@@ -1,13 +1,22 @@
 {
   "name": "@agente-qa/core",
   "version": "0.1.0",
+  "description": "Motor compartido (sin interfaz) del pipeline de automatización de QA Agente_QA: intake de requisitos, generación de tests Playwright, ejecución y reportes.",
   "type": "module",
+  "license": "MIT",
+  "author": "Nicolascarames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nicolascarames/Agente_QA.git",
+    "directory": "core"
+  },
+  "keywords": ["qa", "testing", "playwright", "gherkin", "bdd", "llm", "automation", "test-generation"],
   "engines": {
     "node": ">=22"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "rimraf dist && npm run build"

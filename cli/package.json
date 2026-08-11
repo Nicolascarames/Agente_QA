@@ -1,14 +1,23 @@
 {
   "name": "agente-qa",
   "version": "0.1.0",
+  "description": "CLI de automatización de QA: convierte una descripción de pruebas en lenguaje natural en tests Playwright (Gherkin/BDD), los ejecuta y genera reportes.",
   "type": "module",
+  "license": "MIT",
+  "author": "Nicolascarames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nicolascarames/Agente_QA.git",
+    "directory": "cli"
+  },
+  "keywords": ["qa", "testing", "playwright", "gherkin", "bdd", "cli", "llm", "automation"],
   "engines": {
     "node": ">=22"
   },
   "bin": {
     "agente-qa": "./dist/bin/agente-qa.js"
   },
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "rimraf dist && npm run build"
