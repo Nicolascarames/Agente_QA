@@ -156,6 +156,52 @@ describe("runMenuLoop", () => {
     logSpy.mockRestore();
   });
 
+  it("prints 'no se ejecutó ningún test' when runExecuteTests returns exitCode 5", async () => {
+    const choices: MenuChoice[] = ["run-tests", "exit"];
+    let i = 0;
+    runExecuteTestsMock.mockResolvedValue({ exitCode: 5, junitXmlPath: "/tmp/tests/results/latest.xml" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runMenuLoop({
+      menuPrompts: { selectMenuChoice: async () => choices[i++] },
+      chatPrompts: {} as never,
+      initPrompts: {} as never,
+      generatorPrompts: {} as never,
+      executorPrompts: {} as never,
+      homeDir: "/home/test",
+      projectRoot: "/project/test",
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("No se ejecutó ningún test (revisa el filtro de tags seleccionado).")
+    );
+
+    logSpy.mockRestore();
+  });
+
+  it("prints 'no se completó correctamente' with the exit code when runExecuteTests returns an unexpected exitCode", async () => {
+    const choices: MenuChoice[] = ["run-tests", "exit"];
+    let i = 0;
+    runExecuteTestsMock.mockResolvedValue({ exitCode: 2, junitXmlPath: "/tmp/tests/results/latest.xml" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runMenuLoop({
+      menuPrompts: { selectMenuChoice: async () => choices[i++] },
+      chatPrompts: {} as never,
+      initPrompts: {} as never,
+      generatorPrompts: {} as never,
+      executorPrompts: {} as never,
+      homeDir: "/home/test",
+      projectRoot: "/project/test",
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("La ejecución de pytest no se completó correctamente (código de salida 2).")
+    );
+
+    logSpy.mockRestore();
+  });
+
   it("loops through remaining unimplemented choices before exiting", async () => {
     const choices: MenuChoice[] = ["reports", "exit"];
     let i = 0;

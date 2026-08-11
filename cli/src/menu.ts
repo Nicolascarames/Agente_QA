@@ -49,7 +49,21 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
       case "run-tests": {
         try {
           const result = await runExecuteTests(deps.executorPrompts, deps.projectRoot);
-          const status = result.exitCode === 0 ? "Todos los tests pasaron." : "Algunos tests fallaron.";
+          let status: string;
+          switch (result.exitCode) {
+            case 0:
+              status = "Todos los tests pasaron.";
+              break;
+            case 1:
+              status = "Algunos tests fallaron.";
+              break;
+            case 5:
+              status = "No se ejecutó ningún test (revisa el filtro de tags seleccionado).";
+              break;
+            default:
+              status = `La ejecución de pytest no se completó correctamente (código de salida ${result.exitCode}).`;
+              break;
+          }
           console.log(`${status} Resultados en ${result.junitXmlPath}`);
           if (result.browserSetupWarning) {
             console.log(result.browserSetupWarning);
