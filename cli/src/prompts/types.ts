@@ -24,3 +24,8 @@ export interface GeneratorPrompts {
   offerSavePattern(): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
 }
+
+export interface ExecutorPrompts {
+  selectTags(availableTags: string[]): Promise<string[]>;
+  selectCaptureMode(): Promise<"off" | "only-on-failure" | "always">;
+}

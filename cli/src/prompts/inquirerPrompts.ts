@@ -1,6 +1,13 @@
-import { select, input, password } from "@inquirer/prompts";
+import { select, input, password, checkbox } from "@inquirer/prompts";
 import type { ProviderName } from "@agente-qa/core";
-import type { InitPrompts, MenuPrompts, MenuChoice, ChatPrompts, GeneratorPrompts } from "./types.js";
+import type {
+  InitPrompts,
+  MenuPrompts,
+  MenuChoice,
+  ChatPrompts,
+  GeneratorPrompts,
+  ExecutorPrompts,
+} from "./types.js";
 
 export const realInitPrompts: InitPrompts = {
   async selectProvider() {
@@ -102,6 +109,29 @@ export function buildRealGeneratorPrompts(): GeneratorPrompts {
           { name: "Sí", value: true },
           { name: "No", value: false },
         ],
+      });
+    },
+  };
+}
+
+export function buildRealExecutorPrompts(): ExecutorPrompts {
+  return {
+    async selectTags(availableTags) {
+      return checkbox({
+        message: "¿Qué tags quieres lanzar? (marca todos para lanzar todo)",
+        choices: availableTags.map((tag) => ({ name: tag, value: tag })),
+        required: true,
+      });
+    },
+    async selectCaptureMode() {
+      return select<"off" | "only-on-failure" | "always">({
+        message: "¿Capturas de pantalla y vídeo?",
+        choices: [
+          { name: "Solo en fallo (recomendado)", value: "only-on-failure" },
+          { name: "Siempre", value: "always" },
+          { name: "Nunca", value: "off" },
+        ],
+        default: "only-on-failure",
       });
     },
   };
