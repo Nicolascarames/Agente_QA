@@ -47,7 +47,7 @@ Antes de cualquier despliegue a producción o de publicar en npm — y tras toca
 ## Convenciones no evidentes
 
 - `core/src` nunca hace I/O de terminal (nada de `console.*`/`readline`) — toda interacción humana cruza callbacks inyectados (`IntakeCallbacks` y equivalentes futuros). Es lo que permite reusar `core` tal cual en la superficie de plugin Claude Code de Plan 2 — no lo rompas.
-- DI explícita: las funciones de `core` reciben `homeDir`/`projectRoot` como parámetro, nunca leen `os.homedir()`/`process.cwd()` por dentro — así los tests usan `fs.mkdtemp` real sin mockear `fs`.
+- DI explícita: las funciones de `core` reciben `projectRoot` como parámetro, nunca leen `process.cwd()` por dentro — así los tests usan `fs.mkdtemp` real sin mockear `fs`.
 - Imports relativos con sufijo `.js` aunque el fichero sea `.ts` (ESM NodeNext).
 - `cli`'s `tsc` necesita `core/dist/` construido para resolver `@agente-qa/core` (vitest en cambio alía directo a `core/src`). Si falla resolución: `npm run build --workspace=core`, nunca tocar `cli/tsconfig.json` — ver Task 17 en el plan de Plan 1 para el porqué exacto.
 
@@ -60,6 +60,6 @@ Antes de cualquier despliegue a producción o de publicar en npm — y tras toca
 
 ## Zonas intocables
 
-- Credenciales reales (`~/.agente-qa/credentials.json`) y cualquier secreto — nunca hardcodear ni commitear valores reales.
+- Credenciales reales (`<proyecto>/.agente-qa/.env`, gitignored) y cualquier secreto — nunca hardcodear ni commitear valores reales.
 - `docs/superpowers/specs/` y `docs/superpowers/plans/` — no reescribir retroactivamente, solo añadir ficheros nuevos fechados (`YYYY-MM-DD-tema.md`).
 - `git push` a `origin/main` — confirmar antes de cada push, aunque los commits locales se hagan libremente.
