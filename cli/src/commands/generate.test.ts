@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveCredentials, saveProjectConfig, FakeLLMProvider, realCodeChecker } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath, FakeLLMProvider, realCodeChecker } from "@agente-qa/core";
 import type { GeneratorPrompts } from "../prompts/types.js";
 
 const createProviderMock = vi.fn();
@@ -26,12 +26,18 @@ vi.mock("../util/spinner.js", () => ({
 
 import { runGenerateTests } from "./generate.js";
 
+async function writeEnv(projectRoot: string, values: Record<string, string>): Promise<void> {
+  await fs.mkdir(path.join(projectRoot, ".agente-qa"), { recursive: true });
+  const content = Object.entries(values)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  await fs.writeFile(projectEnvPath(projectRoot), `${content}\n`, "utf-8");
+}
+
 describe("runGenerateTests", () => {
-  let tmpHome: string;
   let tmpProject: string;
 
   beforeEach(async () => {
-    tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-generate-home-"));
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-generate-project-"));
     createProviderMock.mockReset();
     realCodeCheckerCheckMock.mockReset();
@@ -42,7 +48,6 @@ describe("runGenerateTests", () => {
   });
 
   afterEach(async () => {
-    await fs.rm(tmpHome, { recursive: true, force: true });
     await fs.rm(tmpProject, { recursive: true, force: true });
   });
 
@@ -52,11 +57,11 @@ describe("runGenerateTests", () => {
       offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn(),
     };
-    await expect(runGenerateTests(prompts, tmpHome, tmpProject)).rejects.toThrow(/agente-qa init/);
+    await expect(runGenerateTests(prompts, tmpProject)).rejects.toThrow(/agente-qa init/);
   });
 
   it("throws a clear error when there are no approved .feature files yet", async () => {
-    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
 
     const prompts: GeneratorPrompts = {
@@ -64,11 +69,11 @@ describe("runGenerateTests", () => {
       offerSavePattern: vi.fn(),
       confirmOverwrite: vi.fn(),
     };
-    await expect(runGenerateTests(prompts, tmpHome, tmpProject)).rejects.toThrow(/Crear plan de pruebas/);
+    await expect(runGenerateTests(prompts, tmpProject)).rejects.toThrow(/Crear plan de pruebas/);
   });
 
   it("lists feature files, generates code through the fake LLM, and writes the test files", async () => {
-    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
     const featuresDir = path.join(tmpProject, "tests", "features");
     await fs.mkdir(featuresDir, { recursive: true });
@@ -89,7 +94,7 @@ class LoginPage:
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
-    const writtenPaths = await runGenerateTests(prompts, tmpHome, tmpProject);
+    const writtenPaths = await runGenerateTests(prompts, tmpProject);
 
     expect(prompts.selectFeatureFile).toHaveBeenCalledWith(["login.feature"]);
     expect(writtenPaths).toHaveLength(2);
@@ -99,7 +104,7 @@ class LoginPage:
   });
 
   it("wraps the LLM provider and the code checker with their spinner decorators before using them", async () => {
-    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
     const featuresDir = path.join(tmpProject, "tests", "features");
     await fs.mkdir(featuresDir, { recursive: true });
@@ -121,7 +126,7 @@ class LoginPage:
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
-    await runGenerateTests(prompts, tmpHome, tmpProject);
+    await runGenerateTests(prompts, tmpProject);
 
     expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
     expect(withCodeCheckerSpinnerMock.mock.calls[0][0]).toBe(realCodeChecker);

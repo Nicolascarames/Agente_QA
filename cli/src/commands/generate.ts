@@ -1,26 +1,25 @@
 import path from "node:path";
 import {
   createProvider,
-  loadCredentials,
+  loadProjectEnv,
+  requireLlmConfig,
   loadProjectConfig,
   loadAllPatterns,
   listFeatureFiles,
   realCodeChecker,
   runGenerador,
+  projectEnvPath,
   type GeneratorCallbacks,
 } from "@agente-qa/core";
 import type { GeneratorPrompts } from "../prompts/types.js";
 import { withLLMSpinner, withCodeCheckerSpinner } from "../util/spinner.js";
 
-export async function runGenerateTests(
-  prompts: GeneratorPrompts,
-  homeDir: string,
-  projectRoot: string
-): Promise<string[]> {
-  const credentials = await loadCredentials(homeDir);
-  if (!credentials) {
-    throw new Error("No hay credenciales configuradas. Ejecuta 'agente-qa init' primero.");
+export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: string): Promise<string[]> {
+  const env = await loadProjectEnv(projectRoot);
+  if (!env) {
+    throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
+  const llmCredentials = requireLlmConfig(env, projectEnvPath(projectRoot));
 
   const projectConfig = await loadProjectConfig(projectRoot);
   if (!projectConfig) {
@@ -37,7 +36,7 @@ export async function runGenerateTests(
   const chosen = await prompts.selectFeatureFile(featureFiles);
   const featureFilePath = path.join(projectRoot, projectConfig.testsDir, "features", chosen);
 
-  const llm = withLLMSpinner(createProvider(credentials));
+  const llm = withLLMSpinner(createProvider(llmCredentials));
   const patterns = await loadAllPatterns(projectRoot);
 
   const callbacks: GeneratorCallbacks = {
