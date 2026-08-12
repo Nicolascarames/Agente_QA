@@ -26,6 +26,7 @@ function baseOptions(overrides: Partial<TestRunOptions> = {}): TestRunOptions {
     junitXmlPath: path.join(os.tmpdir(), "agente-qa-realtestrunner-preflight.xml"),
     htmlReportPath: path.join(os.tmpdir(), "agente-qa-realtestrunner-preflight.html"),
     onOutput: () => {},
+    env: {},
     ...overrides,
   };
 }
@@ -95,6 +96,7 @@ def _():
           onOutput: (chunk) => {
             output += chunk;
           },
+          env: {},
         });
 
         expect(result.exitCode).toBe(0);
@@ -109,6 +111,62 @@ def _():
           () => false
         );
         expect(htmlExists).toBe(true);
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("passes custom env vars through to the pytest subprocess", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-realtestrunner-env-"));
+      try {
+        await fs.mkdir(path.join(tmpDir, "features"), { recursive: true });
+        await fs.mkdir(path.join(tmpDir, "tests"), { recursive: true });
+        await fs.writeFile(
+          path.join(tmpDir, "features", "sample.feature"),
+          "Feature: Sample\n  @smoke\n  Scenario: it works\n    Given a precondition\n    When an action happens\n    Then the outcome is correct\n",
+          "utf-8"
+        );
+        await fs.writeFile(
+          path.join(tmpDir, "tests", "test_sample.py"),
+          `import os
+from pytest_bdd import scenarios, given, when, then
+
+scenarios("../features/sample.feature")
+
+
+@given("a precondition")
+def _():
+    assert os.environ["AGENTE_QA_APP_URL"] == "https://example.com"
+
+
+@when("an action happens")
+def _():
+    pass
+
+
+@then("the outcome is correct")
+def _():
+    pass
+`,
+          "utf-8"
+        );
+
+        const junitXmlPath = path.join(tmpDir, "results", "latest.xml");
+        const htmlReportPath = path.join(tmpDir, "results", "latest.html");
+        await fs.mkdir(path.dirname(junitXmlPath), { recursive: true });
+
+        const result = await realTestRunner.run({
+          cwd: tmpDir,
+          markerExpression: null,
+          screenshotMode: "off",
+          videoMode: "off",
+          junitXmlPath,
+          htmlReportPath,
+          onOutput: () => {},
+          env: { AGENTE_QA_APP_URL: "https://example.com" },
+        });
+
+        expect(result.exitCode).toBe(0);
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }

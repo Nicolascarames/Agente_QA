@@ -11,6 +11,7 @@ function options(overrides: Partial<TestRunOptions> = {}): TestRunOptions {
     junitXmlPath: "/tmp/project/tests/results/latest.xml",
     htmlReportPath: "/tmp/project/tests/results/latest.html",
     onOutput: () => {},
+    env: {},
     ...overrides,
   };
 }

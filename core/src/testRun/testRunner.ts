@@ -6,6 +6,7 @@ export interface TestRunOptions {
   junitXmlPath: string;
   htmlReportPath: string;
   onOutput: (chunk: string) => void;
+  env: Record<string, string>;
 }
 
 export interface TestRunResult {

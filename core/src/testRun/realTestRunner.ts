@@ -16,9 +16,14 @@ interface CaptureResult {
   stderr: string;
 }
 
-function runCapture(command: string, args: string[], cwd: string): Promise<CaptureResult> {
+function runCapture(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv
+): Promise<CaptureResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd });
+    const child = spawn(command, args, { cwd, env });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
@@ -36,10 +41,11 @@ function runStreaming(
   command: string,
   args: string[],
   cwd: string,
+  env: NodeJS.ProcessEnv,
   onOutput: (chunk: string) => void
 ): Promise<{ code: number | null; combinedOutput: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd });
+    const child = spawn(command, args, { cwd, env });
     let combinedOutput = "";
     child.stdout.on("data", (chunk) => {
       const text = String(chunk);
@@ -64,12 +70,15 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
 
   return {
     async run(runOptions: TestRunOptions): Promise<TestRunResult> {
+      const mergedEnv: NodeJS.ProcessEnv = { ...process.env, ...runOptions.env };
+
       let preflight: CaptureResult;
       try {
         preflight = await runCapture(
           pythonCommand,
           ["-c", "import pytest, pytest_bdd, pytest_playwright, pytest_html"],
-          runOptions.cwd
+          runOptions.cwd,
+          mergedEnv
         );
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -96,6 +105,7 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
         pythonCommand,
         args,
         runOptions.cwd,
+        mergedEnv,
         runOptions.onOutput
       );
 
