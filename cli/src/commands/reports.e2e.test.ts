@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { saveProjectConfig } from "@agente-qa/core";
+import { saveProjectConfig, ensureProjectEnvTemplate } from "@agente-qa/core";
 import { runExecuteTests } from "./execute.js";
 import { runGenerateReports } from "./reports.js";
 import type { ExecutorPrompts, ReportesPrompts } from "../prompts/types.js";
@@ -25,6 +25,7 @@ describe.skipIf(!hasPytestStack)(
     beforeEach(async () => {
       tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-reports-e2e-project-"));
       await saveProjectConfig(tmpProject, { testsDir: "tests" });
+      await ensureProjectEnvTemplate(tmpProject);
       const featuresDir = path.join(tmpProject, "tests", "features");
       const testsCodeDir = path.join(tmpProject, "tests", "tests");
       await fs.mkdir(featuresDir, { recursive: true });
