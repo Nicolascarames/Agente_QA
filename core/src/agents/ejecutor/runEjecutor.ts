@@ -56,7 +56,8 @@ export async function runEjecutor(
   projectRoot: string,
   testsDir: string,
   runner: TestRunner,
-  callbacks: ExecutorCallbacks
+  callbacks: ExecutorCallbacks,
+  testEnv: Record<string, string> = {}
 ): Promise<EjecutorResult> {
   const featureFiles = await listFeatureFiles(projectRoot, testsDir);
   if (featureFiles.length === 0) {
@@ -88,6 +89,7 @@ export async function runEjecutor(
     junitXmlPath,
     htmlReportPath,
     onOutput: callbacks.onOutput,
+    env: testEnv,
   });
 
   return {

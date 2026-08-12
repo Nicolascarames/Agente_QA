@@ -206,4 +206,32 @@ describe("runEjecutor", () => {
     expect(result.exitCode).toBe(1);
     expect(result.browserSetupWarning).toBe('Ejecuta "playwright install".');
   });
+
+  it("defaults testEnv to an empty object when not given", async () => {
+    await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    await runEjecutor(tmpProject, "tests", runner, callbacks);
+
+    expect(runner.receivedCalls[0].env).toEqual({});
+  });
+
+  it("forwards the given testEnv to the runner", async () => {
+    await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    await runEjecutor(tmpProject, "tests", runner, callbacks, { AGENTE_QA_APP_URL: "https://mi-app.com" });
+
+    expect(runner.receivedCalls[0].env).toEqual({ AGENTE_QA_APP_URL: "https://mi-app.com" });
+  });
 });
