@@ -51,6 +51,16 @@ describe("generateCode", () => {
     expect(userMessage?.content).toContain("login_page.py");
   });
 
+  it("instructs the model to read the app URL and test credentials from environment variables, never literal values", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming);
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("AGENTE_QA_APP_URL");
+    expect(userMessage?.content).toContain("AGENTE_QA_TEST_USERNAME");
+    expect(userMessage?.content).toContain("AGENTE_QA_TEST_PASSWORD");
+  });
+
   it("includes the previous attempt's code and the retry feedback in the prompt when provided", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
     const previousFiles = [
