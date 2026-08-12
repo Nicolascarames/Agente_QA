@@ -1,10 +1,4 @@
-import type { ProviderName } from "@agente-qa/core";
-
 export interface InitPrompts {
-  selectProvider(): Promise<ProviderName>;
-  inputApiKey(provider: ProviderName): Promise<string>;
-  inputBaseURL(): Promise<string>;
-  inputModel(): Promise<string>;
   inputTestsDir(): Promise<string>;
 }
 

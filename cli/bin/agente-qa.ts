@@ -17,10 +17,17 @@ program.name("agente-qa").description("Asistente agéntico de automatización de
 
 program
   .command("init")
-  .description("Configura credenciales y preferencias del proyecto")
+  .description("Configura las preferencias del proyecto y crea la plantilla de .env si falta")
   .action(async () => {
-    await runInit(realInitPrompts, os.homedir(), process.cwd());
-    console.log("Configuración guardada.");
+    const result = await runInit(realInitPrompts, process.cwd());
+    console.log("Configuración de tests guardada.");
+    if (result.envCreated) {
+      console.log(
+        `Se ha creado ${result.envPath} — rellena las variables a mano antes de usar el resto de comandos.`
+      );
+    } else {
+      console.log(`Ya existía ${result.envPath} — revísalo si quieres cambiar algo.`);
+    }
   });
 
 program

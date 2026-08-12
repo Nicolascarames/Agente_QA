@@ -1,18 +1,17 @@
-import { saveCredentials, saveProjectConfig } from "@agente-qa/core";
+import { ensureProjectEnvTemplate, saveProjectConfig } from "@agente-qa/core";
 import type { InitPrompts } from "../prompts/types.js";
 
-export async function runInit(prompts: InitPrompts, homeDir: string, projectRoot: string): Promise<void> {
-  const provider = await prompts.selectProvider();
-  const apiKey = await prompts.inputApiKey(provider);
+export interface InitResult {
+  testsDir: string;
+  envPath: string;
+  envCreated: boolean;
+}
 
-  if (provider === "openai-compatible") {
-    const baseURL = await prompts.inputBaseURL();
-    const model = await prompts.inputModel();
-    await saveCredentials({ provider, apiKey, baseURL, model }, homeDir);
-  } else {
-    await saveCredentials({ provider, apiKey }, homeDir);
-  }
-
+export async function runInit(prompts: InitPrompts, projectRoot: string): Promise<InitResult> {
   const testsDir = await prompts.inputTestsDir();
   await saveProjectConfig(projectRoot, { testsDir });
+
+  const { created, path: envPath } = await ensureProjectEnvTemplate(projectRoot);
+
+  return { testsDir, envPath, envCreated: created };
 }
