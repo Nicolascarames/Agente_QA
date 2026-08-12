@@ -15,6 +15,7 @@ export {
   ensureProjectEnvTemplate,
   loadProjectEnv,
   requireLlmConfig,
+  requireAppUrl,
   testEnvVars,
 } from "./config/projectEnv.js";
 export type { ProviderName, ProjectEnv, LlmCredentials } from "./config/projectEnv.js";

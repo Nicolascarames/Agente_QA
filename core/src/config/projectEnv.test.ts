@@ -7,6 +7,7 @@ import {
   ensureProjectEnvTemplate,
   loadProjectEnv,
   requireLlmConfig,
+  requireAppUrl,
   testEnvVars,
 } from "./projectEnv.js";
 
@@ -60,6 +61,59 @@ describe("projectEnv", () => {
         const stats = await fs.stat(projectEnvPath(tmpProject));
         expect(stats.mode & 0o777).toBe(0o600);
       });
+
+      it("tightens the .agente-qa directory to mode 0700 even when it already existed with a looser mode (real init ordering: saveProjectConfig creates the dir first, with no mode)", async () => {
+        const dirPath = path.join(tmpProject, ".agente-qa");
+        // Reproduce what saveProjectConfig does: create the dir recursively with
+        // no mode argument, before ensureProjectEnvTemplate ever runs.
+        await fs.mkdir(dirPath, { recursive: true });
+
+        // Guard against an unusually strict umask (e.g. 077) masking the seeded
+        // mode down to the target already, which would let this test pass
+        // without exercising the tightening behavior it claims to prove.
+        expect((await fs.stat(dirPath)).mode & 0o777).not.toBe(0o700);
+
+        await ensureProjectEnvTemplate(tmpProject);
+
+        const dirStats = await fs.stat(dirPath);
+        expect(dirStats.mode & 0o777).toBe(0o700);
+      });
+
+      it("tightens permissions on a pre-existing .env and writes the .gitignore, without touching its content", async () => {
+        const dirPath = path.join(tmpProject, ".agente-qa");
+        const filePath = projectEnvPath(tmpProject);
+        await fs.mkdir(dirPath, { recursive: true });
+        await fs.writeFile(filePath, "AGENTE_QA_APP_URL=https://mi-app.com\n", { mode: 0o644 });
+
+        // Guard against an unusually strict umask masking the seeded mode down
+        // to the target already, which would let this test pass without
+        // exercising the tightening behavior it claims to prove.
+        expect((await fs.stat(filePath)).mode & 0o777).not.toBe(0o600);
+
+        const result = await ensureProjectEnvTemplate(tmpProject);
+
+        expect(result).toEqual({ created: false, path: filePath });
+        const envContent = await fs.readFile(filePath, "utf-8");
+        expect(envContent).toBe("AGENTE_QA_APP_URL=https://mi-app.com\n");
+
+        const gitignoreContent = await fs.readFile(path.join(dirPath, ".gitignore"), "utf-8");
+        expect(gitignoreContent).toBe(".env\n");
+
+        const fileStats = await fs.stat(filePath);
+        expect(fileStats.mode & 0o777).toBe(0o600);
+      });
+    });
+
+    it("writes the .gitignore even when .env already existed (cross-platform content check)", async () => {
+      const dirPath = path.join(tmpProject, ".agente-qa");
+      const filePath = projectEnvPath(tmpProject);
+      await fs.mkdir(dirPath, { recursive: true });
+      await fs.writeFile(filePath, "AGENTE_QA_APP_URL=https://mi-app.com\n", "utf-8");
+
+      await ensureProjectEnvTemplate(tmpProject);
+
+      const gitignoreContent = await fs.readFile(path.join(dirPath, ".gitignore"), "utf-8");
+      expect(gitignoreContent).toBe(".env\n");
     });
   });
 
@@ -171,6 +225,29 @@ describe("projectEnv", () => {
       expect(() =>
         requireLlmConfig({ ...blank, llmProvider: "openai-compatible", llmApiKey: "k" }, envPath)
       ).toThrow(/AGENTE_QA_LLM_BASE_URL.*AGENTE_QA_LLM_MODEL/s);
+    });
+  });
+
+  describe("requireAppUrl", () => {
+    const envPath = "/fake/.agente-qa/.env";
+    const blank = {
+      appUrl: undefined,
+      testUsername: undefined,
+      testPassword: undefined,
+      llmProvider: undefined,
+      llmApiKey: undefined,
+      llmBaseURL: undefined,
+      llmModel: undefined,
+    };
+
+    it("returns the URL when present", () => {
+      const result = requireAppUrl({ ...blank, appUrl: "https://mi-app.com" }, envPath);
+      expect(result).toBe("https://mi-app.com");
+    });
+
+    it("throws naming AGENTE_QA_APP_URL and the file path when absent", () => {
+      expect(() => requireAppUrl(blank, envPath)).toThrow(/AGENTE_QA_APP_URL/);
+      expect(() => requireAppUrl(blank, envPath)).toThrow(new RegExp(envPath.replace(/\//g, "\\/")));
     });
   });
 

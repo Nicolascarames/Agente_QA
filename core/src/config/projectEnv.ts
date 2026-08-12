@@ -47,6 +47,8 @@ const ENV_TEMPLATE = `# .env de agente-qa para este proyecto.
 # datos sensibles (API keys, contraseñas de test) con tranquilidad.
 # Rellena los valores que necesites y guarda el archivo. Las líneas que empiezan
 # por "#" son solo explicación, no hace falta tocarlas.
+# Si un valor contiene "#" o espacios al principio/final, ponlo entre comillas dobles:
+# AGENTE_QA_TEST_PASSWORD="Sup3r#Secreta!"
 
 # ── Aplicación bajo test ──────────────────────────────────────────────
 # URL base de la app que vas a probar. Obligatoria para generar y ejecutar tests.
@@ -83,18 +85,29 @@ export async function ensureProjectEnvTemplate(
   const dirPath = projectEnvDir(projectRoot);
   const filePath = projectEnvPath(projectRoot);
 
+  // mode options on mkdir/writeFile keep a freshly created directory/file from ever
+  // existing at loose (OS-default) permissions, even momentarily. The chmod calls
+  // below are still needed on top: mode only applies at creation time, so it's a
+  // no-op on a pre-existing directory/file from before this code ran (e.g. the
+  // .agente-qa dir already created by saveProjectConfig without a mode, or a
+  // hand-created/copied .env). Both the permission tightening and the .gitignore
+  // write happen unconditionally, regardless of whether .env already existed.
   await fs.mkdir(dirPath, { recursive: true, mode: 0o700 });
+  await fs.chmod(dirPath, 0o700);
+
+  await fs.writeFile(path.join(dirPath, ".gitignore"), ".env\n", "utf-8");
 
   const exists = await fs.stat(filePath).then(
     () => true,
     () => false
   );
   if (exists) {
+    await fs.chmod(filePath, 0o600);
     return { created: false, path: filePath };
   }
 
-  await fs.writeFile(path.join(dirPath, ".gitignore"), ".env\n", "utf-8");
   await fs.writeFile(filePath, ENV_TEMPLATE, { encoding: "utf-8", mode: 0o600 });
+  await fs.chmod(filePath, 0o600);
 
   return { created: true, path: filePath };
 }
@@ -153,6 +166,15 @@ export function requireLlmConfig(env: ProjectEnv, envPath: string): LlmCredentia
     baseURL: env.llmBaseURL,
     model: env.llmModel,
   };
+}
+
+export function requireAppUrl(env: ProjectEnv, envPath: string): string {
+  if (!env.appUrl) {
+    throw new Error(
+      `Falta la variable ${ENV_VAR_KEYS.appUrl} en ${envPath}. Rellénala con la URL de la aplicación que vas a probar y guarda el archivo.`
+    );
+  }
+  return env.appUrl;
 }
 
 export function testEnvVars(env: ProjectEnv): Record<string, string> {

@@ -8,6 +8,7 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.ensureProjectEnvTemplate).toBe("function");
     expect(typeof core.loadProjectEnv).toBe("function");
     expect(typeof core.requireLlmConfig).toBe("function");
+    expect(typeof core.requireAppUrl).toBe("function");
     expect(typeof core.testEnvVars).toBe("function");
     expect(typeof core.projectEnvPath).toBe("function");
   });

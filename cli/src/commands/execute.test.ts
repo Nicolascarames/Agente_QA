@@ -40,6 +40,7 @@ describe("runExecuteTests", () => {
   it("throws a clear error when there are no generated tests yet", async () => {
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
     await ensureProjectEnvTemplate(tmpProject);
+    await fs.writeFile(projectEnvPath(tmpProject), "AGENTE_QA_APP_URL=https://mi-app.com\n", "utf-8");
     const prompts: ExecutorPrompts = {
       selectTags: vi.fn(),
       selectCaptureMode: vi.fn(),
@@ -47,9 +48,26 @@ describe("runExecuteTests", () => {
     await expect(runExecuteTests(prompts, tmpProject)).rejects.toThrow(/Generar tests Playwright/);
   });
 
+  it("throws a clear error naming AGENTE_QA_APP_URL when it's missing from the .env, without invoking the real test runner", async () => {
+    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await ensureProjectEnvTemplate(tmpProject);
+    const featuresDir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(featuresDir, { recursive: true });
+    await fs.writeFile(path.join(featuresDir, "login.feature"), "@smoke\nFeature: Login\n", "utf-8");
+
+    const prompts: ExecutorPrompts = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn(),
+    };
+
+    await expect(runExecuteTests(prompts, tmpProject)).rejects.toThrow(/AGENTE_QA_APP_URL/);
+    expect(realTestRunnerRunMock).not.toHaveBeenCalled();
+  });
+
   it("runs through the fake prompts and the mocked real test runner, returning its result", async () => {
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
     await ensureProjectEnvTemplate(tmpProject);
+    await fs.writeFile(projectEnvPath(tmpProject), "AGENTE_QA_APP_URL=https://mi-app.com\n", "utf-8");
     const featuresDir = path.join(tmpProject, "tests", "features");
     await fs.mkdir(featuresDir, { recursive: true });
     await fs.writeFile(path.join(featuresDir, "login.feature"), "@smoke\nFeature: Login\n", "utf-8");

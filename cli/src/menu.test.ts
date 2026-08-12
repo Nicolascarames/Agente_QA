@@ -56,7 +56,7 @@ describe("runMenuLoop", () => {
     const choices: MenuChoice[] = ["create-plan", "exit"];
     let i = 0;
     runCreatePlanMock.mockRejectedValue(
-      new Error("No hay credenciales configuradas. Ejecuta 'agente-qa init' primero.")
+      new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.")
     );
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -71,7 +71,7 @@ describe("runMenuLoop", () => {
     });
 
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Error: No hay credenciales configuradas")
+      expect.stringContaining("Error: No hay configuración de proyecto")
     );
     expect(i).toBe(2);
 

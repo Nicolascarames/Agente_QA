@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { saveProjectConfig, ensureProjectEnvTemplate } from "@agente-qa/core";
+import { saveProjectConfig, ensureProjectEnvTemplate, projectEnvPath } from "@agente-qa/core";
 import { runExecuteTests } from "./execute.js";
 import type { ExecutorPrompts } from "../prompts/types.js";
 
@@ -25,6 +25,9 @@ describe.skipIf(!hasPytestStack)(
       tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-exec-e2e-project-"));
       await saveProjectConfig(tmpProject, { testsDir: "tests" });
       await ensureProjectEnvTemplate(tmpProject);
+      // The sample pytest-bdd scenario below doesn't make any real network calls,
+      // so this URL is only here to satisfy runExecuteTests' AGENTE_QA_APP_URL check.
+      await fs.writeFile(projectEnvPath(tmpProject), "AGENTE_QA_APP_URL=https://example.com\n", "utf-8");
       const featuresDir = path.join(tmpProject, "tests", "features");
       const testsCodeDir = path.join(tmpProject, "tests", "tests");
       await fs.mkdir(featuresDir, { recursive: true });
