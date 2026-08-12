@@ -17,6 +17,16 @@ export {
 } from "./config/projectConfig.js";
 export type { ProjectConfig } from "./config/projectConfig.js";
 
+export {
+  ProjectEnvSchema,
+  projectEnvPath,
+  ensureProjectEnvTemplate,
+  loadProjectEnv,
+  requireLlmConfig,
+  testEnvVars,
+} from "./config/projectEnv.js";
+export type { ProjectEnv, LlmCredentials } from "./config/projectEnv.js";
+
 export type { Message, LLMProvider } from "./llm/provider.js";
 export { LLMResponseParseError, parseJsonResponse } from "./llm/parseJson.js";
 export { LLMRequestError } from "./llm/errors.js";
