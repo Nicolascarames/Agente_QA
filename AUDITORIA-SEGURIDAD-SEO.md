@@ -53,3 +53,70 @@ No aplica — `agente-qa` es un paquete npm (CLI de terminal + librería), sin p
 - Añadir un aviso explícito en la salida de "Generar tests Playwright" (Agente 2) recordando revisar el código generado antes de ejecutarlo — mismo espíritu que cualquier herramienta de codegen con IA. Es un cambio de copy/UX, no de seguridad estructural; se deja como recomendación, no aplicado automáticamente (no bloquea el publish).
 - Si en el futuro se añade la superficie de plugin de Claude Code (Plan 2) o cualquier servidor MCP propio, revisar de nuevo contra `references/seguridad-mcp-ia.md` §3 — hoy no aplica porque el proyecto no implementa ni consume servidores MCP.
 - `core/tsconfig.tsbuildinfo` y `cli/tsconfig.tsbuildinfo` están trackeados en git sin entrada en `.gitignore` (hallazgo de higiene, no de seguridad, ya registrado en `memory.md`) — sin impacto en los tarballs publicados (`files: ["dist"]` los deja fuera igualmente).
+
+---
+
+# Auditoría de seguridad y SEO — Agente_QA — 2026-08-12
+
+## Resumen ejecutivo
+
+Auditoría previa a publicar la rama que sustituye `~/.agente-qa/credentials.json` (credenciales globales) por `<proyecto>/.agente-qa/.env` (credenciales por proyecto: URL de la app bajo test, usuario/contraseña de test, proveedor/API key/modelo LLM) — cambio disparador obligatorio de esta skill según `CLAUDE.md` ("tras tocar credenciales, auth o el manejo de API keys"). **Sin hallazgos CRÍTICO ni ALTO.** Un hallazgo BAJO (mismo patrón que el de la auditoría anterior, ahora aplicado a datos de conexión en vez de a código arbitrario) y una nota de higiene de versión (no es un hallazgo de seguridad, pero bloquea el publish si no se decide). `npm audit` (prod + dev): 0 vulnerabilidades. `npm pack --dry-run` en ambos paquetes: solo `dist/**` + metadatos, nada de fuente/tests. No hizo falta ninguna corrección de código — el mecanismo de permisos ya se dejó bien resuelto durante el propio desarrollo de la rama (ver más abajo). Fase SEO omitida: sigue sin aplicar.
+
+## Hallazgos de seguridad
+
+| # | Severidad | Hallazgo | Ubicación | Estado |
+|---|---|---|---|---|
+| 1 | BAJO | Código Python generado por LLM puede en teoría escribir un secreto en texto plano si el modelo ignora la instrucción de usar `os.environ` | `core/src/prompts/generador.ts` | ✅ Ya mitigado por diseño (mismo patrón que auditoría anterior) |
+
+### Detalle por hallazgo
+
+**#1 — El prompt instruye usar variables de entorno, pero nada lo garantiza estructuralmente**
+
+Esta rama añadió una instrucción al prompt de generación de código (`core/src/prompts/generador.ts`): el código Python generado debe leer la URL de la app y las credenciales de test vía `os.environ["AGENTE_QA_APP_URL"]` etc., nunca como texto literal — porque ese código se escribe y se comitea al repo del usuario. Es una instrucción de prompt, no una garantía estructural: un modelo que la ignore podría escribir `page.goto("https://staging.mi-app.com")` con la URL real, o peor, la contraseña de test, directamente en el `.py` generado.
+
+Por qué el riesgo está acotado:
+- Mismo patrón ya documentado en el hallazgo #1 de la auditoría 2026-08-11 (código generado por LLM sin checkpoint de revisión humana antes de escribirse a disco) — esta rama no lo empeora, solo añade una categoría más de dato sensible al mismo riesgo ya aceptado.
+- `realCodeChecker` (`ruff` + `py_compile`) no detecta secretos hardcodeados — es un chequeo sintáctico, no semántico ni de secret-scanning. No se le pide que lo haga en esta pasada (cambiaría su contrato, fuera de alcance de una auditoría).
+- El código escrito no se ejecuta automáticamente; "Ejecutar tests" es un paso separado que el usuario invoca a mano, con oportunidad de revisar el `.py` generado antes.
+- Aunque el modelo escriba una URL literal, el riesgo real es menor que con una contraseña literal: la URL de una app de staging/test no suele ser secreta en sí misma. El caso que de verdad importa (contraseña de test hardcodeada, comiteada al repo del usuario) sigue siendo posible en teoría, mismo mecanismo de mitigación que arriba.
+
+No se aplica corrección de código — no hay nada estructural que arreglar sin cambiar el contrato de `realCodeChecker`, que es una decisión de diseño ya tomada (`docs/superpowers/specs/2026-08-11...codechecker`). Recomendación no vinculante abajo.
+
+### Corrección de un hallazgo de la auditoría anterior, ya vencido por el propio desarrollo de la rama
+
+La entrada "Permisos de credenciales" de la auditoría 2026-08-11 (arriba) describe `core/src/config/credentials.ts`, que **ya no existe** — esta rama lo sustituyó por `core/src/config/projectEnv.ts`. Reverificado contra el código actual, no como reafirmación ciega de lo ya escrito:
+
+- `ensureProjectEnvTemplate` (`core/src/config/projectEnv.ts:82-113`) aplica `fs.chmod(dirPath, 0o700)` y `fs.chmod(filePath, 0o600)` **incondicionalmente en cada llamada** (no solo al crear) — corrige un bug real encontrado en la propia revisión final de esta rama, donde el `mode` de creación de `fs.mkdir` era un no-op porque el directorio ya existía (creado antes, sin `mode`, por `saveProjectConfig`). El fix mantiene el `mode` de creación (protege la ventana entre `mkdir`/`writeFile` y el `chmod` posterior) y añade el `chmod` sobre cualquier estado previo — mismo patrón que documentó la corrección análoga sobre `credentials.ts` en `memory.md` (2026-08-11), aplicado correctamente aquí también.
+- `.agente-qa/.gitignore` (contenido `.env\n`) se escribe **incondicionalmente en cada llamada**, antes de tocar el `.env` — si esa escritura falla, la función lanza antes de llegar a escribir el `.env`, así que no existe ninguna ventana donde el `.env` exista sin estar protegido por el `.gitignore`. Verificado leyendo el orden exacto de las operaciones, no solo el comentario que lo describe.
+- `loadProjectEnv` usa `dotenv.parse()`, nunca `dotenv.config()` — no muta `process.env` de forma implícita en ningún punto del código (`grep` de `dotenv\.` en todo `core/src`/`cli/src`: única coincidencia, el import de `parse`).
+
+Corrección aplicada a la afirmación desactualizada de la sección 2026-08-11: **"el proyecto no usa `.env` en ningún punto"** ya no es cierta para los proyectos consumidores (sí lo sigue siendo para el propio repo `Agente_QA`, que nunca crea un `.env` para sí mismo — verificado sin coincidencias de `.env` en su propio historial de git ni en su propio `.gitignore` de raíz).
+
+### Áreas revisadas sin hallazgos nuevos
+
+- **Secretos reales en el repo**: sin coincidencias de patrones de claves reales tras grep de todo el árbol; las únicas coincidencias de `sk-` son fixtures de test (`"sk-test"` en varios `*.test.ts`, ya revisadas en cada tarea de la rama).
+- **Inyección vía las nuevas variables de entorno**: `TestRunOptions.env` se fusiona como objeto plano (`{ ...process.env, ...runOptions.env }`) y se pasa a `child_process.spawn(command, args, { cwd, env })` — nunca `shell: true`, así que no hay superficie de inyección de comandos vía el contenido de una variable de entorno maliciosa en el `.env` del usuario.
+- **Qué viaja en los tarballs publicados**: reverificado con `npm pack --dry-run` en ambos paquetes tras el build de esta rama — sigue siendo solo `dist/**` + `package.json` (+ `LICENSE`/`README.md`), nada de fuente sin compilar ni tests.
+- **Cadena de suministro**: `npm audit` (con y sin `--omit=dev`) → 0 vulnerabilidades, igual que en la auditoría anterior. Única dependencia nueva de esta rama: `dotenv@^17.4.2` — sin vulnerabilidades reportadas, cero dependencias propias.
+- **Plantilla `.env`**: el ejemplo de `AGENTE_QA_LLM_API_KEY` (`sk-ant-xxxxxxxxxxxxxxxx`) y el de `AGENTE_QA_TEST_PASSWORD` (`Sup3rSecreta!`) son evidentemente ficticios, no claves reales ni patrones que un scanner automático pudiera confundir con una clave real filtrada.
+
+## Hallazgos SEO
+
+No aplica — sigue sin haber páginas web públicas indexables.
+
+## Verificación
+
+- `npx vitest run` → 208 passed, 3 skipped (211) — sin cambios de código en esta pasada de auditoría.
+- `npx tsc -p core/tsconfig.json --noEmit` / `npx tsc -p cli/tsconfig.json --noEmit` → limpio en ambos.
+- `npm audit --omit=dev` → 0 vulnerabilidades.
+- `npm audit` (con devDependencies) → 0 vulnerabilidades.
+- `npm pack --dry-run` en `core/` y `cli/` → contenido del tarball verificado, solo `dist/**` + metadatos.
+
+## Nota de higiene de versión (no es un hallazgo de seguridad, pero bloquea el publish)
+
+`core/package.json` y `cli/package.json` siguen en `0.1.4` — la misma versión ya publicada en npm (`npm view @agente-qa/core version` / `npm view agente-qa version` → `0.1.4` ambos). Esta rama introduce un cambio de comportamiento incompatible hacia atrás sin subir de versión: cualquier usuario con `~/.agente-qa/credentials.json` de una instalación anterior lo verá completamente ignorado tras actualizar, sin aviso — tendrá que volver a ejecutar `agente-qa init` y rellenar el `.env` a mano. No es un hallazgo de seguridad (no hay fuga de datos), pero republicar sin subir de versión ni es posible (`npm publish` rechaza una versión ya publicada) ni sería correcto de cara al usuario (rompe semver). Necesita una decisión del usuario antes de publicar — no es algo que esta skill decida por su cuenta.
+
+## Recomendaciones futuras
+
+- (Ya recomendado en la auditoría anterior, sigue sin aplicarse) Añadir un aviso en la salida de "Generar tests Playwright" recordando revisar el código antes de ejecutarlo.
+- Si se quiere cerrar del todo el hallazgo #1 de esta pasada, una opción futura no aplicada aquí (cambia el contrato de `CodeChecker`, decisión de diseño, no autofix): añadir una regla de `ruff` o un grep post-generación que bloquee patrones como `https?://` o contraseñas de más de N caracteres literales en los ficheros generados, en vez de confiar solo en la instrucción del prompt.
