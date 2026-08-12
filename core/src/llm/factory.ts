@@ -1,10 +1,10 @@
-import type { Credentials } from "../config/credentials.js";
+import type { LlmCredentials } from "../config/projectEnv.js";
 import type { LLMProvider } from "./provider.js";
 import { createAnthropicProvider } from "./providers/anthropic.js";
 import { createOpenAIProvider } from "./providers/openai.js";
 import { createGoogleProvider } from "./providers/google.js";
 
-export function createProvider(credentials: Credentials): LLMProvider {
+export function createProvider(credentials: LlmCredentials): LLMProvider {
   switch (credentials.provider) {
     case "anthropic":
       return createAnthropicProvider(credentials.apiKey);
@@ -15,7 +15,7 @@ export function createProvider(credentials: Credentials): LLMProvider {
     case "openai-compatible": {
       if (!credentials.baseURL || !credentials.model) {
         throw new Error(
-          "Faltan 'baseURL' o 'model' en las credenciales del proveedor 'openai-compatible'. Ejecuta 'agente-qa init' de nuevo."
+          "Faltan 'baseURL' o 'model' en las credenciales del proveedor 'openai-compatible'. Revisa el archivo .env del proyecto."
         );
       }
       return createOpenAIProvider(credentials.apiKey, credentials.model, credentials.baseURL);
