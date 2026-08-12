@@ -3,10 +3,13 @@ import * as core from "./index.js";
 
 describe("@agente-qa/core public API", () => {
   it("exports the config functions", () => {
-    expect(typeof core.saveCredentials).toBe("function");
-    expect(typeof core.loadCredentials).toBe("function");
     expect(typeof core.saveProjectConfig).toBe("function");
     expect(typeof core.loadProjectConfig).toBe("function");
+    expect(typeof core.ensureProjectEnvTemplate).toBe("function");
+    expect(typeof core.loadProjectEnv).toBe("function");
+    expect(typeof core.requireLlmConfig).toBe("function");
+    expect(typeof core.testEnvVars).toBe("function");
+    expect(typeof core.projectEnvPath).toBe("function");
   });
 
   it("exports the LLM provider factory and fake test double", () => {

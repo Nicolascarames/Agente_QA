@@ -1,15 +1,6 @@
 export { slugify } from "./util/slugify.js";
 
 export {
-  ProviderNameSchema,
-  CredentialsSchema,
-  credentialsPath,
-  saveCredentials,
-  loadCredentials,
-} from "./config/credentials.js";
-export type { ProviderName, Credentials } from "./config/credentials.js";
-
-export {
   ProjectConfigSchema,
   projectConfigPath,
   saveProjectConfig,
@@ -18,6 +9,7 @@ export {
 export type { ProjectConfig } from "./config/projectConfig.js";
 
 export {
+  ProviderNameSchema,
   ProjectEnvSchema,
   projectEnvPath,
   ensureProjectEnvTemplate,
@@ -25,7 +17,7 @@ export {
   requireLlmConfig,
   testEnvVars,
 } from "./config/projectEnv.js";
-export type { ProjectEnv, LlmCredentials } from "./config/projectEnv.js";
+export type { ProviderName, ProjectEnv, LlmCredentials } from "./config/projectEnv.js";
 
 export type { Message, LLMProvider } from "./llm/provider.js";
 export { LLMResponseParseError, parseJsonResponse } from "./llm/parseJson.js";
