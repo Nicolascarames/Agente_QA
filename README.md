@@ -62,11 +62,47 @@ Requiere tener [Claude Code](https://code.claude.com) instalado y una sesión in
 
 ## Instalación — CLI standalone (npm)
 
+Instálalo dentro del propio repositorio cuya app vas a probar — coincide con
+dónde `init` crea `.agente-qa/` (config + `.env`), todo queda junto al
+proyecto, nada global:
+
+```
+npm install agente-qa
+npx agente-qa init
+npx agente-qa chat
+```
+
+Esto crea (o reutiliza) `node_modules/` y `package-lock.json` en el
+directorio donde lo ejecutes. Si ese repo no es ya un proyecto Node.js (no
+tiene `package.json`), ejecuta primero `npm init -y`, o usa la alternativa
+global de abajo. Si el repo no tenía `node_modules/` en su `.gitignore`,
+añádelo antes de comitear nada.
+
+Para lanzarlo sin `npx` cada vez, añade un script a tu `package.json`:
+
+```json
+{
+  "scripts": {
+    "qa": "agente-qa chat"
+  }
+}
+```
+
+y luego `npm run qa`.
+
+### Alternativa: instalación global
+
+Si prefieres tener `agente-qa` disponible en cualquier carpeta sin
+instalarlo por proyecto:
+
 ```
 npm install -g agente-qa
 agente-qa init
 agente-qa chat
 ```
+
+Funciona igual — `init` sigue creando `.agente-qa/` dentro del repo donde lo
+ejecutes; la única diferencia es dónde vive el propio paquete `agente-qa`.
 
 `init` pregunta en qué carpeta del proyecto guardar los tests, y crea (si no existe ya) una plantilla `.env` en `<proyecto>/.agente-qa/.env` — fuera de git (`.agente-qa/.gitignore` ya la excluye). Ahí rellenas a mano, con un editor de texto, la URL de la aplicación que vas a probar, un usuario/contraseña de prueba (opcional, solo si vas a probar login) y el proveedor/API key/modelo del LLM. `init` nunca pide estos valores por chat ni sobrescribe el archivo si ya existe.
 
@@ -96,7 +132,11 @@ AGENTE_QA_LLM_BASE_URL=https://api.groq.com/openai/v1
 AGENTE_QA_LLM_MODEL=llama-3.3-70b-versatile
 ```
 
-Alternativa en local desde el propio repositorio (para desarrollo o antes de instalar global):
+### Desarrollar sobre el propio Agente_QA (no para usarlo en tu app)
+
+Si vas a tocar el código de Agente_QA en sí — no solo usarlo para probar tu
+app —, clona y compila desde el propio repositorio en vez de instalar el
+paquete publicado:
 
 ```
 git clone https://github.com/Nicolascarames/Agente_QA.git
@@ -113,4 +153,4 @@ Ambas formas se usan igual: la conversación siempre empieza con una presentaci�
 
 ## Estado del proyecto
 
-El pipeline de 4 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.4`. La suite pasa 188 passed, 6 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El pipeline de 4 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.6`. La suite pasa 208 passed, 3 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).

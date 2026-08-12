@@ -1,6 +1,6 @@
 {
   "name": "@agente-qa/core",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Motor compartido (sin interfaz) del pipeline de automatización de QA Agente_QA: intake de requisitos, generación de tests Playwright, ejecución y reportes.",
   "type": "module",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "agente-qa",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "CLI de automatización de QA: convierte una descripción de pruebas en lenguaje natural en tests Playwright (Gherkin/BDD), los ejecuta y genera reportes.",
   "type": "module",
   "license": "MIT",
