@@ -46,7 +46,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -68,7 +67,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -83,6 +81,11 @@ describe("runMenuLoop", () => {
   it("routes 'config' to runInit", async () => {
     const choices: MenuChoice[] = ["config", "exit"];
     let i = 0;
+    runInitMock.mockResolvedValue({
+      testsDir: "tests",
+      envPath: "/project/test/.agente-qa/.env",
+      envCreated: true,
+    });
 
     await runMenuLoop({
       menuPrompts: { selectMenuChoice: async () => choices[i++] },
@@ -91,7 +94,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -110,7 +112,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -130,7 +131,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -157,7 +157,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -180,7 +179,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -204,7 +202,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -236,7 +233,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 
@@ -263,7 +259,6 @@ describe("runMenuLoop", () => {
       generatorPrompts: {} as never,
       executorPrompts: {} as never,
       reportesPrompts: {} as never,
-      homeDir: "/home/test",
       projectRoot: "/project/test",
     });
 

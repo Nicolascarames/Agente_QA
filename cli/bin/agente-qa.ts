@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import os from "node:os";
 import { runInit } from "../src/commands/init.js";
 import { runMenuLoop } from "../src/menu.js";
 import {
@@ -41,7 +40,6 @@ program
       generatorPrompts: buildRealGeneratorPrompts(),
       executorPrompts: buildRealExecutorPrompts(),
       reportesPrompts: buildRealReportesPrompts(),
-      homeDir: os.homedir(),
       projectRoot: process.cwd(),
     });
   });

@@ -19,7 +19,6 @@ export interface MenuDeps {
   generatorPrompts: GeneratorPrompts;
   executorPrompts: ExecutorPrompts;
   reportesPrompts: ReportesPrompts;
-  homeDir: string;
   projectRoot: string;
 }
 
@@ -33,7 +32,7 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
     switch (choice) {
       case "create-plan": {
         try {
-          const filePath = await runCreatePlan(deps.chatPrompts, deps.homeDir, deps.projectRoot);
+          const filePath = await runCreatePlan(deps.chatPrompts, deps.projectRoot);
           console.log(`Plan guardado en ${filePath}`);
         } catch (err) {
           console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -42,7 +41,7 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
       }
       case "generate-tests": {
         try {
-          const writtenPaths = await runGenerateTests(deps.generatorPrompts, deps.homeDir, deps.projectRoot);
+          const writtenPaths = await runGenerateTests(deps.generatorPrompts, deps.projectRoot);
           console.log(`Tests generados:\n${writtenPaths.join("\n")}`);
         } catch (err) {
           console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -91,8 +90,15 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
       }
       case "config": {
         try {
-          await runInit(deps.initPrompts, deps.homeDir, deps.projectRoot);
-          console.log("Configuración actualizada.");
+          const result = await runInit(deps.initPrompts, deps.projectRoot);
+          console.log("Configuración de tests guardada.");
+          if (result.envCreated) {
+            console.log(
+              `Se ha creado ${result.envPath} — rellena las variables a mano antes de usar el resto de comandos.`
+            );
+          } else {
+            console.log(`Ya existía ${result.envPath} — revísalo si quieres cambiar algo.`);
+          }
         } catch (err) {
           console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
         }
