@@ -68,30 +68,32 @@ agente-qa init
 agente-qa chat
 ```
 
-`init` lanza el asistente de configuración: proveedor LLM, API key, (solo para "otro") URL base y modelo, y en qué carpeta del proyecto guardar los tests. Las credenciales se guardan en `~/.agente-qa/credentials.json` (fuera de cualquier repo, permisos 0600/0700 — nunca en el proyecto ni en git). Para cambiar de proveedor más adelante, vuelve a ejecutar `agente-qa init`.
+`init` pregunta en qué carpeta del proyecto guardar los tests, y crea (si no existe ya) una plantilla `.env` en `<proyecto>/.agente-qa/.env` — fuera de git (`.agente-qa/.gitignore` ya la excluye). Ahí rellenas a mano, con un editor de texto, la URL de la aplicación que vas a probar, un usuario/contraseña de prueba (opcional, solo si vas a probar login) y el proveedor/API key/modelo del LLM. `init` nunca pide estos valores por chat ni sobrescribe el archivo si ya existe.
 
-### Configurar el proveedor LLM — opciones y cómo conseguir cada API key
+### Proveedor LLM — opciones y cómo conseguir cada API key
 
-| Opción en el menú | Proveedor real | Dónde conseguir la API key | Modelo por defecto |
+| `AGENTE_QA_LLM_PROVIDER` | Proveedor real | Dónde conseguir la API key | Modelo por defecto |
 |---|---|---|---|
-| Anthropic (Claude) | Anthropic | https://console.anthropic.com/settings/keys | `claude-sonnet-5` |
-| OpenAI | OpenAI | https://platform.openai.com/api-keys | `gpt-5.1` |
-| Google | Google AI Studio (Gemini API, `generativelanguage.googleapis.com`) — **no** Vertex AI | https://aistudio.google.com/apikey | `gemini-3.6-flash` |
-| Otro (compatible con OpenAI) | Cualquier API que implemente el protocolo de OpenAI: Groq, Together AI, Ollama en local, etc. | La del proveedor elegido | El que tú indiques — no hay uno por defecto |
+| `anthropic` | Anthropic | https://console.anthropic.com/settings/keys | `claude-sonnet-5` |
+| `openai` | OpenAI | https://platform.openai.com/api-keys | `gpt-5.1` |
+| `google` | Google AI Studio (Gemini API, `generativelanguage.googleapis.com`) — **no** Vertex AI | https://aistudio.google.com/apikey | `gemini-3.6-flash` |
+| `openai-compatible` | Cualquier API que implemente el protocolo de OpenAI: Groq, Together AI, Ollama en local, etc. | La del proveedor elegido | El que tú indiques — no hay uno por defecto |
 
-Para las tres primeras opciones solo hace falta pegar la API key cuando `init` la pida. Para "Otro" (`openai-compatible`), `init` pide dos datos más:
+Para las tres primeras opciones basta con `AGENTE_QA_LLM_PROVIDER` + `AGENTE_QA_LLM_API_KEY`. Para `openai-compatible` hacen falta además:
 
-- **URL base**: la que exponga ese proveedor, p. ej. `https://api.groq.com/openai/v1` (Groq) o `http://localhost:11434/v1` (Ollama en local).
-- **Modelo**: el nombre exacto que ese proveedor use para el modelo, p. ej. `llama-3.3-70b-versatile` (Groq) o `llama3.3` (Ollama).
+- **`AGENTE_QA_LLM_BASE_URL`**: la que exponga ese proveedor, p. ej. `https://api.groq.com/openai/v1` (Groq) o `http://localhost:11434/v1` (Ollama en local).
+- **`AGENTE_QA_LLM_MODEL`**: el nombre exacto que ese proveedor use para el modelo, p. ej. `llama-3.3-70b-versatile` (Groq) o `llama3.3` (Ollama).
 
-Ejemplo completo de `agente-qa init` eligiendo "Otro":
+Ejemplo de `<proyecto>/.agente-qa/.env` completo, eligiendo Groq como proveedor `openai-compatible`:
 
 ```
-? ¿Qué proveedor de LLM quieres usar? Otro (compatible con OpenAI: Groq, Together, Ollama local...)
-? Pega tu API key de openai-compatible: ********
-? URL base de la API (compatible con OpenAI), ej. https://api.groq.com/openai/v1: https://api.groq.com/openai/v1
-? Nombre del modelo a usar (según lo que exponga ese proveedor), ej. llama-3.3-70b-versatile: llama-3.3-70b-versatile
-? ¿En qué carpeta guardamos los tests? (relativa al proyecto) tests
+AGENTE_QA_APP_URL=https://staging.mi-app.com
+AGENTE_QA_TEST_USERNAME=qa-tester@mi-app.com
+AGENTE_QA_TEST_PASSWORD=Sup3rSecreta!
+AGENTE_QA_LLM_PROVIDER=openai-compatible
+AGENTE_QA_LLM_API_KEY=gsk_xxxxxxxxxxxxxxxx
+AGENTE_QA_LLM_BASE_URL=https://api.groq.com/openai/v1
+AGENTE_QA_LLM_MODEL=llama-3.3-70b-versatile
 ```
 
 Alternativa en local desde el propio repositorio (para desarrollo o antes de instalar global):
