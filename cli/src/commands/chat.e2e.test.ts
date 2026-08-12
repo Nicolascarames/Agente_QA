@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveCredentials, saveProjectConfig } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath } from "@agente-qa/core";
 
 const generateTextMock = vi.fn();
 vi.mock("ai", () => ({
@@ -19,19 +19,21 @@ import { runCreatePlan } from "./chat.js";
 import type { ChatPrompts } from "../prompts/types.js";
 
 describe("end-to-end: create plan via the real wiring, only the network call mocked", () => {
-  let tmpHome: string;
   let tmpProject: string;
 
   beforeEach(async () => {
-    tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-e2e-home-"));
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-e2e-project-"));
-    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+    await fs.mkdir(path.join(tmpProject, ".agente-qa"), { recursive: true });
+    await fs.writeFile(
+      projectEnvPath(tmpProject),
+      "AGENTE_QA_LLM_PROVIDER=anthropic\nAGENTE_QA_LLM_API_KEY=sk-test\n",
+      "utf-8"
+    );
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
     generateTextMock.mockReset();
   });
 
   afterEach(async () => {
-    await fs.rm(tmpHome, { recursive: true, force: true });
     await fs.rm(tmpProject, { recursive: true, force: true });
   });
 
@@ -50,7 +52,7 @@ describe("end-to-end: create plan via the real wiring, only the network call moc
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
-    const filePath = await runCreatePlan(prompts, tmpHome, tmpProject);
+    const filePath = await runCreatePlan(prompts, tmpProject);
 
     expect(filePath).toBe(path.join(tmpProject, "tests", "features", "login.feature"));
     const written = await fs.readFile(filePath, "utf-8");

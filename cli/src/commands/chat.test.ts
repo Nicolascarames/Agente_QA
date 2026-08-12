@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveCredentials, saveProjectConfig, FakeLLMProvider } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath, FakeLLMProvider } from "@agente-qa/core";
 import type { ChatPrompts } from "../prompts/types.js";
 
 const createProviderMock = vi.fn();
@@ -22,12 +22,18 @@ vi.mock("../util/spinner.js", () => ({
 
 import { runCreatePlan } from "./chat.js";
 
+async function writeEnv(projectRoot: string, values: Record<string, string>): Promise<void> {
+  await fs.mkdir(path.join(projectRoot, ".agente-qa"), { recursive: true });
+  const content = Object.entries(values)
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+  await fs.writeFile(projectEnvPath(projectRoot), `${content}\n`, "utf-8");
+}
+
 describe("runCreatePlan", () => {
-  let tmpHome: string;
   let tmpProject: string;
 
   beforeEach(async () => {
-    tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-home-"));
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-project-"));
     createProviderMock.mockReset();
     withLLMSpinnerMock.mockClear();
@@ -35,7 +41,6 @@ describe("runCreatePlan", () => {
   });
 
   afterEach(async () => {
-    await fs.rm(tmpHome, { recursive: true, force: true });
     await fs.rm(tmpProject, { recursive: true, force: true });
   });
 
@@ -46,11 +51,25 @@ describe("runCreatePlan", () => {
       presentForApproval: vi.fn(),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
-    await expect(runCreatePlan(prompts, tmpHome, tmpProject)).rejects.toThrow(/agente-qa init/);
+    await expect(runCreatePlan(prompts, tmpProject)).rejects.toThrow(/agente-qa init/);
   });
 
-  it("loads credentials/config, runs intake through the fake LLM, and writes the feature file", async () => {
-    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+  it("throws naming the missing .env variable when the LLM API key is blank", async () => {
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+
+    const prompts: ChatPrompts = {
+      inputInitialText: vi.fn(),
+      askUser: vi.fn(),
+      presentForApproval: vi.fn(),
+      confirmOverwrite: vi.fn(),
+    };
+
+    await expect(runCreatePlan(prompts, tmpProject)).rejects.toThrow(/AGENTE_QA_LLM_API_KEY/);
+  });
+
+  it("loads env/config, runs intake through the fake LLM, and writes the feature file", async () => {
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
 
     const fake = new FakeLLMProvider([
@@ -67,14 +86,14 @@ describe("runCreatePlan", () => {
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
-    const filePath = await runCreatePlan(prompts, tmpHome, tmpProject);
+    const filePath = await runCreatePlan(prompts, tmpProject);
 
     expect(filePath).toBe(path.join(tmpProject, "tests", "features", "login.feature"));
     expect(await fs.readFile(filePath, "utf-8")).toContain("Feature: Login");
   });
 
   it("wraps the LLM provider with the spinner decorator before using it", async () => {
-    await saveCredentials({ provider: "anthropic", apiKey: "sk-test" }, tmpHome);
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
 
     const fake = new FakeLLMProvider([
@@ -91,7 +110,7 @@ describe("runCreatePlan", () => {
       confirmOverwrite: vi.fn().mockResolvedValue(true),
     };
 
-    await runCreatePlan(prompts, tmpHome, tmpProject);
+    await runCreatePlan(prompts, tmpProject);
 
     expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
   });
