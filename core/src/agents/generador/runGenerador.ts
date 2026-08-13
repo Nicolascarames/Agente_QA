@@ -3,6 +3,7 @@ import path from "node:path";
 import type { LLMProvider } from "../../llm/provider.js";
 import type { Pattern } from "../../schemas/pattern.js";
 import type { CodeChecker } from "../../codeCheck/codeChecker.js";
+import type { SiteExplorer, ExplorationCredentials } from "../../siteExplorer/siteExplorer.js";
 import { saveProjectPattern } from "../../patterns/registry.js";
 import { parseFeatureHeader } from "./parseFeatureHeader.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
@@ -18,6 +19,7 @@ const MAX_ATTEMPTS = 4; // 1 initial generation + up to 3 corrections
 export interface GeneratorCallbacks {
   offerSavePattern(featureText: string): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
+  onExplorationStep(message: string): void;
 }
 
 export async function runGenerador(
@@ -25,8 +27,11 @@ export async function runGenerador(
   llm: LLMProvider,
   patterns: Pattern[],
   checker: CodeChecker,
+  explorer: SiteExplorer,
   projectRoot: string,
   testsDir: string,
+  baseUrl: string,
+  credentials: ExplorationCredentials | undefined,
   callbacks: GeneratorCallbacks
 ): Promise<{ writtenPaths: string[] }> {
   const featureText = await fs.readFile(featureFilePath, "utf-8");
@@ -38,11 +43,20 @@ export async function runGenerador(
   const featureFileName = path.basename(featureFilePath);
   const naming = { slug: toPythonModuleSlug(featureFileName.replace(/\.feature$/, "")), featureFileName };
 
+  const exploration = await explorer.explore(
+    { featureText, matchedPattern, baseUrl, credentials, headed: true },
+    callbacks.onExplorationStep
+  );
+  if (!exploration.ok) {
+    throw new Error(`No se pudo verificar la aplicación real antes de generar el código: ${exploration.error}`);
+  }
+  const evidence = exploration.screens;
+
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    files = await generateCode(featureText, llm, matchedPattern, naming, retry);
+    files = await generateCode(featureText, llm, matchedPattern, naming, evidence, retry);
     const result = await checker.check(files);
     if (result.ok) break;
 
