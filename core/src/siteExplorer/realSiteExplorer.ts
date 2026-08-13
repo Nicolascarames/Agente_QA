@@ -37,29 +37,63 @@ async function ariaSnapshotOf(page: Page): Promise<string> {
 }
 
 /**
- * The real credential values must never reach the LLM. Two places can leak them
- * into the agentic prompt if left raw: Playwright's ariaSnapshot() echoes back
- * the live value typed into a field (e.g. `textbox "Contraseña": hunter2-test-only`),
- * and page.url() can carry a credential in a query string after a native
- * (non-preventDefault) GET-method login form submits (e.g. `?password=...`).
- * A native GET form serializes its fields as application/x-www-form-urlencoded,
- * so a credential containing URL-reserved characters (e.g. the "@" in an email)
- * lands in the URL percent-encoded (and a space becomes "+", not "%20") rather
- * than literal — strip both the raw and every encoded form. Never apply this to
- * the ScreenEvidence returned to the caller — that must keep the raw url/snapshot.
+ * The real credential values must never reach the LLM. ariaSnapshot() echoes
+ * back the live value typed into a field (e.g. `textbox "Contraseña": hunter2-test-only`)
+ * as plain accessibility-tree text — never URL-encoded — so a direct literal
+ * substring strip is correct and sufficient for it.
  */
-function redactCredentials(text: string, credentials: { username: string; password: string } | undefined): string {
+function redactLiteralCredentials(
+  text: string,
+  credentials: { username: string; password: string } | undefined
+): string {
   if (!credentials) return text;
   let redacted = text;
   for (const value of [credentials.password, credentials.username]) {
     if (!value) continue;
-    const percentEncoded = encodeURIComponent(value);
-    const variants = new Set<string>([value, percentEncoded, percentEncoded.replace(/%20/g, "+")]);
-    for (const variant of variants) {
-      redacted = redacted.split(variant).join("••••••••");
-    }
+    redacted = redacted.split(value).join("••••••••");
   }
   return redacted;
+}
+
+/**
+ * page.url() can carry a credential in a query string after a native
+ * (non-preventDefault) GET-method login form submits (e.g. "?password=...").
+ * A browser serializes that per the WHATWG application/x-www-form-urlencoded
+ * spec, whose percent-encode set is wider than encodeURIComponent's (it also
+ * escapes "! ' ( ) ~", among others, and encodes a space as "+"). Enumerating
+ * every encoding a browser might produce is fragile — this has already leaked
+ * two different character sets across two rounds. Instead: parse the URL and
+ * compare each query param's DECODED value (what URLSearchParams.get already
+ * gives back, matching what the browser actually produced, by construction)
+ * against the real credential, and redact the param in place. A literal pass
+ * over the reconstructed string is still run as a fallback, in case a
+ * credential ends up somewhere other than a query param value (e.g. a path
+ * segment) or the URL fails to parse.
+ */
+function redactCredentialsFromUrl(
+  url: string,
+  credentials: { username: string; password: string } | undefined
+): string {
+  if (!credentials) return url;
+
+  let working = url;
+  try {
+    const parsed = new URL(url);
+    const keysToRedact: string[] = [];
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if ((credentials.username && value === credentials.username) || (credentials.password && value === credentials.password)) {
+        keysToRedact.push(key);
+      }
+    }
+    for (const key of keysToRedact) {
+      parsed.searchParams.set(key, "[REDACTED]");
+    }
+    working = parsed.toString();
+  } catch {
+    // Not a parseable absolute URL — fall through to the literal pass below.
+  }
+
+  return redactLiteralCredentials(working, credentials);
 }
 
 async function looksLikeUsablePage(page: Page): Promise<boolean> {
@@ -158,8 +192,8 @@ async function exploreAgentically(
 
   for (let step = 0; step < MAX_AGENTIC_STEPS; step++) {
     const snapshot = await ariaSnapshotOf(page);
-    const promptUrl = redactCredentials(page.url(), input.credentials);
-    const promptSnapshot = redactCredentials(snapshot, input.credentials);
+    const promptUrl = redactCredentialsFromUrl(page.url(), input.credentials);
+    const promptSnapshot = redactLiteralCredentials(snapshot, input.credentials);
     const prompt = explorerActionPrompt(input.featureText, promptUrl, promptSnapshot, Boolean(input.credentials));
     const raw = await llm.generate([
       { role: "system", content: "Eres un explorador de interfaces web que decide una acción a la vez." },

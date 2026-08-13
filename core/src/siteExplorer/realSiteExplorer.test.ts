@@ -238,5 +238,41 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       expect(allPromptText).not.toContain(reservedCredentials.username);
       expect(allPromptText).not.toContain(encodeURIComponent(reservedCredentials.username));
     });
+
+    it("redacts a credential containing characters WHATWG form-urlencoded escapes but encodeURIComponent does not (! ' ( ) ~)", async () => {
+      // application/x-www-form-urlencoded (what a real browser uses to serialize a
+      // native form) percent-encodes a wider character set than encodeURIComponent —
+      // it also escapes "! ' ( ) ~". A redaction approach that only strips the raw
+      // value plus its encodeURIComponent() form would miss this entirely.
+      const trickyCredentials = { username: "leaky-user", password: "it's!weird(pass)~end" };
+      const llm = new FakeLLMProvider([
+        JSON.stringify({ action: "goto", target: "/leaky" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Contraseña", field: "password" }),
+        JSON.stringify({ action: "click", role: "button", name: "Iniciar sesión" }),
+        JSON.stringify({ action: "done" }),
+      ]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(
+        baseInput({ matchedPattern: null, baseUrl: app.url, credentials: trickyCredentials })
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      // Confirm the leak vector is genuinely exercised: decoding the raw evidence URL's
+      // query param gives back the exact real password a native form submitted.
+      const leakedUrl = new URL(result.screens[0].url);
+      expect(leakedUrl.searchParams.get("password")).toBe(trickyCredentials.password);
+
+      const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
+      expect(allPromptText).not.toContain(trickyCredentials.password);
+      // Assert against the browser's *actual* encoded form (via URLSearchParams,
+      // which implements the real spec), not a guessed/hand-rolled encoding.
+      const realEncodedPassword = new URLSearchParams({ password: trickyCredentials.password })
+        .toString()
+        .replace("password=", "");
+      expect(allPromptText).not.toContain(realEncodedPassword);
+    });
   });
 });
