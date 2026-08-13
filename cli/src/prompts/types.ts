@@ -1,5 +1,7 @@
 export interface InitPrompts {
   inputTestsDir(): Promise<string>;
+  confirmHeadedMode(): Promise<boolean>;
+  selectGitignoreEntries(candidates: string[]): Promise<string[]>;
 }
 
 export type MenuChoice = "create-plan" | "generate-tests" | "run-tests" | "reports" | "config" | "exit";

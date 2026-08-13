@@ -13,6 +13,22 @@ export const realInitPrompts: InitPrompts = {
   async inputTestsDir() {
     return input({ message: "¿En qué carpeta guardamos los tests? (relativa al proyecto)", default: "tests" });
   },
+  async confirmHeadedMode() {
+    return select<boolean>({
+      message: "¿Ejecutar los tests con el navegador visible?",
+      choices: [
+        { name: "No, en segundo plano (recomendado)", value: false },
+        { name: "Sí, ver el navegador mientras corren", value: true },
+      ],
+      default: false,
+    });
+  },
+  async selectGitignoreEntries(candidates) {
+    return checkbox({
+      message: "¿Qué añado al .gitignore del proyecto?",
+      choices: candidates.map((entry) => ({ name: entry, value: entry, checked: true })),
+    });
+  },
 };
 
 export const realMenuPrompts: MenuPrompts = {
