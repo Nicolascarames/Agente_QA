@@ -13,8 +13,13 @@ export interface InitResult {
   gitignoreEntriesAdded: string[];
 }
 
+function normalizeGitignoreEntry(entry: string): string {
+  return entry.replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
 function gitignoreCandidates(testsDir: string): string[] {
-  return ["node_modules", `${testsDir}/results`, `${testsDir}/test-results`];
+  const normalizedTestsDir = testsDir.replace(/\/+$/, "");
+  return ["node_modules", `${normalizedTestsDir}/results`, `${normalizedTestsDir}/test-results`];
 }
 
 export async function runInit(prompts: InitPrompts, projectRoot: string): Promise<InitResult> {
@@ -25,8 +30,9 @@ export async function runInit(prompts: InitPrompts, projectRoot: string): Promis
   const { created, path: envPath } = await ensureProjectEnvTemplate(projectRoot);
 
   const existingGitignoreEntries = await readProjectGitignoreEntries(projectRoot);
+  const normalizedExisting = existingGitignoreEntries.map(normalizeGitignoreEntry);
   const candidates = gitignoreCandidates(testsDir);
-  const missing = candidates.filter((entry) => !existingGitignoreEntries.includes(entry));
+  const missing = candidates.filter((entry) => !normalizedExisting.includes(normalizeGitignoreEntry(entry)));
   let gitignoreEntriesAdded: string[] = [];
   if (missing.length > 0) {
     gitignoreEntriesAdded = await prompts.selectGitignoreEntries(missing);

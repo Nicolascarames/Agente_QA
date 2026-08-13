@@ -16,7 +16,7 @@ export async function readProjectGitignoreEntries(projectRoot: string): Promise<
   return raw
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
 }
 
 export async function appendProjectGitignoreEntries(projectRoot: string, entries: string[]): Promise<void> {

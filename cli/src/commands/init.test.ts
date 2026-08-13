@@ -117,4 +117,32 @@ describe("runInit", () => {
     expect(result.gitignoreEntriesAdded).toEqual(["node_modules"]);
     expect(await fs.readFile(projectGitignorePath(tmpProject), "utf-8")).toBe("node_modules\n");
   });
+
+  it("recognizes /node_modules (leading slash) as already covering node_modules and doesn't ask about it again", async () => {
+    await fs.writeFile(projectGitignorePath(tmpProject), "/node_modules\n", "utf-8");
+    let askedWith: string[] = [];
+
+    const result = await runInit(
+      prompts({
+        selectGitignoreEntries: async (candidates) => {
+          askedWith = candidates;
+          return candidates;
+        },
+      }),
+      tmpProject
+    );
+
+    expect(askedWith).not.toContain("node_modules");
+    expect(askedWith).toEqual(["tests/results", "tests/test-results"]);
+    expect(result.gitignoreEntriesAdded).not.toContain("node_modules");
+  });
+
+  it("normalizes a trailing slash on testsDir so candidates don't get a double slash", async () => {
+    const result = await runInit(prompts({ inputTestsDir: async () => "tests/" }), tmpProject);
+
+    expect(result.gitignoreEntriesAdded).toEqual(["node_modules", "tests/results", "tests/test-results"]);
+    expect(await fs.readFile(projectGitignorePath(tmpProject), "utf-8")).toBe(
+      "node_modules\ntests/results\ntests/test-results\n"
+    );
+  });
 });

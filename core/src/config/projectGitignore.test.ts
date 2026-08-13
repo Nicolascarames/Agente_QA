@@ -28,6 +28,15 @@ describe("projectGitignore", () => {
       await fs.writeFile(projectGitignorePath(tmpProject), "node_modules\n\n  tests/results  \n", "utf-8");
       expect(await readProjectGitignoreEntries(tmpProject)).toEqual(["node_modules", "tests/results"]);
     });
+
+    it("excludes comment lines from the result", async () => {
+      await fs.writeFile(
+        projectGitignorePath(tmpProject),
+        "# node_modules\nnode_modules\n  # tests/results\ntests/results\n",
+        "utf-8"
+      );
+      expect(await readProjectGitignoreEntries(tmpProject)).toEqual(["node_modules", "tests/results"]);
+    });
   });
 
   describe("appendProjectGitignoreEntries", () => {
