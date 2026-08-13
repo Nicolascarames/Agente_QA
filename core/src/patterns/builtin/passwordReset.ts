@@ -29,4 +29,8 @@ export const passwordResetPattern: Pattern = {
         self.email_input.fill(email)
         self.submit_button.click()
 `,
+  navigationHints: {
+    routeCandidates: ["/password-reset", "/forgot-password", "/reset-password"],
+    requiresLogin: false,
+  },
 };

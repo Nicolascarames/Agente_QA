@@ -26,4 +26,10 @@ export const logoutPattern: Pattern = {
         self.user_menu_button.click()
         self.logout_option.click()
 `,
+  // The scenario starts already authenticated, so exploration must log in first (real
+  // credentials) before it can find the logout controls to capture.
+  navigationHints: {
+    routeCandidates: ["/"],
+    requiresLogin: true,
+  },
 };

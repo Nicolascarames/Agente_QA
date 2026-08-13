@@ -38,4 +38,11 @@ export const loginPattern: Pattern = {
         self.password_input.fill(password)
         self.submit_button.click()
 `,
+  // requiresLogin: true means "the explorer must perform a real login to capture all
+  // screens this pattern needs" — for login itself, that includes the post-login screen
+  // (e.g. to ground "accedo a mi área privada" assertions in a real snapshot).
+  navigationHints: {
+    routeCandidates: ["/login", "/signin", "/sign-in", "/"],
+    requiresLogin: true,
+  },
 };

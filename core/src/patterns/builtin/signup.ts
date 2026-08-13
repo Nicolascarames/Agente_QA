@@ -39,4 +39,8 @@ export const signupPattern: Pattern = {
         self.password_input.fill(password)
         self.submit_button.click()
 `,
+  navigationHints: {
+    routeCandidates: ["/signup", "/register", "/sign-up"],
+    requiresLogin: false,
+  },
 };
