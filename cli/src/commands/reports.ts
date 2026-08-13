@@ -5,6 +5,7 @@ import {
   type ReportesResult,
 } from "@agente-qa/core";
 import type { ReportesPrompts } from "../prompts/types.js";
+import { openFile } from "../util/openFile.js";
 
 export async function runGenerateReports(
   prompts: ReportesPrompts,
@@ -15,9 +16,20 @@ export async function runGenerateReports(
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
 
+  let detailLevel: "resumen" | "completo" = "resumen" as "resumen" | "completo";
   const callbacks: ReportesCallbacks = {
-    selectDetailLevel: () => prompts.selectDetailLevel(),
+    selectDetailLevel: async () => {
+      detailLevel = await prompts.selectDetailLevel();
+      return detailLevel;
+    },
   };
 
-  return runReportes(projectRoot, projectConfig.testsDir, callbacks);
+  const result = await runReportes(projectRoot, projectConfig.testsDir, callbacks);
+
+  await openFile("markdown", result.summaryPath);
+  if (detailLevel === "completo") {
+    await openFile("html", result.htmlReportPath);
+  }
+
+  return result;
 }
