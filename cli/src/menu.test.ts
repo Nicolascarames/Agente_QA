@@ -85,6 +85,7 @@ describe("runMenuLoop", () => {
       testsDir: "tests",
       envPath: "/project/test/.agente-qa/.env",
       envCreated: true,
+      gitignoreEntriesAdded: [],
     });
 
     await runMenuLoop({
@@ -98,6 +99,34 @@ describe("runMenuLoop", () => {
     });
 
     expect(runInitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("prints which .gitignore entries were added when runInit reports some", async () => {
+    const choices: MenuChoice[] = ["config", "exit"];
+    let i = 0;
+    runInitMock.mockResolvedValue({
+      testsDir: "tests",
+      envPath: "/project/test/.agente-qa/.env",
+      envCreated: false,
+      gitignoreEntriesAdded: ["node_modules", "tests/results"],
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await runMenuLoop({
+      menuPrompts: { selectMenuChoice: async () => choices[i++] },
+      chatPrompts: {} as never,
+      initPrompts: {} as never,
+      generatorPrompts: {} as never,
+      executorPrompts: {} as never,
+      reportesPrompts: {} as never,
+      projectRoot: "/project/test",
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Añadido al .gitignore: node_modules, tests/results")
+    );
+
+    logSpy.mockRestore();
   });
 
   it("routes 'generate-tests' to runGenerateTests", async () => {

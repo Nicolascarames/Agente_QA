@@ -99,6 +99,9 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
           } else {
             console.log(`Ya existía ${result.envPath} — revísalo si quieres cambiar algo.`);
           }
+          if (result.gitignoreEntriesAdded.length > 0) {
+            console.log(`Añadido al .gitignore: ${result.gitignoreEntriesAdded.join(", ")}`);
+          }
         } catch (err) {
           console.log(`Error: ${err instanceof Error ? err.message : String(err)}`);
         }
