@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export const ProjectConfigSchema = z.object({
   testsDir: z.string().min(1),
+  headedMode: z.boolean().default(false),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -11,11 +12,14 @@ export function projectConfigPath(projectRoot: string): string {
   return path.join(projectRoot, ".agente-qa", "config.json");
 }
 
-export async function saveProjectConfig(projectRoot: string, config: ProjectConfig): Promise<void> {
-  ProjectConfigSchema.parse(config);
+export async function saveProjectConfig(
+  projectRoot: string,
+  config: z.input<typeof ProjectConfigSchema>
+): Promise<void> {
+  const parsed = ProjectConfigSchema.parse(config);
   const filePath = projectConfigPath(projectRoot);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(config, null, 2), "utf-8");
+  await fs.writeFile(filePath, JSON.stringify(parsed, null, 2), "utf-8");
 }
 
 export async function loadProjectConfig(projectRoot: string): Promise<ProjectConfig | null> {

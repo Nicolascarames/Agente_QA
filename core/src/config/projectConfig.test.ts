@@ -19,9 +19,14 @@ describe("projectConfig", () => {
     expect(await loadProjectConfig(tmpProject)).toBeNull();
   });
 
-  it("saves and loads project config round-trip", async () => {
+  it("saves and loads project config round-trip, defaulting headedMode to false when omitted", async () => {
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
-    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests" });
+    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests", headedMode: false });
+  });
+
+  it("saves and loads headedMode: true when explicitly given", async () => {
+    await saveProjectConfig(tmpProject, { testsDir: "tests", headedMode: true });
+    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests", headedMode: true });
   });
 
   it("writes the file at <project>/.agente-qa/config.json", async () => {
