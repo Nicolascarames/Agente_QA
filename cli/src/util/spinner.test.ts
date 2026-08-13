@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { LLMProvider, Message, CodeChecker, CodeFile } from "@agente-qa/core";
+import type { LLMProvider, Message, CodeChecker, CodeFile, TestRunner, TestRunOptions } from "@agente-qa/core";
 
 const spinnerInstance = {
   start: vi.fn(),
   succeed: vi.fn(),
   fail: vi.fn(),
+  stop: vi.fn(),
 };
 spinnerInstance.start.mockReturnValue(spinnerInstance);
 
@@ -14,7 +15,7 @@ vi.mock("ora", () => ({
   default: (text: string) => oraFactory(text),
 }));
 
-import { withLLMSpinner, withCodeCheckerSpinner } from "./spinner.js";
+import { withLLMSpinner, withCodeCheckerSpinner, withTestRunnerSpinner } from "./spinner.js";
 
 describe("withLLMSpinner", () => {
   beforeEach(() => {
@@ -22,6 +23,7 @@ describe("withLLMSpinner", () => {
     spinnerInstance.start.mockClear();
     spinnerInstance.succeed.mockClear();
     spinnerInstance.fail.mockClear();
+    spinnerInstance.stop.mockClear();
   });
 
   it("returns the wrapped provider's result unchanged", async () => {
@@ -72,6 +74,7 @@ describe("withCodeCheckerSpinner", () => {
     spinnerInstance.start.mockClear();
     spinnerInstance.succeed.mockClear();
     spinnerInstance.fail.mockClear();
+    spinnerInstance.stop.mockClear();
   });
 
   it("returns the wrapped checker's result unchanged when ok", async () => {
@@ -113,5 +116,84 @@ describe("withCodeCheckerSpinner", () => {
     await wrapped.check(files);
 
     expect(check).toHaveBeenCalledWith(files);
+  });
+});
+
+describe("withTestRunnerSpinner", () => {
+  beforeEach(() => {
+    oraFactory.mockClear();
+    spinnerInstance.start.mockClear();
+    spinnerInstance.succeed.mockClear();
+    spinnerInstance.fail.mockClear();
+    spinnerInstance.stop.mockClear();
+  });
+
+  function baseOptions(onOutput: (chunk: string) => void): TestRunOptions {
+    return {
+      cwd: "/tmp/project/tests",
+      markerExpression: null,
+      screenshotMode: "off",
+      videoMode: "off",
+      headed: false,
+      verboseSteps: false,
+      junitXmlPath: "/tmp/project/tests/results/latest.xml",
+      htmlReportPath: "/tmp/project/tests/results/latest.html",
+      onOutput,
+      env: {},
+    };
+  }
+
+  it("starts a spinner before running, and stops it as soon as the first output chunk arrives", async () => {
+    const chunks: string[] = [];
+    const runner: TestRunner = {
+      run: vi.fn(async (options: TestRunOptions) => {
+        options.onOutput("primera línea\n");
+        options.onOutput("segunda línea\n");
+        return { exitCode: 0 };
+      }),
+    };
+    const wrapped = withTestRunnerSpinner(runner);
+
+    const result = await wrapped.run(baseOptions((chunk) => chunks.push(chunk)));
+
+    expect(oraFactory).toHaveBeenCalledWith("Ejecutando tests...");
+    expect(spinnerInstance.start).toHaveBeenCalledTimes(1);
+    expect(spinnerInstance.stop).toHaveBeenCalledTimes(1);
+    expect(chunks).toEqual(["primera línea\n", "segunda línea\n"]);
+    expect(result).toEqual({ exitCode: 0 });
+  });
+
+  it("stops the spinner even if the runner never emits any output", async () => {
+    const runner: TestRunner = { run: vi.fn().mockResolvedValue({ exitCode: 0 }) };
+    const wrapped = withTestRunnerSpinner(runner);
+
+    await wrapped.run(baseOptions(() => {}));
+
+    expect(spinnerInstance.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the spinner as failed and rethrows when the runner throws before emitting any output", async () => {
+    const boom = new Error("no se pudo lanzar pytest");
+    const runner: TestRunner = { run: vi.fn().mockRejectedValue(boom) };
+    const wrapped = withTestRunnerSpinner(runner);
+
+    await expect(wrapped.run(baseOptions(() => {}))).rejects.toBe(boom);
+    expect(spinnerInstance.fail).toHaveBeenCalledTimes(1);
+    expect(spinnerInstance.stop).not.toHaveBeenCalled();
+  });
+
+  it("does not call fail when the runner throws after already emitting output (spinner already stopped)", async () => {
+    const boom = new Error("pytest crasheó a medias");
+    const runner: TestRunner = {
+      run: vi.fn(async (options: TestRunOptions) => {
+        options.onOutput("algo de output\n");
+        throw boom;
+      }),
+    };
+    const wrapped = withTestRunnerSpinner(runner);
+
+    await expect(wrapped.run(baseOptions(() => {}))).rejects.toBe(boom);
+    expect(spinnerInstance.stop).toHaveBeenCalledTimes(1);
+    expect(spinnerInstance.fail).not.toHaveBeenCalled();
   });
 });

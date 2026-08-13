@@ -1,5 +1,14 @@
 import ora from "ora";
-import type { LLMProvider, Message, CodeChecker, CodeFile, CodeCheckResult } from "@agente-qa/core";
+import type {
+  LLMProvider,
+  Message,
+  CodeChecker,
+  CodeFile,
+  CodeCheckResult,
+  TestRunner,
+  TestRunOptions,
+  TestRunResult,
+} from "@agente-qa/core";
 
 export function withLLMSpinner(provider: LLMProvider): LLMProvider {
   return {
@@ -31,6 +40,34 @@ export function withCodeCheckerSpinner(checker: CodeChecker): CodeChecker {
         return result;
       } catch (err) {
         spinner.fail("Fallo al comprobar el código.");
+        throw err;
+      }
+    },
+  };
+}
+
+export function withTestRunnerSpinner(runner: TestRunner): TestRunner {
+  return {
+    async run(options: TestRunOptions): Promise<TestRunResult> {
+      const spinner = ora("Ejecutando tests...").start();
+      let spinnerStopped = false;
+      const wrappedOnOutput = (chunk: string): void => {
+        if (!spinnerStopped) {
+          spinnerStopped = true;
+          spinner.stop();
+        }
+        options.onOutput(chunk);
+      };
+      try {
+        const result = await runner.run({ ...options, onOutput: wrappedOnOutput });
+        if (!spinnerStopped) {
+          spinner.stop();
+        }
+        return result;
+      } catch (err) {
+        if (!spinnerStopped) {
+          spinner.fail("Fallo al ejecutar los tests.");
+        }
         throw err;
       }
     },
