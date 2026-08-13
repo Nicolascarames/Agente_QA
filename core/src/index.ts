@@ -47,6 +47,7 @@ export type { IntakeCallbacks } from "./agents/intake/runIntake.js";
 export { parseFeatureHeader } from "./agents/generador/parseFeatureHeader.js";
 export { generateCode } from "./agents/generador/codeGenerator.js";
 export type { GeneratedFile } from "./agents/generador/codeGenerator.js";
+export type { CodeGenerationEvidence } from "./prompts/generador.js";
 export { writeTestFiles, testFileExists, testFilePath } from "./agents/generador/writeTestFiles.js";
 export { listFeatureFiles } from "./agents/generador/listFeatureFiles.js";
 export { runGenerador } from "./agents/generador/runGenerador.js";
@@ -57,6 +58,7 @@ export type {
   ExplorationInput,
   ExplorationResult,
   ExplorationCredentials,
+  ExplorationStepCallback,
   SiteExplorer,
 } from "./siteExplorer/siteExplorer.js";
 export { FakeSiteExplorer } from "./siteExplorer/testUtils.js";
