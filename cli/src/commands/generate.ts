@@ -3,10 +3,12 @@ import {
   createProvider,
   loadProjectEnv,
   requireLlmConfig,
+  requireAppUrl,
   loadProjectConfig,
   loadAllPatterns,
   listFeatureFiles,
   realCodeChecker,
+  createRealSiteExplorer,
   runGenerador,
   projectEnvPath,
   type GeneratorCallbacks,
@@ -20,6 +22,7 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
   const llmCredentials = requireLlmConfig(env, projectEnvPath(projectRoot));
+  const baseUrl = requireAppUrl(env, projectEnvPath(projectRoot));
 
   const projectConfig = await loadProjectConfig(projectRoot);
   if (!projectConfig) {
@@ -38,10 +41,16 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
 
   const llm = withLLMSpinner(createProvider(llmCredentials));
   const patterns = await loadAllPatterns(projectRoot);
+  const explorer = createRealSiteExplorer(llm);
+  const credentials =
+    env.testUsername && env.testPassword ? { username: env.testUsername, password: env.testPassword } : undefined;
 
   const callbacks: GeneratorCallbacks = {
     offerSavePattern: () => prompts.offerSavePattern(),
     confirmOverwrite: (filePath) => prompts.confirmOverwrite(filePath),
+    onExplorationStep: (message) => {
+      console.log(message);
+    },
   };
 
   const { writtenPaths } = await runGenerador(
@@ -49,8 +58,11 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     llm,
     patterns,
     withCodeCheckerSpinner(realCodeChecker),
+    explorer,
     projectRoot,
     projectConfig.testsDir,
+    baseUrl,
+    credentials,
     callbacks
   );
 

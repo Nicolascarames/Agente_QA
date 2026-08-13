@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { saveProjectConfig, projectEnvPath } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath, FakeSiteExplorer } from "@agente-qa/core";
 
 function commandExists(cmd: string): boolean {
   return spawnSync(cmd, ["--version"]).error === undefined;
@@ -12,6 +12,7 @@ const hasPython = commandExists("python");
 const hasRuff = commandExists("ruff");
 
 const generateTextMock = vi.fn();
+const createRealSiteExplorerMock = vi.fn();
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
 }));
@@ -22,12 +23,19 @@ vi.mock("../util/spinner.js", () => ({
   withLLMSpinner: (provider: unknown) => provider,
   withCodeCheckerSpinner: (checker: unknown) => checker,
 }));
+vi.mock("@agente-qa/core", async () => {
+  const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
+  return {
+    ...actual,
+    createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
+  };
+});
 
 import { runGenerateTests } from "./generate.js";
 import type { GeneratorPrompts } from "../prompts/types.js";
 
 describe.skipIf(!hasPython || !hasRuff)(
-  "end-to-end: generate tests via the real wiring, only the network call mocked",
+  "end-to-end: generate tests via the real wiring (ruff/py_compile real; site explorer and LLM network call mocked)",
   () => {
     let tmpProject: string;
 
@@ -36,7 +44,7 @@ describe.skipIf(!hasPython || !hasRuff)(
       await fs.mkdir(path.join(tmpProject, ".agente-qa"), { recursive: true });
       await fs.writeFile(
         projectEnvPath(tmpProject),
-        "AGENTE_QA_LLM_PROVIDER=anthropic\nAGENTE_QA_LLM_API_KEY=sk-test\n",
+        "AGENTE_QA_LLM_PROVIDER=anthropic\nAGENTE_QA_LLM_API_KEY=sk-test\nAGENTE_QA_APP_URL=https://example.com\n",
         "utf-8"
       );
       await saveProjectConfig(tmpProject, { testsDir: "tests" });
@@ -48,6 +56,8 @@ describe.skipIf(!hasPython || !hasRuff)(
         "utf-8"
       );
       generateTextMock.mockReset();
+      createRealSiteExplorerMock.mockReset();
+      createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
     });
 
     afterEach(async () => {
