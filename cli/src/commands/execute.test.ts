@@ -6,6 +6,7 @@ import { saveProjectConfig, ensureProjectEnvTemplate, projectEnvPath } from "@ag
 import type { ExecutorPrompts } from "../prompts/types.js";
 
 const realTestRunnerRunMock = vi.fn();
+const withTestRunnerSpinnerMock = vi.fn((runner: unknown) => runner);
 
 vi.mock("@agente-qa/core", async () => {
   const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
@@ -15,6 +16,10 @@ vi.mock("@agente-qa/core", async () => {
   };
 });
 
+vi.mock("../util/spinner.js", () => ({
+  withTestRunnerSpinner: (runner: unknown) => withTestRunnerSpinnerMock(runner),
+}));
+
 import { runExecuteTests } from "./execute.js";
 
 describe("runExecuteTests", () => {
@@ -23,6 +28,8 @@ describe("runExecuteTests", () => {
   beforeEach(async () => {
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-execute-project-"));
     realTestRunnerRunMock.mockReset();
+    withTestRunnerSpinnerMock.mockClear();
+    withTestRunnerSpinnerMock.mockImplementation((runner: unknown) => runner);
   });
 
   afterEach(async () => {
@@ -119,5 +126,69 @@ describe("runExecuteTests", () => {
         },
       })
     );
+  });
+
+  it("defaults to headless (headed: false, verboseSteps: false) when headedMode wasn't set at init", async () => {
+    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await ensureProjectEnvTemplate(tmpProject);
+    await fs.writeFile(projectEnvPath(tmpProject), "AGENTE_QA_APP_URL=https://mi-app.com\n", "utf-8");
+    const featuresDir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(featuresDir, { recursive: true });
+    await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
+
+    realTestRunnerRunMock.mockResolvedValue({ exitCode: 0 });
+
+    const prompts: ExecutorPrompts = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+    };
+
+    await runExecuteTests(prompts, tmpProject);
+
+    expect(realTestRunnerRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ headed: false, verboseSteps: false })
+    );
+  });
+
+  it("passes headed: true and verboseSteps: true through when the project config has headedMode: true", async () => {
+    await saveProjectConfig(tmpProject, { testsDir: "tests", headedMode: true });
+    await ensureProjectEnvTemplate(tmpProject);
+    await fs.writeFile(projectEnvPath(tmpProject), "AGENTE_QA_APP_URL=https://mi-app.com\n", "utf-8");
+    const featuresDir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(featuresDir, { recursive: true });
+    await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
+
+    realTestRunnerRunMock.mockResolvedValue({ exitCode: 0 });
+
+    const prompts: ExecutorPrompts = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+    };
+
+    await runExecuteTests(prompts, tmpProject);
+
+    expect(realTestRunnerRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({ headed: true, verboseSteps: true })
+    );
+  });
+
+  it("wraps the real test runner with the spinner decorator before using it", async () => {
+    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await ensureProjectEnvTemplate(tmpProject);
+    await fs.writeFile(projectEnvPath(tmpProject), "AGENTE_QA_APP_URL=https://mi-app.com\n", "utf-8");
+    const featuresDir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(featuresDir, { recursive: true });
+    await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
+
+    realTestRunnerRunMock.mockResolvedValue({ exitCode: 0 });
+
+    const prompts: ExecutorPrompts = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+    };
+
+    await runExecuteTests(prompts, tmpProject);
+
+    expect(withTestRunnerSpinnerMock).toHaveBeenCalledTimes(1);
   });
 });

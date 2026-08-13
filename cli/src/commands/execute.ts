@@ -1,3 +1,4 @@
+import path from "node:path";
 import {
   loadProjectConfig,
   loadProjectEnv,
@@ -10,6 +11,7 @@ import {
   type EjecutorResult,
 } from "@agente-qa/core";
 import type { ExecutorPrompts } from "../prompts/types.js";
+import { withTestRunnerSpinner } from "../util/spinner.js";
 
 export async function runExecuteTests(prompts: ExecutorPrompts, projectRoot: string): Promise<EjecutorResult> {
   const projectConfig = await loadProjectConfig(projectRoot);
@@ -30,5 +32,12 @@ export async function runExecuteTests(prompts: ExecutorPrompts, projectRoot: str
     },
   };
 
-  return runEjecutor(projectRoot, projectConfig.testsDir, realTestRunner, callbacks, testEnvVars(env));
+  return runEjecutor(
+    projectRoot,
+    projectConfig.testsDir,
+    withTestRunnerSpinner(realTestRunner),
+    projectConfig.headedMode,
+    callbacks,
+    testEnvVars(env)
+  );
 }
