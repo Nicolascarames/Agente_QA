@@ -30,7 +30,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await expect(runEjecutor(tmpProject, "tests", runner, callbacks)).rejects.toThrow(
+    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks)).rejects.toThrow(
       /Generar tests Playwright/
     );
   });
@@ -45,7 +45,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(callbacks.selectTags).toHaveBeenCalledWith(["@regression", "@smoke"]);
     expect(runner.receivedCalls[0].markerExpression).toBe("smoke");
@@ -61,7 +61,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await expect(runEjecutor(tmpProject, "tests", runner, callbacks)).rejects.toThrow(/@smoke-test/);
+    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks)).rejects.toThrow(/@smoke-test/);
   });
 
   it("does not throw for a strict subset selection using a plain identifier tag like '@smoke'", async () => {
@@ -74,7 +74,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await expect(runEjecutor(tmpProject, "tests", runner, callbacks)).resolves.toBeDefined();
+    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks)).resolves.toBeDefined();
     expect(runner.receivedCalls[0].markerExpression).toBe("smoke");
   });
 
@@ -87,7 +87,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(runner.receivedCalls[0].markerExpression).toBeNull();
   });
@@ -101,7 +101,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(callbacks.selectTags).not.toHaveBeenCalled();
     expect(runner.receivedCalls[0].markerExpression).toBeNull();
@@ -116,7 +116,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(runner.receivedCalls[0].screenshotMode).toBe("off");
     expect(runner.receivedCalls[0].videoMode).toBe("off");
@@ -131,7 +131,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(runner.receivedCalls[0].screenshotMode).toBe("only-on-failure");
     expect(runner.receivedCalls[0].videoMode).toBe("retain-on-failure");
@@ -146,7 +146,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(runner.receivedCalls[0].screenshotMode).toBe("on");
     expect(runner.receivedCalls[0].videoMode).toBe("on");
@@ -161,7 +161,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    const result = await runEjecutor(tmpProject, "tests", runner, callbacks);
+    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     const expectedCwd = path.join(tmpProject, "tests");
     const expectedXmlPath = path.join(expectedCwd, "results", "latest.xml");
@@ -183,7 +183,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    const result = await runEjecutor(tmpProject, "tests", runner, callbacks);
+    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     const expectedHtmlPath = path.join(tmpProject, "tests", "results", "latest.html");
     expect(result.htmlReportPath).toBe(expectedHtmlPath);
@@ -201,7 +201,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    const result = await runEjecutor(tmpProject, "tests", runner, callbacks);
+    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(result.exitCode).toBe(1);
     expect(result.browserSetupWarning).toBe('Ejecuta "playwright install".');
@@ -216,7 +216,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
 
     expect(runner.receivedCalls[0].env).toEqual({});
   });
@@ -230,8 +230,38 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, callbacks, { AGENTE_QA_APP_URL: "https://mi-app.com" });
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, { AGENTE_QA_APP_URL: "https://mi-app.com" });
 
     expect(runner.receivedCalls[0].env).toEqual({ AGENTE_QA_APP_URL: "https://mi-app.com" });
+  });
+
+  it("passes headed: false and verboseSteps: false when headedMode is false", async () => {
+    await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+
+    expect(runner.receivedCalls[0].headed).toBe(false);
+    expect(runner.receivedCalls[0].verboseSteps).toBe(false);
+  });
+
+  it("passes headed: true and verboseSteps: true when headedMode is true", async () => {
+    await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
+    const runner = new FakeTestRunner([{ exitCode: 0 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+
+    await runEjecutor(tmpProject, "tests", runner, true, callbacks);
+
+    expect(runner.receivedCalls[0].headed).toBe(true);
+    expect(runner.receivedCalls[0].verboseSteps).toBe(true);
   });
 });

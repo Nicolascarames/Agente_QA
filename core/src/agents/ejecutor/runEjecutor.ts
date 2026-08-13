@@ -56,6 +56,7 @@ export async function runEjecutor(
   projectRoot: string,
   testsDir: string,
   runner: TestRunner,
+  headedMode: boolean,
   callbacks: ExecutorCallbacks,
   testEnv: Record<string, string> = {}
 ): Promise<EjecutorResult> {
@@ -86,8 +87,8 @@ export async function runEjecutor(
     markerExpression,
     screenshotMode,
     videoMode,
-    headed: false,
-    verboseSteps: false,
+    headed: headedMode,
+    verboseSteps: headedMode,
     junitXmlPath,
     htmlReportPath,
     onOutput: callbacks.onOutput,
