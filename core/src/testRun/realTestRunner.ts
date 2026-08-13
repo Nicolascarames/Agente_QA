@@ -98,6 +98,12 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
       }
       args.push(`--screenshot=${runOptions.screenshotMode}`);
       args.push(`--video=${runOptions.videoMode}`);
+      if (runOptions.headed) {
+        args.push("--headed");
+      }
+      if (runOptions.verboseSteps) {
+        args.push("-v", "--gherkin-terminal-reporter", "--color=no");
+      }
       args.push(`--junitxml=${runOptions.junitXmlPath}`);
       args.push(`--html=${runOptions.htmlReportPath}`, "--self-contained-html");
 

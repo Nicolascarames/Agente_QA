@@ -8,6 +8,8 @@ function options(overrides: Partial<TestRunOptions> = {}): TestRunOptions {
     markerExpression: null,
     screenshotMode: "off",
     videoMode: "off",
+    headed: false,
+    verboseSteps: false,
     junitXmlPath: "/tmp/project/tests/results/latest.xml",
     htmlReportPath: "/tmp/project/tests/results/latest.html",
     onOutput: () => {},

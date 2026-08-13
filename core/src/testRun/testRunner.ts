@@ -3,6 +3,8 @@ export interface TestRunOptions {
   markerExpression: string | null;
   screenshotMode: "off" | "only-on-failure" | "on";
   videoMode: "off" | "retain-on-failure" | "on";
+  headed: boolean;
+  verboseSteps: boolean;
   junitXmlPath: string;
   htmlReportPath: string;
   onOutput: (chunk: string) => void;

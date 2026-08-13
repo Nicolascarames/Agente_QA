@@ -86,6 +86,8 @@ export async function runEjecutor(
     markerExpression,
     screenshotMode,
     videoMode,
+    headed: false,
+    verboseSteps: false,
     junitXmlPath,
     htmlReportPath,
     onOutput: callbacks.onOutput,

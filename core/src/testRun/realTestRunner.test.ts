@@ -23,6 +23,8 @@ function baseOptions(overrides: Partial<TestRunOptions> = {}): TestRunOptions {
     markerExpression: null,
     screenshotMode: "off",
     videoMode: "off",
+    headed: false,
+    verboseSteps: false,
     junitXmlPath: path.join(os.tmpdir(), "agente-qa-realtestrunner-preflight.xml"),
     htmlReportPath: path.join(os.tmpdir(), "agente-qa-realtestrunner-preflight.html"),
     onOutput: () => {},
@@ -91,6 +93,8 @@ def _():
           markerExpression: null,
           screenshotMode: "off",
           videoMode: "off",
+          headed: false,
+          verboseSteps: false,
           junitXmlPath,
           htmlReportPath,
           onOutput: (chunk) => {
@@ -160,6 +164,8 @@ def _():
           markerExpression: null,
           screenshotMode: "off",
           videoMode: "off",
+          headed: false,
+          verboseSteps: false,
           junitXmlPath,
           htmlReportPath,
           onOutput: () => {},
@@ -167,6 +173,67 @@ def _():
         });
 
         expect(result.exitCode).toBe(0);
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("accepts --headed and --gherkin-terminal-reporter, and the latter visibly changes pytest's output", async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-realtestrunner-headed-"));
+      try {
+        await fs.mkdir(path.join(tmpDir, "features"), { recursive: true });
+        await fs.mkdir(path.join(tmpDir, "tests"), { recursive: true });
+        await fs.writeFile(
+          path.join(tmpDir, "features", "sample.feature"),
+          "Feature: Sample\n  @smoke\n  Scenario: it works\n    Given a precondition\n    When an action happens\n    Then the outcome is correct\n",
+          "utf-8"
+        );
+        await fs.writeFile(
+          path.join(tmpDir, "tests", "test_sample.py"),
+          `from pytest_bdd import scenarios, given, when, then
+
+scenarios("../features/sample.feature")
+
+
+@given("a precondition")
+def _():
+    pass
+
+
+@when("an action happens")
+def _():
+    pass
+
+
+@then("the outcome is correct")
+def _():
+    pass
+`,
+          "utf-8"
+        );
+
+        const junitXmlPath = path.join(tmpDir, "results", "latest.xml");
+        const htmlReportPath = path.join(tmpDir, "results", "latest.html");
+        await fs.mkdir(path.dirname(junitXmlPath), { recursive: true });
+
+        let output = "";
+        const result = await realTestRunner.run({
+          cwd: tmpDir,
+          markerExpression: null,
+          screenshotMode: "off",
+          videoMode: "off",
+          headed: true,
+          verboseSteps: true,
+          junitXmlPath,
+          htmlReportPath,
+          onOutput: (chunk) => {
+            output += chunk;
+          },
+          env: {},
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(output).toContain("Feature: Sample");
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
