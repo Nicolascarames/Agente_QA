@@ -275,4 +275,65 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       expect(allPromptText).not.toContain(realEncodedPassword);
     });
   });
+
+  describe("portal app (a real link on the page leads off to a different origin)", () => {
+    // Two separate fixture servers on 127.0.0.1 at different ports ARE
+    // different origins (WHATWG origin = scheme + host + port) — this is a
+    // real cross-origin browser navigation, not a simulated one.
+    let destination: FixtureApp;
+    let portal: FixtureApp;
+    beforeAll(async () => {
+      destination = await startFixtureApp("spa"); // serves a real login form at "/"
+      portal = await startFixtureApp("portal", { crossOriginTarget: destination.url });
+    });
+    afterAll(async () => {
+      await portal.close();
+      await destination.close();
+    });
+
+    it("refuses to navigate to a different origin when the model requests an absolute cross-origin goto", async () => {
+      const llm = new FakeLLMProvider([
+        JSON.stringify({ action: "goto", target: destination.url }),
+        JSON.stringify({ action: "done" }),
+      ]);
+      const explorer = createRealSiteExplorer(llm);
+      const steps: string[] = [];
+
+      const result = await explorer.explore(
+        baseInput({ matchedPattern: null, baseUrl: portal.url }),
+        (message) => steps.push(message)
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      // Still on the configured origin — the cross-origin goto never happened.
+      expect(new URL(result.screens[0].url).origin).toBe(new URL(portal.url).origin);
+      expect(steps.some((s) => s.includes("otro origen bloqueada"))).toBe(true);
+    });
+
+    it("refuses to fill credentials after a real click takes it to a different origin, never typing the credential there", async () => {
+      const llm = new FakeLLMProvider([
+        JSON.stringify({ action: "click", role: "link", name: "Portal externo" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
+        JSON.stringify({ action: "done" }),
+      ]);
+      const explorer = createRealSiteExplorer(llm);
+      const steps: string[] = [];
+
+      const result = await explorer.explore(
+        baseInput({ matchedPattern: null, baseUrl: portal.url, credentials: FIXTURE_CREDENTIALS }),
+        (message) => steps.push(message)
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      // The click genuinely left the configured origin (a real <a href> navigation,
+      // not something our own goto-guard would ever see or block).
+      expect(new URL(result.screens[0].url).origin).toBe(new URL(destination.url).origin);
+      expect(new URL(result.screens[0].url).origin).not.toBe(new URL(portal.url).origin);
+      // The credential was never actually typed into the off-origin page.
+      expect(result.screens[0].ariaSnapshot).not.toContain(FIXTURE_CREDENTIALS.username);
+      expect(steps.some((s) => s.includes("Relleno de credenciales bloqueado"))).toBe(true);
+    });
+  });
 });

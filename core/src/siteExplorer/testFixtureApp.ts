@@ -73,9 +73,25 @@ const LEAKY_LOGIN_PAGE = `<!doctype html>
 
 const LEAKY_LANDING_PAGE = `<!doctype html><html><body><h1>Bienvenido</h1></body></html>`;
 
-export type FixtureMode = "conventional" | "spa" | "custom" | "leaky";
+function portalPageHtml(crossOriginTarget: string): string {
+  return `<!doctype html>
+<html>
+<body>
+  <a href="${crossOriginTarget}">Portal externo</a>
+</body>
+</html>`;
+}
 
-export function startFixtureApp(mode: FixtureMode): Promise<FixtureApp> {
+export type FixtureMode = "conventional" | "spa" | "custom" | "leaky" | "portal";
+
+export interface FixtureAppOptions {
+  // Only used by mode "portal": the real cross-origin URL its "Portal externo"
+  // link points to, so a test can drive an actual browser-native navigation
+  // to a different origin (not one this app's own server controls).
+  crossOriginTarget?: string;
+}
+
+export function startFixtureApp(mode: FixtureMode, options: FixtureAppOptions = {}): Promise<FixtureApp> {
   const server = http.createServer((req, res) => {
     const url = (req.url ?? "/").split("?")[0];
     const send = (status: number, body: string): void => {
@@ -90,6 +106,9 @@ export function startFixtureApp(mode: FixtureMode): Promise<FixtureApp> {
     if (mode === "custom" && url === "/access") return send(200, loginPageHtml());
     if (mode === "leaky" && url === "/leaky") return send(200, LEAKY_LOGIN_PAGE);
     if (mode === "leaky" && url === "/leaky-landing") return send(200, LEAKY_LANDING_PAGE);
+    if (mode === "portal" && url === "/" && options.crossOriginTarget) {
+      return send(200, portalPageHtml(options.crossOriginTarget));
+    }
 
     send(404, NOT_FOUND_PAGE);
   });

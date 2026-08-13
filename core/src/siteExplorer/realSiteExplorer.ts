@@ -96,6 +96,25 @@ function redactCredentialsFromUrl(
   return redactLiteralCredentials(working, credentials);
 }
 
+/**
+ * The agentic path's `goto`/`click` targets come from the LLM's reading of the
+ * page (indirectly, from whatever the app under test rendered) — not from the
+ * user's own config. A page under test can legitimately link off-origin (a
+ * "Login with Google" button, an ad, a compromised/XSS'd link), and the LLM
+ * has no way to know that following it is unsafe. Filling real test
+ * credentials into a form on any origin other than the one the user actually
+ * configured (AGENTE_QA_APP_URL) would hand that credential to a third party
+ * the user never approved. This check is the last line of defense right
+ * before the one action that actually types a secret into a page.
+ */
+function isSameOrigin(url: string, baseUrl: string): boolean {
+  try {
+    return new URL(url).origin === new URL(baseUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 async function looksLikeUsablePage(page: Page): Promise<boolean> {
   const count = await page.getByRole("textbox").or(page.getByRole("button")).count();
   return count > 0;
@@ -213,7 +232,11 @@ async function exploreAgentically(
     }
     if (action.action === "goto") {
       const url = new URL(action.target, input.baseUrl).toString();
-      await page.goto(url).catch(() => {});
+      if (!isSameOrigin(url, input.baseUrl)) {
+        onStep(`Navegación a otro origen bloqueada por seguridad: ${url}`);
+      } else {
+        await page.goto(url).catch(() => {});
+      }
     } else if (action.action === "click") {
       const target = page.getByRole(action.role, { name: action.name }).first();
       if ((await target.count()) > 0) {
@@ -228,6 +251,10 @@ async function exploreAgentically(
           error:
             "El modelo pidió rellenar credenciales de test, pero no hay AGENTE_QA_TEST_USERNAME/AGENTE_QA_TEST_PASSWORD configurados en .agente-qa/.env.",
         };
+      }
+      if (!isSameOrigin(page.url(), input.baseUrl)) {
+        onStep("Relleno de credenciales bloqueado: la pantalla actual no pertenece al origen configurado en AGENTE_QA_APP_URL.");
+        continue;
       }
       const value = action.field === "username" ? input.credentials.username : input.credentials.password;
       const target = page.getByLabel(action.labelText, { exact: false }).first();
