@@ -27,6 +27,9 @@ program
     } else {
       console.log(`Ya existía ${result.envPath} — revísalo si quieres cambiar algo.`);
     }
+    if (result.gitignoreEntriesAdded.length > 0) {
+      console.log(`Añadido al .gitignore: ${result.gitignoreEntriesAdded.join(", ")}`);
+    }
   });
 
 program
