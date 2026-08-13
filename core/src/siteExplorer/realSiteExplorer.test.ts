@@ -173,4 +173,38 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       expect(llm.receivedCalls).toHaveLength(20);
     });
   });
+
+  describe("leaky app (native GET-method login form puts credentials in the URL on submit)", () => {
+    let app: FixtureApp;
+    beforeAll(async () => {
+      app = await startFixtureApp("leaky");
+    });
+    afterAll(async () => {
+      await app.close();
+    });
+
+    it("redacts a credential that leaks into page.url() after a native form submission, never sending it to the LLM", async () => {
+      const llm = new FakeLLMProvider([
+        JSON.stringify({ action: "goto", target: "/leaky" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Contraseña", field: "password" }),
+        JSON.stringify({ action: "click", role: "button", name: "Iniciar sesión" }),
+        JSON.stringify({ action: "done" }),
+      ]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(
+        baseInput({ matchedPattern: null, baseUrl: app.url, credentials: FIXTURE_CREDENTIALS })
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      // The native form submission really did put the password in the URL — proves
+      // this test exercises the leak vector, not just a page that never reaches it.
+      expect(result.screens[0].url).toContain(FIXTURE_CREDENTIALS.password);
+
+      const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
+      expect(allPromptText).not.toContain(FIXTURE_CREDENTIALS.password);
+    });
+  });
 });

@@ -55,7 +55,25 @@ const DASHBOARD_PAGE = `<!doctype html>
 const NOT_FOUND_PAGE = `<!doctype html><html><body><h1>404</h1></body></html>`;
 const EMPTY_HOME_PAGE = `<!doctype html><html><body><h1>Home</h1></body></html>`;
 
-export type FixtureMode = "conventional" | "spa" | "custom";
+// Legacy-style native form (no JS, method="get"): submitting it puts field values
+// straight into the resulting page's URL query string, e.g. "?password=...".
+// Used to exercise the real "credential leaks into page.url()" vector.
+const LEAKY_LOGIN_PAGE = `<!doctype html>
+<html>
+<body>
+  <form method="get" action="/leaky-landing">
+    <label for="email">Correo electrónico</label>
+    <input id="email" name="email" type="text" />
+    <label for="password">Contraseña</label>
+    <input id="password" name="password" type="password" />
+    <button type="submit">Iniciar sesión</button>
+  </form>
+</body>
+</html>`;
+
+const LEAKY_LANDING_PAGE = `<!doctype html><html><body><h1>Bienvenido</h1></body></html>`;
+
+export type FixtureMode = "conventional" | "spa" | "custom" | "leaky";
 
 export function startFixtureApp(mode: FixtureMode): Promise<FixtureApp> {
   const server = http.createServer((req, res) => {
@@ -70,6 +88,8 @@ export function startFixtureApp(mode: FixtureMode): Promise<FixtureApp> {
     if (mode === "conventional" && url === "/") return send(200, EMPTY_HOME_PAGE);
     if (mode === "spa" && url === "/") return send(200, loginPageHtml());
     if (mode === "custom" && url === "/access") return send(200, loginPageHtml());
+    if (mode === "leaky" && url === "/leaky") return send(200, LEAKY_LOGIN_PAGE);
+    if (mode === "leaky" && url === "/leaky-landing") return send(200, LEAKY_LANDING_PAGE);
 
     send(404, NOT_FOUND_PAGE);
   });

@@ -37,16 +37,18 @@ async function ariaSnapshotOf(page: Page): Promise<string> {
 }
 
 /**
- * Playwright's ariaSnapshot() echoes back the live value typed into a field
- * (e.g. `textbox "Contraseña": hunter2-test-only`). The credential values must
- * never reach the LLM, so strip any literal occurrence before building the prompt.
+ * The real credential values must never reach the LLM. Two places can leak them
+ * into the agentic prompt if left raw: Playwright's ariaSnapshot() echoes back
+ * the live value typed into a field (e.g. `textbox "Contraseña": hunter2-test-only`),
+ * and page.url() can carry a credential in a query string after a native
+ * (non-preventDefault) GET-method login form submits (e.g. `?password=...`).
+ * Strip any literal occurrence of the configured username/password from a given
+ * string before it is used to build the prompt. Never apply this to the
+ * ScreenEvidence returned to the caller — that must keep the raw url/snapshot.
  */
-function redactCredentialsFromSnapshot(
-  snapshot: string,
-  credentials: { username: string; password: string } | undefined
-): string {
-  if (!credentials) return snapshot;
-  let redacted = snapshot;
+function redactCredentials(text: string, credentials: { username: string; password: string } | undefined): string {
+  if (!credentials) return text;
+  let redacted = text;
   if (credentials.password) {
     redacted = redacted.split(credentials.password).join("••••••••");
   }
@@ -152,8 +154,9 @@ async function exploreAgentically(
 
   for (let step = 0; step < MAX_AGENTIC_STEPS; step++) {
     const snapshot = await ariaSnapshotOf(page);
-    const promptSnapshot = redactCredentialsFromSnapshot(snapshot, input.credentials);
-    const prompt = explorerActionPrompt(input.featureText, page.url(), promptSnapshot, Boolean(input.credentials));
+    const promptUrl = redactCredentials(page.url(), input.credentials);
+    const promptSnapshot = redactCredentials(snapshot, input.credentials);
+    const prompt = explorerActionPrompt(input.featureText, promptUrl, promptSnapshot, Boolean(input.credentials));
     const raw = await llm.generate([
       { role: "system", content: "Eres un explorador de interfaces web que decide una acción a la vez." },
       { role: "user", content: prompt },
