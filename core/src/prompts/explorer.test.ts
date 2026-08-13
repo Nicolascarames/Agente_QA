@@ -19,4 +19,15 @@ describe("explorerActionPrompt", () => {
     const prompt = explorerActionPrompt("Feature: x\n", "https://x.com", "", false);
     expect(prompt).toContain("No hay credenciales de prueba configuradas");
   });
+
+  it("mentions the previous action's outcome when provided", () => {
+    const prompt = explorerActionPrompt("Feature: x\n", "https://x.com", "", true, 'no se encontró ningún "button" con nombre "Enviar"');
+    expect(prompt).toContain("La acción anterior no tuvo el efecto esperado");
+    expect(prompt).toContain('no se encontró ningún "button" con nombre "Enviar"');
+  });
+
+  it("says nothing about a previous outcome when none is provided", () => {
+    const prompt = explorerActionPrompt("Feature: x\n", "https://x.com", "", true);
+    expect(prompt).not.toContain("La acción anterior");
+  });
 });

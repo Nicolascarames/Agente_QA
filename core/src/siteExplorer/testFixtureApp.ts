@@ -82,7 +82,7 @@ function portalPageHtml(crossOriginTarget: string): string {
 </html>`;
 }
 
-export type FixtureMode = "conventional" | "spa" | "custom" | "leaky" | "portal";
+export type FixtureMode = "conventional" | "spa" | "custom" | "leaky" | "portal" | "redirect-login";
 
 export interface FixtureAppOptions {
   // Only used by mode "portal": the real cross-origin URL its "Portal externo"
@@ -109,6 +109,14 @@ export function startFixtureApp(mode: FixtureMode, options: FixtureAppOptions = 
     if (mode === "portal" && url === "/" && options.crossOriginTarget) {
       return send(200, portalPageHtml(options.crossOriginTarget));
     }
+    // Simulates an app whose login route hands off to a hosted external IdP
+    // (Clerk/Auth0/Okta-style) via a real HTTP redirect, not a client link —
+    // `page.goto()` follows this transparently, landing on a different origin.
+    if (mode === "redirect-login" && url === "/login" && options.crossOriginTarget) {
+      res.writeHead(302, { Location: options.crossOriginTarget });
+      return res.end();
+    }
+    if (mode === "redirect-login" && url === "/") return send(200, EMPTY_HOME_PAGE);
 
     send(404, NOT_FOUND_PAGE);
   });

@@ -172,6 +172,50 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       expect(result.error).toContain("20 acciones");
       expect(llm.receivedCalls).toHaveLength(20);
     });
+
+    it("re-navigates to baseUrl before the agentic loop when escalating from a failed fast path, instead of starting from the last failed route", async () => {
+      // Both known route candidates 404 in "custom" mode, so this escalates.
+      // Before the fix, the agentic loop's first prompt/snapshot would come
+      // from the LAST tried candidate (a dead-end 404), not a fresh baseUrl.
+      const llm = new FakeLLMProvider([JSON.stringify({ action: "done" })]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(baseInput({ matchedPattern: loginPattern, baseUrl: app.url }));
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      // A single "done" action with no navigation in between only reaches
+      // baseUrl's root if the escalation actually re-navigated there first —
+      // otherwise it would still be sitting on ".../signin" (the last candidate).
+      expect(result.screens[0].url).toBe(`${app.url}/`);
+    });
+
+    it("tells the model what went wrong after a failed click, instead of repeating an unchanged prompt", async () => {
+      const llm = new FakeLLMProvider([
+        JSON.stringify({ action: "click", role: "button", name: "no existe" }),
+        JSON.stringify({ action: "done" }),
+      ]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(baseInput({ matchedPattern: null, baseUrl: app.url }));
+
+      expect(result.ok).toBe(true);
+      expect(llm.receivedCalls).toHaveLength(2);
+      const secondPrompt = llm.receivedCalls[1].find((m) => m.role === "user")?.content;
+      expect(secondPrompt).toContain("La acción anterior no tuvo el efecto esperado");
+      expect(secondPrompt).toContain('no se encontró ningún "button" con nombre "no existe"');
+    });
+
+    it("returns a clear failure instead of throwing when the model's response isn't valid JSON", async () => {
+      const llm = new FakeLLMProvider(["esto no es JSON en absoluto"]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(baseInput({ matchedPattern: null, baseUrl: app.url }));
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("unreachable");
+      expect(result.error).toBeTruthy();
+    });
   });
 
   describe("leaky app (native GET-method login form puts credentials in the URL on submit)", () => {
@@ -183,7 +227,38 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       await app.close();
     });
 
-    it("redacts a credential that leaks into page.url() after a native form submission, never sending it to the LLM", async () => {
+    /**
+     * Independently proves the raw leak vector is real, WITHOUT going through
+     * createRealSiteExplorer at all: drives the fixture's native
+     * (method="get", no JS) login form with a fresh, separate browser and
+     * returns the resulting page.url() — pre-redaction. This is what the
+     * "leaky" fixture's LEAKY_LOGIN_PAGE (see testFixtureApp.ts) actually
+     * does when a real browser submits it.
+     */
+    async function captureRawLeakedUrl(
+      credentials: { username: string; password: string }
+    ): Promise<string> {
+      const browser = await chromium.launch();
+      try {
+        const page = await browser.newPage();
+        await page.goto(new URL("/leaky", app.url).toString());
+        await page.getByLabel("Correo electrónico").fill(credentials.username);
+        await page.getByLabel("Contraseña").fill(credentials.password);
+        await page.getByRole("button", { name: "Iniciar sesión" }).click();
+        await page.waitForLoadState("networkidle").catch(() => {});
+        return page.url();
+      } finally {
+        await browser.close();
+      }
+    }
+
+    it("redacts a credential that leaks into page.url() after a native form submission, and never returns it to the caller or the LLM", async () => {
+      // The native form submission really does put the password in the URL —
+      // proves this test exercises the leak vector, not just a page that
+      // never reaches it — checked independently of the explorer under test.
+      const rawLeakedUrl = await captureRawLeakedUrl(FIXTURE_CREDENTIALS);
+      expect(rawLeakedUrl).toContain(FIXTURE_CREDENTIALS.password);
+
       const llm = new FakeLLMProvider([
         JSON.stringify({ action: "goto", target: "/leaky" }),
         JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
@@ -199,9 +274,9 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("unreachable");
-      // The native form submission really did put the password in the URL — proves
-      // this test exercises the leak vector, not just a page that never reaches it.
-      expect(result.screens[0].url).toContain(FIXTURE_CREDENTIALS.password);
+      // Fixed: the real password is redacted before it's ever returned to the caller.
+      expect(result.screens[0].url).not.toContain(FIXTURE_CREDENTIALS.password);
+      expect(new URL(result.screens[0].url).searchParams.get("password")).toBe("[REDACTED]");
 
       const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
       expect(allPromptText).not.toContain(FIXTURE_CREDENTIALS.password);
@@ -211,6 +286,11 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       // "@" and "+" get percent-encoded, and a space is form-encoded as "+" (not "%20"),
       // by a real browser serializing a native application/x-www-form-urlencoded GET form.
       const reservedCredentials = { username: "leaky.user+tag@example.com", password: "s3cr3t pass+val" };
+      const formEncodedPassword = encodeURIComponent(reservedCredentials.password).replace(/%20/g, "+");
+
+      const rawLeakedUrl = await captureRawLeakedUrl(reservedCredentials);
+      expect(rawLeakedUrl).toContain(formEncodedPassword);
+
       const llm = new FakeLLMProvider([
         JSON.stringify({ action: "goto", target: "/leaky" }),
         JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
@@ -226,10 +306,11 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("unreachable");
-      // Confirm the leak vector is genuinely exercised: the raw evidence URL really
-      // does carry the password, form-encoded (space -> "+", not the raw string).
-      const formEncodedPassword = encodeURIComponent(reservedCredentials.password).replace(/%20/g, "+");
-      expect(result.screens[0].url).toContain(formEncodedPassword);
+      // Fixed: none of the raw/encoded forms of the password make it into the
+      // evidence returned to the caller.
+      expect(result.screens[0].url).not.toContain(reservedCredentials.password);
+      expect(result.screens[0].url).not.toContain(encodeURIComponent(reservedCredentials.password));
+      expect(result.screens[0].url).not.toContain(formEncodedPassword);
 
       const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
       expect(allPromptText).not.toContain(reservedCredentials.password);
@@ -245,6 +326,12 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       // it also escapes "! ' ( ) ~". A redaction approach that only strips the raw
       // value plus its encodeURIComponent() form would miss this entirely.
       const trickyCredentials = { username: "leaky-user", password: "it's!weird(pass)~end" };
+
+      // Confirm the leak vector is genuinely exercised: decoding the raw URL a
+      // native form submission actually produces gives back the exact real password.
+      const rawLeakedUrl = await captureRawLeakedUrl(trickyCredentials);
+      expect(new URL(rawLeakedUrl).searchParams.get("password")).toBe(trickyCredentials.password);
+
       const llm = new FakeLLMProvider([
         JSON.stringify({ action: "goto", target: "/leaky" }),
         JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
@@ -260,10 +347,9 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
 
       expect(result.ok).toBe(true);
       if (!result.ok) throw new Error("unreachable");
-      // Confirm the leak vector is genuinely exercised: decoding the raw evidence URL's
-      // query param gives back the exact real password a native form submitted.
-      const leakedUrl = new URL(result.screens[0].url);
-      expect(leakedUrl.searchParams.get("password")).toBe(trickyCredentials.password);
+      // Fixed: the password param is redacted in the evidence returned to the caller.
+      const evidenceUrl = new URL(result.screens[0].url);
+      expect(evidenceUrl.searchParams.get("password")).not.toBe(trickyCredentials.password);
 
       const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
       expect(allPromptText).not.toContain(trickyCredentials.password);
@@ -282,13 +368,16 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
     // real cross-origin browser navigation, not a simulated one.
     let destination: FixtureApp;
     let portal: FixtureApp;
+    let redirectingLoginApp: FixtureApp;
     beforeAll(async () => {
       destination = await startFixtureApp("spa"); // serves a real login form at "/"
       portal = await startFixtureApp("portal", { crossOriginTarget: destination.url });
+      redirectingLoginApp = await startFixtureApp("redirect-login", { crossOriginTarget: `${destination.url}/` });
     });
     afterAll(async () => {
       await portal.close();
       await destination.close();
+      await redirectingLoginApp.close();
     });
 
     it("refuses to navigate to a different origin when the model requests an absolute cross-origin goto", async () => {
@@ -334,6 +423,35 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       // The credential was never actually typed into the off-origin page.
       expect(result.screens[0].ariaSnapshot).not.toContain(FIXTURE_CREDENTIALS.username);
       expect(steps.some((s) => s.includes("Relleno de credenciales bloqueado"))).toBe(true);
+    });
+
+    it("refuses to fill credentials via the fast path (performRealLogin) when the login route redirects to a different origin", async () => {
+      // The COMMON case: a pattern's navigationHints.requiresLogin routes
+      // through performRealLogin, not the agentic loop. An app whose login
+      // route 302s to a hosted external IdP (Clerk/Auth0/Okta-style) must get
+      // the same safe default as the agentic path — never type real
+      // credentials outside the configured origin.
+      const externalLoginPattern: Pattern = {
+        ...loginPattern,
+        navigationHints: { routeCandidates: ["/login"], requiresLogin: true },
+      };
+      const llm = new FakeLLMProvider([]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(
+        baseInput({
+          matchedPattern: externalLoginPattern,
+          baseUrl: redirectingLoginApp.url,
+          credentials: FIXTURE_CREDENTIALS,
+        })
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("unreachable");
+      expect(result.error).toContain("origen");
+      // Never escalated to the LLM, and (by construction, since we returned
+      // before calling performRealLogin) never typed the credential anywhere.
+      expect(llm.receivedCalls).toHaveLength(0);
     });
   });
 });

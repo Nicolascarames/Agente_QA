@@ -1,13 +1,14 @@
 import { chromium, type Browser, type Page } from "playwright";
 import type { LLMProvider } from "../llm/provider.js";
 import { parseJsonResponse } from "../llm/parseJson.js";
-import { ExplorerActionSchema } from "./explorerAction.js";
+import { ExplorerActionSchema, type ExplorerAction } from "./explorerAction.js";
 import { explorerActionPrompt } from "../prompts/explorer.js";
 import type {
   SiteExplorer,
   ExplorationInput,
   ExplorationResult,
   ExplorationStepCallback,
+  ExplorationCredentials,
   ScreenEvidence,
 } from "./siteExplorer.js";
 
@@ -115,6 +116,27 @@ function isSameOrigin(url: string, baseUrl: string): boolean {
   }
 }
 
+/**
+ * Every place that builds ScreenEvidence to hand back to the caller MUST go
+ * through this helper. Evidence returned from explore() flows straight into
+ * the code-generation LLM prompt (runGenerador -> generateCode) — a second
+ * model that has no involvement in exploration and must never see a real
+ * credential value either. Redacting only the explorer's OWN prompt
+ * (promptUrl/promptSnapshot below) is not enough.
+ */
+async function captureEvidence(
+  page: Page,
+  stepText: string,
+  credentials: ExplorationCredentials | undefined
+): Promise<ScreenEvidence> {
+  const snapshot = await ariaSnapshotOf(page);
+  return {
+    stepText,
+    url: redactCredentialsFromUrl(page.url(), credentials),
+    ariaSnapshot: redactLiteralCredentials(snapshot, credentials),
+  };
+}
+
 async function looksLikeUsablePage(page: Page): Promise<boolean> {
   const count = await page.getByRole("textbox").or(page.getByRole("button")).count();
   return count > 0;
@@ -126,7 +148,7 @@ const SUBMIT_BUTTON_NAME = /iniciar sesión|ingresar|log ?in/i;
 
 async function performRealLogin(
   page: Page,
-  credentials: { username: string; password: string }
+  credentials: ExplorationCredentials
 ): Promise<ScreenEvidence | null> {
   const emailField = page.getByLabel(LOGIN_FIELD_LABEL).first();
   const passwordField = page.getByLabel(PASSWORD_FIELD_LABEL).first();
@@ -141,11 +163,7 @@ async function performRealLogin(
   await submitButton.click();
   await page.waitForLoadState("networkidle").catch(() => {});
 
-  return {
-    stepText: "tras iniciar sesión con las credenciales de test",
-    url: page.url(),
-    ariaSnapshot: await ariaSnapshotOf(page),
-  };
+  return captureEvidence(page, "tras iniciar sesión con las credenciales de test", credentials);
 }
 
 async function exploreByHints(
@@ -173,9 +191,7 @@ async function exploreByHints(
     }
 
     onStep(`Ruta ${candidate} encontrada.`);
-    const screens: ScreenEvidence[] = [
-      { stepText: `pantalla en ${candidate}`, url: page.url(), ariaSnapshot: await ariaSnapshotOf(page) },
-    ];
+    const screens: ScreenEvidence[] = [await captureEvidence(page, `pantalla en ${candidate}`, input.credentials)];
 
     if (hints.requiresLogin) {
       if (!input.credentials) {
@@ -183,6 +199,12 @@ async function exploreByHints(
           ok: false,
           error:
             "Este escenario necesita iniciar sesión pero no hay AGENTE_QA_TEST_USERNAME/AGENTE_QA_TEST_PASSWORD configurados en .agente-qa/.env.",
+        };
+      }
+      if (!isSameOrigin(page.url(), input.baseUrl)) {
+        return {
+          ok: false,
+          error: `La pantalla de login en ${candidate} no pertenece al origen configurado en AGENTE_QA_APP_URL (posible redirección a un proveedor externo de login); no se van a escribir credenciales de test fuera de ese origen.`,
         };
       }
       const postLogin = await performRealLogin(page, input.credentials);
@@ -209,40 +231,73 @@ async function exploreAgentically(
     await page.goto(input.baseUrl).catch(() => {});
   }
 
+  // Short description of what happened when the LAST action didn't do what
+  // was asked, so the next prompt doesn't look identical to the one that
+  // already produced a failed/no-op action (see explorerActionPrompt). Reset
+  // to undefined after any action that plausibly succeeded.
+  let lastOutcome: string | undefined;
+
   for (let step = 0; step < MAX_AGENTIC_STEPS; step++) {
     const snapshot = await ariaSnapshotOf(page);
     const promptUrl = redactCredentialsFromUrl(page.url(), input.credentials);
     const promptSnapshot = redactLiteralCredentials(snapshot, input.credentials);
-    const prompt = explorerActionPrompt(input.featureText, promptUrl, promptSnapshot, Boolean(input.credentials));
+    const prompt = explorerActionPrompt(
+      input.featureText,
+      promptUrl,
+      promptSnapshot,
+      Boolean(input.credentials),
+      lastOutcome
+    );
     const raw = await llm.generate([
       { role: "system", content: "Eres un explorador de interfaces web que decide una acción a la vez." },
       { role: "user", content: prompt },
     ]);
-    const action = parseJsonResponse(ExplorerActionSchema, raw);
+
+    let action: ExplorerAction;
+    try {
+      action = parseJsonResponse(ExplorerActionSchema, raw);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
     onStep(`Acción ${step + 1}: ${action.action}`);
 
     if (action.action === "done") {
       return {
         ok: true,
-        screens: [{ stepText: "estado final del escenario", url: page.url(), ariaSnapshot: snapshot }],
+        screens: [await captureEvidence(page, "estado final del escenario", input.credentials)],
       };
     }
     if (action.action === "fail") {
       return { ok: false, error: action.reason };
     }
+
+    let outcome: string | undefined;
+
     if (action.action === "goto") {
       const url = new URL(action.target, input.baseUrl).toString();
       if (!isSameOrigin(url, input.baseUrl)) {
         onStep(`Navegación a otro origen bloqueada por seguridad: ${url}`);
+        outcome = `se bloqueó la navegación a "${action.target}" por ser de otro origen`;
       } else {
-        await page.goto(url).catch(() => {});
+        const response = await page.goto(url).catch(() => null);
+        if (!response) {
+          outcome = `no se pudo navegar a "${action.target}"`;
+        }
       }
     } else if (action.action === "click") {
       const target = page.getByRole(action.role, { name: action.name }).first();
       if ((await target.count()) > 0) {
-        await target.click({ timeout: AGENTIC_ACTION_TIMEOUT_MS }).catch(() => {});
+        const clicked = await target
+          .click({ timeout: AGENTIC_ACTION_TIMEOUT_MS })
+          .then(() => true)
+          .catch(() => false);
+        if (!clicked) {
+          outcome = `no se pudo hacer click en "${action.role}" con nombre "${action.name}"`;
+        }
       } else {
         onStep(`No se encontró ningún "${action.role}" con nombre "${action.name}".`);
+        outcome = `no se encontró ningún "${action.role}" con nombre "${action.name}"`;
       }
     } else if (action.action === "fill_credential") {
       if (!input.credentials) {
@@ -254,16 +309,26 @@ async function exploreAgentically(
       }
       if (!isSameOrigin(page.url(), input.baseUrl)) {
         onStep("Relleno de credenciales bloqueado: la pantalla actual no pertenece al origen configurado en AGENTE_QA_APP_URL.");
+        lastOutcome = "se bloqueó el relleno de credenciales: la pantalla actual no pertenece al origen configurado";
         continue;
       }
       const value = action.field === "username" ? input.credentials.username : input.credentials.password;
       const target = page.getByLabel(action.labelText, { exact: false }).first();
       if ((await target.count()) > 0) {
-        await target.fill(value, { timeout: AGENTIC_ACTION_TIMEOUT_MS }).catch(() => {});
+        const filled = await target
+          .fill(value, { timeout: AGENTIC_ACTION_TIMEOUT_MS })
+          .then(() => true)
+          .catch(() => false);
+        if (!filled) {
+          outcome = `no se pudo rellenar el campo "${action.labelText}"`;
+        }
       } else {
         onStep(`No se encontró ningún campo con etiqueta "${action.labelText}".`);
+        outcome = `no se encontró ningún campo con etiqueta "${action.labelText}"`;
       }
     }
+
+    lastOutcome = outcome;
   }
 
   return { ok: false, error: `No se pudo completar el escenario tras ${MAX_AGENTIC_STEPS} acciones.` };
@@ -285,6 +350,13 @@ export function createRealSiteExplorer(llm: LLMProvider, options?: { executableP
             ? `Ninguna ruta conocida sirvió (${triedRoutes.join(", ")}); explorando con ayuda del modelo...`
             : "No hay patrón conocido; explorando con ayuda del modelo..."
         );
+
+        if (triedRoutes.length > 0) {
+          // Escalating from a failed fast path: the page is sitting on the
+          // LAST tried candidate (often a 404), not a fresh view of the app.
+          // Give the model a real starting point instead of a dead end.
+          await page.goto(input.baseUrl).catch(() => {});
+        }
 
         const agenticResult = await exploreAgentically(page, llm, input, onStep);
         if (!agenticResult.ok && triedRoutes.length > 0) {

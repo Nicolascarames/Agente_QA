@@ -2,17 +2,22 @@ export function explorerActionPrompt(
   featureText: string,
   currentUrl: string,
   ariaSnapshot: string,
-  hasCredentials: boolean
+  hasCredentials: boolean,
+  lastActionOutcome?: string
 ): string {
   const credentialsNote = hasCredentials
     ? 'Hay credenciales de una cuenta de prueba disponibles: puedes pedir rellenarlas con la acción "fill_credential" (nunca escribas el valor real, solo indica qué campo: "username" o "password").'
     : "No hay credenciales de prueba configuradas: no pidas rellenar ningún campo de usuario/contraseña.";
 
+  const outcomeNote = lastActionOutcome
+    ? `\nLa acción anterior no tuvo el efecto esperado: ${lastActionOutcome}. Prueba algo distinto.\n`
+    : "";
+
   return `Eres un explorador de interfaces web. Tu objetivo es completar, en la aplicación real, el flujo descrito por este escenario Gherkin:
 """
 ${featureText}
 """
-
+${outcomeNote}
 Estás en la URL: ${currentUrl}
 
 Esto es lo que hay en la pantalla ahora mismo (snapshot de accesibilidad: rol y nombre accesible de cada elemento visible):

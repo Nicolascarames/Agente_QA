@@ -239,6 +239,37 @@ describe("runGenerador", () => {
     expect(promptContent).toContain('textbox "Email"');
   });
 
+  it("passes whatever the explorer returns straight into the codegen prompt without filtering it — redaction is the SiteExplorer's contractual responsibility, not runGenerador's", async () => {
+    // Regression/contract test for the credential-leak fix in realSiteExplorer.ts:
+    // a SiteExplorer implementation (createRealSiteExplorer) is now required to
+    // already return redacted ScreenEvidence (see its captureEvidence helper) —
+    // that's where the fix lives, at the source. runGenerador must NOT also try
+    // to re-filter evidence itself: a second, independent redaction layer here
+    // could silently mask a regression in the first one and duplicate logic
+    // across two modules. This documents/proves that expectation by showing a
+    // FakeSiteExplorer's evidence — credential-shaped string included — flows
+    // through runGenerador into the codegen prompt completely unmodified.
+    const featureFilePath = await writeFeature("Feature: Checkout\n");
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        screens: [
+          { stepText: "x", url: "https://example.com/login", ariaSnapshot: 'textbox "Password": s3cret-value' },
+        ],
+      },
+    ]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador(
+      featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
+    );
+
+    const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
+    expect(promptContent).toContain("s3cret-value");
+  });
+
   it("passes baseUrl, credentials, and headed:true through to the explorer", async () => {
     const featureFilePath = await writeFeature("Feature: Checkout\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
