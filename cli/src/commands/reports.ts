@@ -16,7 +16,7 @@ export async function runGenerateReports(
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
 
-  let detailLevel: "resumen" | "completo" = "resumen" as "resumen" | "completo";
+  let detailLevel: "resumen" | "completo" = "resumen" as "resumen" | "completo"; // cast needed: TS can't prove this closure — passed to runReportes as an opaque callback — runs before this comparison, so it narrows detailLevel to the literal "resumen" without it
   const callbacks: ReportesCallbacks = {
     selectDetailLevel: async () => {
       detailLevel = await prompts.selectDetailLevel();
