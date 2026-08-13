@@ -233,7 +233,8 @@ def _():
         });
 
         expect(result.exitCode).toBe(0);
-        expect(output).toContain("Feature: Sample");
+        const plainOutput = output.replace(/\x1B\[[0-9;]*m/g, "");
+        expect(plainOutput).toContain("Feature: Sample");
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }

@@ -102,7 +102,8 @@ export function createRealTestRunner(options?: { pythonCommand?: string }): Test
         args.push("--headed");
       }
       if (runOptions.verboseSteps) {
-        args.push("-v", "--gherkin-terminal-reporter", "--color=no");
+        // -v is required for pytest-bdd's --gherkin-terminal-reporter to emit any step output at all.
+        args.push("-v", "--gherkin-terminal-reporter");
       }
       args.push(`--junitxml=${runOptions.junitXmlPath}`);
       args.push(`--html=${runOptions.htmlReportPath}`, "--self-contained-html");
