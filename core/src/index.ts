@@ -26,8 +26,8 @@ export { LLMRequestError } from "./llm/errors.js";
 export { FakeLLMProvider } from "./llm/testUtils.js";
 export { createProvider } from "./llm/factory.js";
 
-export { PatternSchema } from "./schemas/pattern.js";
-export type { Pattern } from "./schemas/pattern.js";
+export { PatternSchema, NavigationHintsSchema } from "./schemas/pattern.js";
+export type { Pattern, NavigationHints } from "./schemas/pattern.js";
 export type { GherkinPlan } from "./schemas/gherkinPlan.js";
 
 export {
@@ -51,6 +51,16 @@ export { writeTestFiles, testFileExists, testFilePath } from "./agents/generador
 export { listFeatureFiles } from "./agents/generador/listFeatureFiles.js";
 export { runGenerador } from "./agents/generador/runGenerador.js";
 export type { GeneratorCallbacks } from "./agents/generador/runGenerador.js";
+
+export type {
+  ScreenEvidence,
+  ExplorationInput,
+  ExplorationResult,
+  ExplorationCredentials,
+  SiteExplorer,
+} from "./siteExplorer/siteExplorer.js";
+export { FakeSiteExplorer } from "./siteExplorer/testUtils.js";
+export { createRealSiteExplorer, MissingExplorerToolError } from "./siteExplorer/realSiteExplorer.js";
 
 export type { CodeFile, CodeCheckResult, CodeChecker } from "./codeCheck/codeChecker.js";
 export { FakeCodeChecker } from "./codeCheck/testUtils.js";

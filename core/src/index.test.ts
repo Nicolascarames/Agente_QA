@@ -45,6 +45,16 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.MissingCodeToolError).toBe("function");
   });
 
+  it("exports the schema's navigation hints", () => {
+    expect(typeof core.NavigationHintsSchema.parse).toBe("function");
+  });
+
+  it("exports the site explorer surface", () => {
+    expect(typeof core.FakeSiteExplorer).toBe("function");
+    expect(typeof core.createRealSiteExplorer).toBe("function");
+    expect(typeof core.MissingExplorerToolError).toBe("function");
+  });
+
   it("exports the Agente 3 (ejecutor) surface", () => {
     expect(typeof core.listAvailableTags).toBe("function");
     expect(typeof core.runEjecutor).toBe("function");
