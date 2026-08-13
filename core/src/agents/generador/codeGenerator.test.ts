@@ -24,7 +24,7 @@ class LoginPage:
 describe("generateCode", () => {
   it("parses the two # FILE: blocks into separate files", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    const files = await generateCode(featureText, llm, null, naming);
+    const files = await generateCode(featureText, llm, null, naming, []);
 
     expect(files).toHaveLength(2);
     expect(files[0].path).toBe("tests/test_login.py");
@@ -41,7 +41,7 @@ describe("generateCode", () => {
       gherkinTemplate: "Feature: Login\n",
       pageObjectTemplate: "class LoginPage:\n    pass\n",
     };
-    await generateCode(featureText, llm, matchedPattern, naming);
+    await generateCode(featureText, llm, matchedPattern, naming, []);
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain(featureText);
@@ -53,12 +53,31 @@ describe("generateCode", () => {
 
   it("instructs the model to read the app URL and test credentials from environment variables, never literal values", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    await generateCode(featureText, llm, null, naming);
+    await generateCode(featureText, llm, null, naming, []);
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain("AGENTE_QA_APP_URL");
     expect(userMessage?.content).toContain("AGENTE_QA_TEST_USERNAME");
     expect(userMessage?.content).toContain("AGENTE_QA_TEST_PASSWORD");
+  });
+
+  it("includes real captured evidence in the prompt when the explorer found any", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [
+      { stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' },
+    ]);
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("https://example.com/login");
+    expect(userMessage?.content).toContain('textbox "Email"');
+  });
+
+  it("tells the model no real evidence was captured when the list is empty", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, []);
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("No se pudo capturar evidencia real");
   });
 
   it("includes the previous attempt's code and the retry feedback in the prompt when provided", async () => {
@@ -67,7 +86,7 @@ describe("generateCode", () => {
       { path: "tests/test_login.py", content: "broken code here\n" },
       { path: "pages/login_page.py", content: "class LoginPage:\n    pass\n" },
     ];
-    await generateCode(featureText, llm, null, naming, {
+    await generateCode(featureText, llm, null, naming, [], {
       previousFiles,
       feedback: "SyntaxError: unexpected token",
     });
@@ -79,7 +98,7 @@ describe("generateCode", () => {
 
   it("throws a clear error when the response has no # FILE: blocks", async () => {
     const llm = new FakeLLMProvider(["esto no tiene el formato esperado"]);
-    await expect(generateCode(featureText, llm, null, naming)).rejects.toThrow(/# FILE:/);
+    await expect(generateCode(featureText, llm, null, naming, [])).rejects.toThrow(/# FILE:/);
   });
 
   it("throws a clear error when the response has the wrong number of file blocks", async () => {
@@ -92,6 +111,6 @@ class LoginPage:
 import pytest
 `;
     const llm = new FakeLLMProvider([threeFileResponse]);
-    await expect(generateCode(featureText, llm, null, naming)).rejects.toThrow(/2 esperados/);
+    await expect(generateCode(featureText, llm, null, naming, [])).rejects.toThrow(/2 esperados/);
   });
 });

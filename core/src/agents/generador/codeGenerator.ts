@@ -3,6 +3,7 @@ import type { Pattern } from "../../schemas/pattern.js";
 import {
   codeGenerationPrompt,
   type CodeGenerationNaming,
+  type CodeGenerationEvidence,
   type CodeGenerationRetry,
 } from "../../prompts/generador.js";
 
@@ -42,6 +43,7 @@ export async function generateCode(
   llm: LLMProvider,
   matchedPattern: Pattern | null,
   naming: CodeGenerationNaming,
+  evidence: CodeGenerationEvidence[],
   retry?: CodeGenerationRetry
 ): Promise<GeneratedFile[]> {
   const raw = await llm.generate([
@@ -49,7 +51,7 @@ export async function generateCode(
       role: "system",
       content: "Eres un ingeniero de QA experto en Playwright, Python, pytest-bdd y Page Object Model.",
     },
-    { role: "user", content: codeGenerationPrompt(featureText, matchedPattern, naming, retry) },
+    { role: "user", content: codeGenerationPrompt(featureText, matchedPattern, naming, evidence, retry) },
   ]);
 
   return parseGeneratedFiles(raw);
