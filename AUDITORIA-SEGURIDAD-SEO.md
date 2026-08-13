@@ -120,3 +120,70 @@ No aplica — sigue sin haber páginas web públicas indexables.
 
 - (Ya recomendado en la auditoría anterior, sigue sin aplicarse) Añadir un aviso en la salida de "Generar tests Playwright" recordando revisar el código antes de ejecutarlo.
 - Si se quiere cerrar del todo el hallazgo #1 de esta pasada, una opción futura no aplicada aquí (cambia el contrato de `CodeChecker`, decisión de diseño, no autofix): añadir una regla de `ruff` o un grep post-generación que bloquee patrones como `https?://` o contraseñas de más de N caracteres literales en los ficheros generados, en vez de confiar solo en la instrucción del prompt.
+
+---
+
+# Auditoría de seguridad y SEO — Agente_QA — 2026-08-13
+
+## Resumen ejecutivo
+
+Auditoría disparada por la rama "Site Explorer" (Agente 2): antes de generar código, un navegador real (Playwright, Node) verifica rutas/localizadores contra la aplicación bajo test, incluyendo inicio de sesión real con las credenciales de test cuando el escenario lo requiere — cambio que dispara la skill obligatoriamente según `CLAUDE.md` ("tras tocar credenciales, auth"). Esta rama ya había pasado por un proceso de review adversarial propio durante su desarrollo (3 rondas de corrección sobre cómo se redactan las credenciales antes de mandarlas al LLM, documentadas en el ledger de `subagent-driven-development`), así que esta auditoría se centra en una pasada independiente, a nivel de todo el proyecto, no solo en re-revisar lo ya cubierto tarea a tarea.
+
+**1 hallazgo MEDIO y 1 hallazgo BAJO, ambos corregidos en esta misma pasada.** Un segundo hallazgo BAJO queda documentado y aceptado (riesgo residual ya conocido, no alcanzable por ningún camino de código real hoy). `npm audit` (prod + dev): 0 vulnerabilidades. `npm pack --dry-run` en ambos paquetes: revisado y corregido (ver hallazgo #2). Fase SEO omitida: sigue sin aplicar.
+
+## Hallazgos de seguridad
+
+| # | Severidad | Hallazgo | Ubicación | Estado |
+|---|---|---|---|---|
+| 1 | MEDIO | El explorador agentic podía rellenar credenciales de test en una página de otro origen | `core/src/siteExplorer/realSiteExplorer.ts` | ✅ Corregido |
+| 2 | BAJO | Servidor HTTP de test (con credenciales de fixture hardcodeadas) se compilaba al `dist/` publicado | `core/tsconfig.build.json` | ✅ Corregido |
+| 3 | BAJO | El redactor de credenciales en URL solo cubre rutas/fragmentos con un fallback literal (no decodificado) | `core/src/siteExplorer/realSiteExplorer.ts` | ⏳ Aceptado (no alcanzable hoy, documentado) |
+
+### Detalle por hallazgo
+
+**#1 — Relleno de credenciales sin comprobar el origen de la página (MEDIO)**
+
+El camino "agentic" del explorador (cuando no hay patrón conocido o las rutas conocidas fallan) deja que el LLM decida a qué navegar (`goto`) y en qué campo escribir la credencial de test (`fill_credential`), a partir de lo que lee en el snapshot de accesibilidad de la página real. Antes de esta pasada, ni `goto` ni `fill_credential` comprobaban que el destino siguiera siendo el mismo origen que `AGENTE_QA_APP_URL` (la app que el usuario configuró).
+
+Riesgo real: la app bajo test puede legítimamente enlazar a otro origen dentro de un flujo de login (un botón "Iniciar sesión con Google", un enlace comprometido por XSS, un anuncio) — el snapshot de accesibilidad se lo mostraría al LLM como un elemento más de la pantalla, y el LLM no tiene forma de saber que seguirlo es distinto de seguir un enlace interno. Si lo sigue y a continuación intenta `fill_credential` pensando que sigue en el flujo de login, la contraseña de test real se escribiría en un formulario que no pertenece a la aplicación que el usuario configuró — sin que el usuario lo pidiera ni lo aprobara.
+
+Corrección aplicada (`core/src/siteExplorer/realSiteExplorer.ts`, función `isSameOrigin`): `goto` rechaza cualquier destino cuyo origen no coincida con `AGENTE_QA_APP_URL` (no navega, deja constancia en `onStep`); `fill_credential` rechaza escribir en cualquier pantalla cuyo origen actual no coincida — esta segunda comprobación es la protección real, porque `goto` no es el único vector de navegación: un click real sobre un `<a href>` de la propia página deja el navegador en otro origen sin pasar nunca por el código `goto`. Verificado con dos tests contra dos servidores de fixture reales en puertos distintos (origen distinto de verdad, no simulado): uno prueba que el `goto` cruzado se rechaza, otro prueba que un click real a un enlace externo sí navega (la app puede tener enlaces externos legítimos) pero el `fill_credential` posterior queda bloqueado y la credencial nunca llega a escribirse en la página de destino (comprobado leyendo el snapshot de accesibilidad final, no solo confiando en que no se llamó a una función).
+
+Severidad MEDIO, no ALTO/CRÍTICO: requiere que la app bajo test tenga contenido de otro origen alcanzable durante el flujo que el escenario describe (no cualquier app lo tiene), y el usuario ve la sesión en un navegador visible (`headed: true`) mientras ocurre.
+
+**#2 — El servidor de test del explorador viajaba en el paquete publicado (BAJO)**
+
+`core/src/siteExplorer/testFixtureApp.ts` es un servidor HTTP local usado solo por `realSiteExplorer.test.ts` para probar la redacción de credenciales contra un navegador real — incluye credenciales de fixture hardcodeadas (`qa-tester@example.com` / `hunter2-test-only`, evidentemente ficticias, no reales). `core/tsconfig.build.json` solo excluía `**/*.test.ts` del build; como este fichero no termina en `.test.ts`, se compilaba a `dist/siteExplorer/testFixtureApp.js` y viajaba en el tarball de `npm pack` — verificado con `npm pack --dry-run` antes y después del fix. No es una fuga de secreto real (los valores son ficticios y ya se usaban igual en los tests, visibles en el código fuente del repo), pero es código muerto en el paquete publicado (nunca se importa desde ningún fichero de producción ni se exporta del barrel) con forma exacta de credenciales — el tipo de cadena que un scanner de secretos automático en un consumidor aguas abajo podría marcar como falso positivo.
+
+Corrección aplicada: `core/tsconfig.build.json` excluye ahora también `src/siteExplorer/testFixtureApp.ts` explícitamente. Reverificado con `npm pack --dry-run`: ya no aparece en el tarball; `FakeSiteExplorer` (`testUtils.js`, sí forma parte deliberada de la API pública para que los consumidores lo usen en sus propios tests) sigue presente, sin cambios.
+
+**#3 — Redacción de credenciales en rutas/fragmentos de URL, solo literal (BAJO, aceptado)**
+
+Ya documentado durante el desarrollo de esta rama (ronda 3 del bucle de corrección de `subagent-driven-development`, ver `docs/superpowers/plans/2026-08-13-agente-2-site-explorer.md` y su ledger): `redactCredentialsFromUrl` decodifica y compara correctamente los parámetros de query string (donde una credencial llega tras un envío de formulario real), pero el *fallback* literal que se aplica al resto de la URL (ruta, fragmento) no decodifica — hereda la misma clase de fragilidad de codificación que ya se cerró para el caso de query string. Revisado de nuevo en esta auditoría, no solo reafirmado: hoy no existe ningún camino de código donde una credencial real llegue a `page.url()` fuera de un parámetro de query string (el único mecanismo que la escribe ahí es un envío de formulario nativo, que siempre serializa a query string) — así que el hueco es real pero no alcanzable con el código actual. Se deja documentado en vez de corregido para no ampliar el alcance de esta pasada sin necesidad; si en el futuro se añade algún camino que pueda dejar una credencial en la ruta o el fragmento de una URL (p. ej. una app bajo test que la incluya ahí por diseño), revisar `redactCredentialsFromUrl`/`redactLiteralCredentials` entonces.
+
+### Áreas revisadas sin hallazgos nuevos
+
+- **Secretos reales en el repo**: grep de patrones de claves reales (Anthropic/OpenAI/AWS/Google/GitHub/JWT/claves privadas/cadenas de conexión) sobre todo el árbol, sin coincidencias. Las credenciales de fixture de esta rama (`hunter2-test-only`, `qa-tester@example.com`) son evidentemente ficticias y ya estaban en el propio código fuente del repo (no es una fuga nueva) — el hallazgo real era que viajaran también al `dist/` publicado (#2, ya corregido).
+- **Inyección de comandos**: el nuevo `realSiteExplorer.ts` controla el navegador vía la API de Playwright (`chromium.launch()`, `page.goto()`, etc.), nunca vía `child_process`/shell — no añade superficie de inyección de comandos (mismo patrón ya verificado en auditorías anteriores para `realCodeChecker`/`realTestRunner`, que sí usan `spawn` con argv como array).
+- **Logging de credenciales**: los mensajes de progreso (`onStep`, cableados a `console.log` solo en `cli/src/commands/generate.ts`) nunca incluyen el valor de una credencial — se limitan a nombres de acción, rutas probadas y mensajes de estado; revisado línea a línea en `realSiteExplorer.ts`, no solo por el nombre de la variable.
+- **El LLM nunca recibe la credencial real**: el esquema `ExplorerActionSchema` (`fill_credential`) solo permite que el modelo indique QUÉ campo rellenar (`"username"`/`"password"`), nunca un valor — estructuralmente imposible que el modelo pida escribir un valor concreto, verificado en el propio esquema zod, no solo en el prompt.
+- **Cadena de suministro**: `npm audit` (con y sin `--omit=dev`) → 0 vulnerabilidades. Única dependencia nueva de esta rama: `playwright` (Node) — sin vulnerabilidades reportadas. Lockfile (`package-lock.json`) actualizado y versionado en el mismo commit que añadió la dependencia.
+- **Qué viaja en los tarballs publicados**: `npm pack --dry-run` en ambos paquetes tras el build — `cli/` sin cambios relevantes; `core/` corregido (#2).
+
+## Hallazgos SEO
+
+No aplica — sigue sin haber páginas web públicas indexables.
+
+## Verificación
+
+- `npx vitest run` → 243 passed, 3 skipped (246) — tras aplicar los dos fixes de esta auditoría, incluyendo 2 tests nuevos que prueban el fix #1 contra un navegador Chromium real y dos servidores de fixture en orígenes distintos de verdad.
+- `npx tsc -p core/tsconfig.json --noEmit` / `npx tsc -p cli/tsconfig.json --noEmit` → limpio en ambos.
+- `npm audit --omit=dev` → 0 vulnerabilidades.
+- `npm audit` (con devDependencies) → 0 vulnerabilidades.
+- `npm pack --dry-run` en `core/` (antes y después del fix #2) y en `cli/` → contenido del tarball verificado.
+
+## Recomendaciones futuras
+
+- Si en el futuro el explorador agentic gana la capacidad de interactuar con iframes u otras páginas (`page.frames()`), extender la comprobación de mismo-origen a ese contexto también — hoy solo opera sobre `page` de nivel superior.
+- Cerrar del todo el hallazgo #3 si alguna vez se identifica un camino de código real que deje una credencial en la ruta/fragmento de una URL (hoy no existe ninguno, ver detalle arriba).
+- (Recomendaciones ya existentes de auditorías anteriores, siguen sin aplicarse — ver secciones 2026-08-11/2026-08-12 arriba.)
