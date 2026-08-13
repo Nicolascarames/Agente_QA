@@ -42,18 +42,22 @@ async function ariaSnapshotOf(page: Page): Promise<string> {
  * the live value typed into a field (e.g. `textbox "Contraseña": hunter2-test-only`),
  * and page.url() can carry a credential in a query string after a native
  * (non-preventDefault) GET-method login form submits (e.g. `?password=...`).
- * Strip any literal occurrence of the configured username/password from a given
- * string before it is used to build the prompt. Never apply this to the
- * ScreenEvidence returned to the caller — that must keep the raw url/snapshot.
+ * A native GET form serializes its fields as application/x-www-form-urlencoded,
+ * so a credential containing URL-reserved characters (e.g. the "@" in an email)
+ * lands in the URL percent-encoded (and a space becomes "+", not "%20") rather
+ * than literal — strip both the raw and every encoded form. Never apply this to
+ * the ScreenEvidence returned to the caller — that must keep the raw url/snapshot.
  */
 function redactCredentials(text: string, credentials: { username: string; password: string } | undefined): string {
   if (!credentials) return text;
   let redacted = text;
-  if (credentials.password) {
-    redacted = redacted.split(credentials.password).join("••••••••");
-  }
-  if (credentials.username) {
-    redacted = redacted.split(credentials.username).join("••••••••");
+  for (const value of [credentials.password, credentials.username]) {
+    if (!value) continue;
+    const percentEncoded = encodeURIComponent(value);
+    const variants = new Set<string>([value, percentEncoded, percentEncoded.replace(/%20/g, "+")]);
+    for (const variant of variants) {
+      redacted = redacted.split(variant).join("••••••••");
+    }
   }
   return redacted;
 }

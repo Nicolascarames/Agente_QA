@@ -206,5 +206,37 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
       expect(allPromptText).not.toContain(FIXTURE_CREDENTIALS.password);
     });
+
+    it("redacts a credential containing URL-reserved characters, whether it lands raw or percent-encoded in the URL", async () => {
+      // "@" and "+" get percent-encoded, and a space is form-encoded as "+" (not "%20"),
+      // by a real browser serializing a native application/x-www-form-urlencoded GET form.
+      const reservedCredentials = { username: "leaky.user+tag@example.com", password: "s3cr3t pass+val" };
+      const llm = new FakeLLMProvider([
+        JSON.stringify({ action: "goto", target: "/leaky" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Correo electrónico", field: "username" }),
+        JSON.stringify({ action: "fill_credential", labelText: "Contraseña", field: "password" }),
+        JSON.stringify({ action: "click", role: "button", name: "Iniciar sesión" }),
+        JSON.stringify({ action: "done" }),
+      ]);
+      const explorer = createRealSiteExplorer(llm);
+
+      const result = await explorer.explore(
+        baseInput({ matchedPattern: null, baseUrl: app.url, credentials: reservedCredentials })
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("unreachable");
+      // Confirm the leak vector is genuinely exercised: the raw evidence URL really
+      // does carry the password, form-encoded (space -> "+", not the raw string).
+      const formEncodedPassword = encodeURIComponent(reservedCredentials.password).replace(/%20/g, "+");
+      expect(result.screens[0].url).toContain(formEncodedPassword);
+
+      const allPromptText = llm.receivedCalls.flat().map((m) => m.content).join("\n");
+      expect(allPromptText).not.toContain(reservedCredentials.password);
+      expect(allPromptText).not.toContain(encodeURIComponent(reservedCredentials.password));
+      expect(allPromptText).not.toContain(formEncodedPassword);
+      expect(allPromptText).not.toContain(reservedCredentials.username);
+      expect(allPromptText).not.toContain(encodeURIComponent(reservedCredentials.username));
+    });
   });
 });
