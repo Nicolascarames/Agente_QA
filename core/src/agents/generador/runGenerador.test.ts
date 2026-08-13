@@ -5,6 +5,9 @@ import path from "node:path";
 import { FakeLLMProvider } from "../../llm/testUtils.js";
 import { FakeCodeChecker } from "../../codeCheck/testUtils.js";
 import { FakeSiteExplorer } from "../../siteExplorer/testUtils.js";
+import { chromium } from "playwright";
+import { createRealSiteExplorer } from "../../siteExplorer/realSiteExplorer.js";
+import { startFixtureApp, FIXTURE_CREDENTIALS, type FixtureApp } from "../../siteExplorer/testFixtureApp.js";
 import { runGenerador, type GeneratorCallbacks } from "./runGenerador.js";
 import type { Pattern } from "../../schemas/pattern.js";
 
@@ -239,16 +242,18 @@ describe("runGenerador", () => {
     expect(promptContent).toContain('textbox "Email"');
   });
 
-  it("passes whatever the explorer returns straight into the codegen prompt without filtering it — redaction is the SiteExplorer's contractual responsibility, not runGenerador's", async () => {
-    // Regression/contract test for the credential-leak fix in realSiteExplorer.ts:
-    // a SiteExplorer implementation (createRealSiteExplorer) is now required to
-    // already return redacted ScreenEvidence (see its captureEvidence helper) —
-    // that's where the fix lives, at the source. runGenerador must NOT also try
-    // to re-filter evidence itself: a second, independent redaction layer here
-    // could silently mask a regression in the first one and duplicate logic
-    // across two modules. This documents/proves that expectation by showing a
-    // FakeSiteExplorer's evidence — credential-shaped string included — flows
-    // through runGenerador into the codegen prompt completely unmodified.
+  it("passes whatever the explorer returns straight into the codegen prompt without filtering it — a pure pass-through, no redundant redaction layer", async () => {
+    // This is an architectural-contract test, NOT a security regression test:
+    // it proves runGenerador doesn't add a second, independent redaction layer
+    // on top of the SiteExplorer's own (a second layer here could silently mask
+    // a future regression in the real one and duplicate logic across modules).
+    // It does NOT prove credentials are actually redacted end to end — a
+    // FakeSiteExplorer bypasses createRealSiteExplorer entirely, so this test
+    // would still pass even with the redaction fix in realSiteExplorer.ts fully
+    // reverted. For that guarantee, see the gated end-to-end test below, which
+    // drives the real explorer's fast path (real browser, real login, a
+    // genuine credential leak into page.url()) all the way through to the
+    // codegen prompt.
     const featureFilePath = await writeFeature("Feature: Checkout\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
@@ -295,3 +300,82 @@ describe("runGenerador", () => {
     expect(explorer.receivedCalls[0].headed).toBe(true);
   });
 });
+
+async function hasChromium(): Promise<boolean> {
+  try {
+    const browser = await chromium.launch();
+    await browser.close();
+    return true;
+  } catch {
+    return false;
+  }
+}
+const chromiumAvailable = await hasChromium();
+
+describe.skipIf(!chromiumAvailable)(
+  "runGenerador with the real SiteExplorer (requires Playwright Chromium installed) — end-to-end credential-leak regression guard",
+  () => {
+    let tmpProject: string;
+    let app: FixtureApp;
+
+    beforeEach(async () => {
+      tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-rungenerador-e2e-"));
+      app = await startFixtureApp("leaky");
+    });
+
+    afterEach(async () => {
+      await fs.rm(tmpProject, { recursive: true, force: true });
+      await app.close();
+    });
+
+    async function writeFeature(content: string): Promise<string> {
+      const dir = path.join(tmpProject, "tests", "features");
+      await fs.mkdir(dir, { recursive: true });
+      const filePath = path.join(dir, "login.feature");
+      await fs.writeFile(filePath, content, "utf-8");
+      return filePath;
+    }
+
+    it("never lets a credential that leaked into page.url() during a real login reach the code-generation LLM prompt", async () => {
+      // Drives the real fast path (createRealSiteExplorer, no mocks) against a
+      // fixture whose native GET-method login form genuinely puts the password
+      // in the URL on submit — the exact vector the Critical finding was about
+      // (core/src/siteExplorer/realSiteExplorer.ts's captureEvidence/redaction).
+      // The explorer's own LLM is never called here (the fast path succeeds via
+      // navigationHints, no agentic escalation needed) — an empty FakeLLMProvider
+      // makes that assumption fail loudly if it's ever wrong.
+      const leakyPattern: Pattern = {
+        name: "login",
+        description: "login",
+        gherkinTemplate: "Feature: Login\n",
+        pageObjectTemplate: "",
+        navigationHints: { routeCandidates: ["/leaky"], requiresLogin: true },
+      };
+      const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+
+      const explorerLlm = new FakeLLMProvider([]);
+      const explorer = createRealSiteExplorer(explorerLlm);
+      const codegenLlm = new FakeLLMProvider([scriptedResponse]);
+      const checker = new FakeCodeChecker([{ ok: true }]);
+      const cb = callbacks();
+
+      await runGenerador(
+        featureFilePath,
+        codegenLlm,
+        [leakyPattern],
+        checker,
+        explorer,
+        tmpProject,
+        "tests",
+        app.url,
+        FIXTURE_CREDENTIALS,
+        cb
+      );
+
+      expect(explorerLlm.receivedCalls).toHaveLength(0);
+      const promptContent = codegenLlm.receivedCalls[0].find((m) => m.role === "user")?.content;
+      expect(promptContent).not.toContain(FIXTURE_CREDENTIALS.password);
+      expect(promptContent).not.toContain(FIXTURE_CREDENTIALS.username);
+    }, 20000); // headed (visible) Chromium launch is slower than the headless real-browser tests elsewhere; runGenerador hardcodes headed: true.
+  }
+);

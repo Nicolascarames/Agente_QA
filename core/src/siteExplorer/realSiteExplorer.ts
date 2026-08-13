@@ -280,9 +280,20 @@ async function exploreAgentically(
         onStep(`Navegación a otro origen bloqueada por seguridad: ${url}`);
         outcome = `se bloqueó la navegación a "${action.target}" por ser de otro origen`;
       } else {
-        const response = await page.goto(url).catch(() => null);
-        if (!response) {
+        // page.goto() legitimately resolves null for a same-document navigation
+        // (e.g. a hash-only change on a hash-router SPA) — that's success, not a
+        // failure, so only a thrown error or a 4xx/5xx response counts as one.
+        let response: Awaited<ReturnType<Page["goto"]>> | null = null;
+        let threw = false;
+        try {
+          response = await page.goto(url);
+        } catch {
+          threw = true;
+        }
+        if (threw) {
           outcome = `no se pudo navegar a "${action.target}"`;
+        } else if (response && response.status() >= 400) {
+          outcome = `la navegación a "${action.target}" devolvió un error (${response.status()})`;
         }
       }
     } else if (action.action === "click") {
