@@ -20,6 +20,12 @@ export {
 } from "./config/projectEnv.js";
 export type { ProviderName, ProjectEnv, LlmCredentials } from "./config/projectEnv.js";
 
+export {
+  projectGitignorePath,
+  readProjectGitignoreEntries,
+  appendProjectGitignoreEntries,
+} from "./config/projectGitignore.js";
+
 export type { Message, LLMProvider } from "./llm/provider.js";
 export { LLMResponseParseError, parseJsonResponse } from "./llm/parseJson.js";
 export { LLMRequestError } from "./llm/errors.js";

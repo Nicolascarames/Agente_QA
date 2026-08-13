@@ -13,6 +13,12 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.projectEnvPath).toBe("function");
   });
 
+  it("exports the project gitignore functions", () => {
+    expect(typeof core.projectGitignorePath).toBe("function");
+    expect(typeof core.readProjectGitignoreEntries).toBe("function");
+    expect(typeof core.appendProjectGitignoreEntries).toBe("function");
+  });
+
   it("exports the LLM provider factory and fake test double", () => {
     expect(typeof core.createProvider).toBe("function");
     expect(typeof core.FakeLLMProvider).toBe("function");
