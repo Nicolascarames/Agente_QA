@@ -63,6 +63,8 @@ ${evidenceSection}
 
 El proyecto ya tiene instalado el plugin "pytest-playwright": el fixture "page" (una página de navegador ya lista) está disponible automáticamente en cualquier test, no lo definas tú ni escribas ningún conftest.py.
 
+Para los locators de Playwright, usa siempre una única estrategia precisa por elemento (rol + nombre accesible exacto, o "get_by_test_id" si la evidencia lo muestra) — nunca combines varias estrategias con ".or_()": puede resolver a más de un elemento real y romper en modo estricto (ejemplo real: un botón "mostrar/ocultar contraseña" cuyo "aria-label" también contiene la palabra "contraseña"/"password" colisiona con el locator del campo).
+
 La URL de la aplicación bajo test y las credenciales de una cuenta de prueba NUNCA se escriben como texto literal en este código: se guarda en el repositorio del usuario. Léelas siempre con "os.environ": "os.environ[\"AGENTE_QA_APP_URL\"]" para la URL base, y si el escenario prueba un login, "os.environ[\"AGENTE_QA_TEST_USERNAME\"]" / "os.environ[\"AGENTE_QA_TEST_PASSWORD\"]" para usuario y contraseña.
 
 Genera EXACTAMENTE dos bloques de código, cada uno empezando por una línea con este formato exacto "# FILE: <ruta>", seguida del contenido completo de ese archivo. No incluyas explicaciones fuera de los bloques ni bloques de código markdown (\`\`\`).

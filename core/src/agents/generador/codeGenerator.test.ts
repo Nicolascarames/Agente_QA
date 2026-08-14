@@ -61,6 +61,15 @@ describe("generateCode", () => {
     expect(userMessage?.content).toContain("AGENTE_QA_TEST_PASSWORD");
   });
 
+  it("instructs the model to avoid ambiguous .or_() locator combinators", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, []);
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain(".or_()");
+    expect(userMessage?.content).toContain("get_by_test_id");
+  });
+
   it("includes real captured evidence in the prompt when the explorer found any", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
     await generateCode(featureText, llm, null, naming, [
