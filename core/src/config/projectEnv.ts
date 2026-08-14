@@ -7,7 +7,6 @@ export const ProviderNameSchema = z.enum(["anthropic", "openai", "google", "open
 export type ProviderName = z.infer<typeof ProviderNameSchema>;
 
 export const ProjectEnvSchema = z.object({
-  appUrl: z.string().url().optional(),
   testUsername: z.string().min(1).optional(),
   testPassword: z.string().min(1).optional(),
   llmProvider: ProviderNameSchema.optional(),
@@ -25,7 +24,6 @@ export interface LlmCredentials {
 }
 
 const ENV_VAR_KEYS: Record<keyof ProjectEnv, string> = {
-  appUrl: "AGENTE_QA_APP_URL",
   testUsername: "AGENTE_QA_TEST_USERNAME",
   testPassword: "AGENTE_QA_TEST_PASSWORD",
   llmProvider: "AGENTE_QA_LLM_PROVIDER",
@@ -49,11 +47,6 @@ const ENV_TEMPLATE = `# .env de agente-qa para este proyecto.
 # por "#" son solo explicación, no hace falta tocarlas.
 # Si un valor contiene "#" o espacios al principio/final, ponlo entre comillas dobles:
 # AGENTE_QA_TEST_PASSWORD="Sup3r#Secreta!"
-
-# ── Aplicación bajo test ──────────────────────────────────────────────
-# URL base de la app que vas a probar. Obligatoria para generar y ejecutar tests.
-# Ejemplo: AGENTE_QA_APP_URL=https://staging.mi-app.com
-AGENTE_QA_APP_URL=
 
 # Usuario y contraseña de una cuenta de prueba, solo si vas a probar flujos de
 # login. Opcional: si los dejas vacíos, no podrás generar/ejecutar escenarios
@@ -129,7 +122,6 @@ export async function loadProjectEnv(projectRoot: string): Promise<ProjectEnv | 
   };
 
   const candidate = {
-    appUrl: nonEmpty(ENV_VAR_KEYS.appUrl),
     testUsername: nonEmpty(ENV_VAR_KEYS.testUsername),
     testPassword: nonEmpty(ENV_VAR_KEYS.testPassword),
     llmProvider: nonEmpty(ENV_VAR_KEYS.llmProvider),
@@ -166,21 +158,4 @@ export function requireLlmConfig(env: ProjectEnv, envPath: string): LlmCredentia
     baseURL: env.llmBaseURL,
     model: env.llmModel,
   };
-}
-
-export function requireAppUrl(env: ProjectEnv, envPath: string): string {
-  if (!env.appUrl) {
-    throw new Error(
-      `Falta la variable ${ENV_VAR_KEYS.appUrl} en ${envPath}. Rellénala con la URL de la aplicación que vas a probar y guarda el archivo.`
-    );
-  }
-  return env.appUrl;
-}
-
-export function testEnvVars(env: ProjectEnv): Record<string, string> {
-  const vars: Record<string, string> = {};
-  if (env.appUrl) vars[ENV_VAR_KEYS.appUrl] = env.appUrl;
-  if (env.testUsername) vars[ENV_VAR_KEYS.testUsername] = env.testUsername;
-  if (env.testPassword) vars[ENV_VAR_KEYS.testPassword] = env.testPassword;
-  return vars;
 }

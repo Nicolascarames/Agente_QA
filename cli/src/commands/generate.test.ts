@@ -39,7 +39,6 @@ async function writeEnv(projectRoot: string, values: Record<string, string>): Pr
 const BASE_ENV = {
   AGENTE_QA_LLM_PROVIDER: "anthropic",
   AGENTE_QA_LLM_API_KEY: "sk-test",
-  AGENTE_QA_APP_URL: "https://example.com",
 };
 
 describe("runGenerateTests", () => {
@@ -70,21 +69,9 @@ describe("runGenerateTests", () => {
     await expect(runGenerateTests(prompts, tmpProject)).rejects.toThrow(/agente-qa init/);
   });
 
-  it("throws a clear error when AGENTE_QA_APP_URL isn't configured", async () => {
-    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
-
-    const prompts: GeneratorPrompts = {
-      selectFeatureFile: vi.fn(),
-      offerSavePattern: vi.fn(),
-      confirmOverwrite: vi.fn(),
-    };
-    await expect(runGenerateTests(prompts, tmpProject)).rejects.toThrow(/AGENTE_QA_APP_URL/);
-  });
-
   it("throws a clear error when there are no approved .feature files yet", async () => {
     await writeEnv(tmpProject, BASE_ENV);
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
 
     const prompts: GeneratorPrompts = {
       selectFeatureFile: vi.fn(),
@@ -96,7 +83,7 @@ describe("runGenerateTests", () => {
 
   it("lists feature files, generates code through the fake LLM, and writes the test files", async () => {
     await writeEnv(tmpProject, BASE_ENV);
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const featuresDir = path.join(tmpProject, "tests", "features");
     await fs.mkdir(featuresDir, { recursive: true });
     await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
@@ -127,7 +114,7 @@ class LoginPage:
 
   it("wraps the LLM provider and the code checker with their spinner decorators before using them", async () => {
     await writeEnv(tmpProject, BASE_ENV);
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const featuresDir = path.join(tmpProject, "tests", "features");
     await fs.mkdir(featuresDir, { recursive: true });
     await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
@@ -160,7 +147,7 @@ class LoginPage:
       AGENTE_QA_TEST_USERNAME: "qa@example.com",
       AGENTE_QA_TEST_PASSWORD: "s3cret",
     });
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const featuresDir = path.join(tmpProject, "tests", "features");
     await fs.mkdir(featuresDir, { recursive: true });
     await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");

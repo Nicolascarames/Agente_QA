@@ -29,7 +29,7 @@ describe("end-to-end: create plan via the real wiring, only the network call moc
       "AGENTE_QA_LLM_PROVIDER=anthropic\nAGENTE_QA_LLM_API_KEY=sk-test\n",
       "utf-8"
     );
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     generateTextMock.mockReset();
   });
 

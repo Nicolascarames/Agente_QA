@@ -56,7 +56,7 @@ describe("runCreatePlan", () => {
 
   it("throws naming the missing .env variable when the LLM API key is blank", async () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic" });
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
 
     const prompts: ChatPrompts = {
       inputInitialText: vi.fn(),
@@ -70,7 +70,7 @@ describe("runCreatePlan", () => {
 
   it("loads env/config, runs intake through the fake LLM, and writes the feature file", async () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
 
     const fake = new FakeLLMProvider([
       '{"ambiguous": false, "questions": []}',
@@ -94,7 +94,7 @@ describe("runCreatePlan", () => {
 
   it("wraps the LLM provider with the spinner decorator before using it", async () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
 
     const fake = new FakeLLMProvider([
       '{"ambiguous": false, "questions": []}',

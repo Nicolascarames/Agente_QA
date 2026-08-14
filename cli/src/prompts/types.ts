@@ -1,6 +1,7 @@
 export interface InitPrompts {
   inputTestsDir(): Promise<string>;
   confirmHeadedMode(): Promise<boolean>;
+  inputAppUrl(): Promise<string>;
   selectGitignoreEntries(candidates: string[]): Promise<string[]>;
 }
 

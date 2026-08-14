@@ -7,8 +7,6 @@ import {
   ensureProjectEnvTemplate,
   loadProjectEnv,
   requireLlmConfig,
-  requireAppUrl,
-  testEnvVars,
 } from "./projectEnv.js";
 
 describe("projectEnv", () => {
@@ -34,7 +32,6 @@ describe("projectEnv", () => {
 
       expect(result).toEqual({ created: true, path: projectEnvPath(tmpProject) });
       const envContent = await fs.readFile(projectEnvPath(tmpProject), "utf-8");
-      expect(envContent).toContain("AGENTE_QA_APP_URL=");
       expect(envContent).toContain("AGENTE_QA_LLM_API_KEY=");
 
       const gitignoreContent = await fs.readFile(
@@ -126,7 +123,6 @@ describe("projectEnv", () => {
       await ensureProjectEnvTemplate(tmpProject);
 
       expect(await loadProjectEnv(tmpProject)).toEqual({
-        appUrl: undefined,
         testUsername: undefined,
         testPassword: undefined,
         llmProvider: undefined,
@@ -146,7 +142,6 @@ describe("projectEnv", () => {
 
     it("parses filled-in values", async () => {
       await writeEnv({
-        AGENTE_QA_APP_URL: "https://staging.mi-app.com",
         AGENTE_QA_TEST_USERNAME: "qa-tester@mi-app.com",
         AGENTE_QA_TEST_PASSWORD: "Sup3rSecreta!",
         AGENTE_QA_LLM_PROVIDER: "anthropic",
@@ -154,7 +149,6 @@ describe("projectEnv", () => {
       });
 
       expect(await loadProjectEnv(tmpProject)).toEqual({
-        appUrl: "https://staging.mi-app.com",
         testUsername: "qa-tester@mi-app.com",
         testPassword: "Sup3rSecreta!",
         llmProvider: "anthropic",
@@ -165,15 +159,9 @@ describe("projectEnv", () => {
     });
 
     it("treats a whitespace-only value as absent", async () => {
-      await writeEnv({ AGENTE_QA_APP_URL: "   " });
+      await writeEnv({ AGENTE_QA_TEST_USERNAME: "   " });
 
-      expect((await loadProjectEnv(tmpProject))?.appUrl).toBeUndefined();
-    });
-
-    it("throws a clear error naming AGENTE_QA_APP_URL when it's present but not a valid URL", async () => {
-      await writeEnv({ AGENTE_QA_APP_URL: "not-a-url" });
-
-      await expect(loadProjectEnv(tmpProject)).rejects.toThrow(/AGENTE_QA_APP_URL/);
+      expect((await loadProjectEnv(tmpProject))?.testUsername).toBeUndefined();
     });
 
     it("throws a clear error naming AGENTE_QA_LLM_PROVIDER when it has an invalid value", async () => {
@@ -186,7 +174,6 @@ describe("projectEnv", () => {
   describe("requireLlmConfig", () => {
     const envPath = "/fake/.agente-qa/.env";
     const blank = {
-      appUrl: undefined,
       testUsername: undefined,
       testPassword: undefined,
       llmProvider: undefined,
@@ -225,57 +212,6 @@ describe("projectEnv", () => {
       expect(() =>
         requireLlmConfig({ ...blank, llmProvider: "openai-compatible", llmApiKey: "k" }, envPath)
       ).toThrow(/AGENTE_QA_LLM_BASE_URL.*AGENTE_QA_LLM_MODEL/s);
-    });
-  });
-
-  describe("requireAppUrl", () => {
-    const envPath = "/fake/.agente-qa/.env";
-    const blank = {
-      appUrl: undefined,
-      testUsername: undefined,
-      testPassword: undefined,
-      llmProvider: undefined,
-      llmApiKey: undefined,
-      llmBaseURL: undefined,
-      llmModel: undefined,
-    };
-
-    it("returns the URL when present", () => {
-      const result = requireAppUrl({ ...blank, appUrl: "https://mi-app.com" }, envPath);
-      expect(result).toBe("https://mi-app.com");
-    });
-
-    it("throws naming AGENTE_QA_APP_URL and the file path when absent", () => {
-      expect(() => requireAppUrl(blank, envPath)).toThrow(/AGENTE_QA_APP_URL/);
-      expect(() => requireAppUrl(blank, envPath)).toThrow(new RegExp(envPath.replace(/\//g, "\\/")));
-    });
-  });
-
-  describe("testEnvVars", () => {
-    const blank = {
-      appUrl: undefined,
-      testUsername: undefined,
-      testPassword: undefined,
-      llmProvider: undefined,
-      llmApiKey: undefined,
-      llmBaseURL: undefined,
-      llmModel: undefined,
-    };
-
-    it("maps present app-testing fields to their AGENTE_QA_* names", () => {
-      expect(
-        testEnvVars({ ...blank, appUrl: "https://mi-app.com", testUsername: "qa", testPassword: "pwd" })
-      ).toEqual({
-        AGENTE_QA_APP_URL: "https://mi-app.com",
-        AGENTE_QA_TEST_USERNAME: "qa",
-        AGENTE_QA_TEST_PASSWORD: "pwd",
-      });
-    });
-
-    it("omits absent fields entirely rather than including them as empty strings", () => {
-      expect(testEnvVars({ ...blank, appUrl: "https://mi-app.com" })).toEqual({
-        AGENTE_QA_APP_URL: "https://mi-app.com",
-      });
     });
   });
 });

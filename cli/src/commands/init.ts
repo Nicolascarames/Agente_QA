@@ -25,7 +25,8 @@ function gitignoreCandidates(testsDir: string): string[] {
 export async function runInit(prompts: InitPrompts, projectRoot: string): Promise<InitResult> {
   const testsDir = await prompts.inputTestsDir();
   const headedMode = await prompts.confirmHeadedMode();
-  await saveProjectConfig(projectRoot, { testsDir, headedMode });
+  const appUrl = await prompts.inputAppUrl();
+  await saveProjectConfig(projectRoot, { testsDir, headedMode, appUrl });
 
   const { created, path: envPath } = await ensureProjectEnvTemplate(projectRoot);
 

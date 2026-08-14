@@ -23,6 +23,19 @@ export const realInitPrompts: InitPrompts = {
       default: false,
     });
   },
+  async inputAppUrl() {
+    return input({
+      message: "¿Cuál es la URL de la aplicación que vas a probar?",
+      validate: (value) => {
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return "Introduce una URL válida (ej. https://mi-app.com)";
+        }
+      },
+    });
+  },
   async selectGitignoreEntries(candidates) {
     return checkbox({
       message: "¿Qué añado al .gitignore del proyecto?",

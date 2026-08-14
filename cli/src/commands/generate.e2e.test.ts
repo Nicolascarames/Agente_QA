@@ -44,10 +44,10 @@ describe.skipIf(!hasPython || !hasRuff)(
       await fs.mkdir(path.join(tmpProject, ".agente-qa"), { recursive: true });
       await fs.writeFile(
         projectEnvPath(tmpProject),
-        "AGENTE_QA_LLM_PROVIDER=anthropic\nAGENTE_QA_LLM_API_KEY=sk-test\nAGENTE_QA_APP_URL=https://example.com\n",
+        "AGENTE_QA_LLM_PROVIDER=anthropic\nAGENTE_QA_LLM_API_KEY=sk-test\n",
         "utf-8"
       );
-      await saveProjectConfig(tmpProject, { testsDir: "tests" });
+      await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
       const featuresDir = path.join(tmpProject, "tests", "features");
       await fs.mkdir(featuresDir, { recursive: true });
       await fs.writeFile(

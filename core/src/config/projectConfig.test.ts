@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveProjectConfig, loadProjectConfig, projectConfigPath } from "./projectConfig.js";
+import { saveProjectConfig, loadProjectConfig, projectConfigPath, requireAppUrl, testEnvVars } from "./projectConfig.js";
 
 describe("projectConfig", () => {
   let tmpProject: string;
@@ -20,32 +20,34 @@ describe("projectConfig", () => {
   });
 
   it("saves and loads project config round-trip, defaulting headedMode to false when omitted", async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     expect(await loadProjectConfig(tmpProject)).toEqual({
       testsDir: "tests",
       headedMode: false,
+      appUrl: "https://example.com",
       appLanguage: "es",
       routes: {},
     });
   });
 
   it("saves and loads headedMode: true when explicitly given", async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "tests", headedMode: true });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", headedMode: true, appUrl: "https://example.com" });
     expect(await loadProjectConfig(tmpProject)).toEqual({
       testsDir: "tests",
       headedMode: true,
+      appUrl: "https://example.com",
       appLanguage: "es",
       routes: {},
     });
   });
 
   it("writes the file at <project>/.agente-qa/config.json", async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "qa-tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "qa-tests", appUrl: "https://example.com" });
     expect(projectConfigPath(tmpProject)).toBe(path.join(tmpProject, ".agente-qa", "config.json"));
   });
 
   it("rejects and does not write the file when testsDir is empty", async () => {
-    await expect(saveProjectConfig(tmpProject, { testsDir: "" })).rejects.toThrow();
+    await expect(saveProjectConfig(tmpProject, { testsDir: "", appUrl: "https://example.com" })).rejects.toThrow();
     const exists = await fs.stat(projectConfigPath(tmpProject)).then(() => true, () => false);
     expect(exists).toBe(false);
   });
@@ -53,12 +55,14 @@ describe("projectConfig", () => {
   it("saves and loads an explicit appLanguage and routes", async () => {
     await saveProjectConfig(tmpProject, {
       testsDir: "tests",
+      appUrl: "https://example.com",
       appLanguage: "en",
       routes: { home: "/", login: "/login" },
     });
     expect(await loadProjectConfig(tmpProject)).toEqual({
       testsDir: "tests",
       headedMode: false,
+      appUrl: "https://example.com",
       appLanguage: "en",
       routes: { home: "/", login: "/login" },
     });
@@ -66,7 +70,43 @@ describe("projectConfig", () => {
 
   it("rejects an invalid appLanguage value", async () => {
     await expect(
-      saveProjectConfig(tmpProject, { testsDir: "tests", appLanguage: "fr" as never })
+      saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com", appLanguage: "fr" as never })
     ).rejects.toThrow();
+  });
+
+  it("rejects a config with no appUrl", async () => {
+    await expect(saveProjectConfig(tmpProject, { testsDir: "tests" } as never)).rejects.toThrow();
+  });
+
+  it("rejects an appUrl that isn't a valid URL", async () => {
+    await expect(
+      saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "not-a-url" })
+    ).rejects.toThrow();
+  });
+
+  describe("requireAppUrl", () => {
+    it("returns the configured appUrl", () => {
+      expect(
+        requireAppUrl({ testsDir: "tests", headedMode: false, appUrl: "https://mi-app.com", appLanguage: "es", routes: {} })
+      ).toBe("https://mi-app.com");
+    });
+  });
+
+  describe("testEnvVars", () => {
+    const config = { testsDir: "tests", headedMode: false, appUrl: "https://mi-app.com", appLanguage: "es" as const, routes: {} };
+
+    it("maps appUrl and present test credentials to their AGENTE_QA_* names", () => {
+      expect(testEnvVars(config, { testUsername: "qa", testPassword: "pwd", llmProvider: undefined, llmApiKey: undefined, llmBaseURL: undefined, llmModel: undefined })).toEqual({
+        AGENTE_QA_APP_URL: "https://mi-app.com",
+        AGENTE_QA_TEST_USERNAME: "qa",
+        AGENTE_QA_TEST_PASSWORD: "pwd",
+      });
+    });
+
+    it("omits absent test credentials entirely rather than including them as empty strings", () => {
+      expect(testEnvVars(config, { testUsername: undefined, testPassword: undefined, llmProvider: undefined, llmApiKey: undefined, llmBaseURL: undefined, llmModel: undefined })).toEqual({
+        AGENTE_QA_APP_URL: "https://mi-app.com",
+      });
+    });
   });
 });

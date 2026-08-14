@@ -10,6 +10,7 @@ function prompts(overrides: Partial<InitPrompts> = {}): InitPrompts {
   return {
     inputTestsDir: async () => "tests",
     confirmHeadedMode: async () => false,
+    inputAppUrl: async () => "https://example.com",
     selectGitignoreEntries: async (candidates) => candidates,
     ...overrides,
   };
@@ -32,6 +33,7 @@ describe("runInit", () => {
     expect(await loadProjectConfig(tmpProject)).toEqual({
       testsDir: "tests",
       headedMode: false,
+      appUrl: "https://example.com",
       appLanguage: "es",
       routes: {},
     });
@@ -43,6 +45,7 @@ describe("runInit", () => {
     expect(await loadProjectConfig(tmpProject)).toEqual({
       testsDir: "tests",
       headedMode: true,
+      appUrl: "https://example.com",
       appLanguage: "es",
       routes: {},
     });

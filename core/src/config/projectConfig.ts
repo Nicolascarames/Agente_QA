@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import type { ProjectEnv } from "./projectEnv.js";
 
 export const ProjectConfigSchema = z.object({
   testsDir: z.string().min(1),
   headedMode: z.boolean().default(false),
+  appUrl: z.string().url(),
   appLanguage: z.enum(["es", "en"]).default("es"),
   routes: z.record(z.string(), z.string()).default({}),
 });
@@ -32,4 +34,15 @@ export async function loadProjectConfig(projectRoot: string): Promise<ProjectCon
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
+}
+
+export function requireAppUrl(config: ProjectConfig): string {
+  return config.appUrl;
+}
+
+export function testEnvVars(config: ProjectConfig, env: ProjectEnv): Record<string, string> {
+  const vars: Record<string, string> = { AGENTE_QA_APP_URL: config.appUrl };
+  if (env.testUsername) vars.AGENTE_QA_TEST_USERNAME = env.testUsername;
+  if (env.testPassword) vars.AGENTE_QA_TEST_PASSWORD = env.testPassword;
+  return vars;
 }

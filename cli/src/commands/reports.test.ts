@@ -36,13 +36,13 @@ describe("runGenerateReports", () => {
   });
 
   it("throws a clear error when there are no results yet", async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const prompts: ReportesPrompts = { selectDetailLevel: vi.fn() };
     await expect(runGenerateReports(prompts, tmpProject)).rejects.toThrow(/Ejecutar tests/);
   });
 
   it("reads the junit-xml, asks for the detail level, and returns the result", async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const resultsDir = path.join(tmpProject, "tests", "results");
     await fs.mkdir(resultsDir, { recursive: true });
     await fs.writeFile(path.join(resultsDir, "latest.xml"), sampleXml, "utf-8");
@@ -60,7 +60,7 @@ describe("runGenerateReports", () => {
   });
 
   it('opens only the markdown summary when the chosen level is "resumen"', async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const resultsDir = path.join(tmpProject, "tests", "results");
     await fs.mkdir(resultsDir, { recursive: true });
     await fs.writeFile(path.join(resultsDir, "latest.xml"), sampleXml, "utf-8");
@@ -76,7 +76,7 @@ describe("runGenerateReports", () => {
   });
 
   it('opens both the markdown summary and the html report when the chosen level is "completo"', async () => {
-    await saveProjectConfig(tmpProject, { testsDir: "tests" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     const resultsDir = path.join(tmpProject, "tests", "results");
     await fs.mkdir(resultsDir, { recursive: true });
     await fs.writeFile(path.join(resultsDir, "latest.xml"), sampleXml, "utf-8");

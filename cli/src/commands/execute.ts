@@ -2,7 +2,6 @@ import {
   loadProjectConfig,
   loadProjectEnv,
   requireAppUrl,
-  projectEnvPath,
   testEnvVars,
   realTestRunner,
   runEjecutor,
@@ -21,7 +20,7 @@ export async function runExecuteTests(prompts: ExecutorPrompts, projectRoot: str
   if (!env) {
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
-  requireAppUrl(env, projectEnvPath(projectRoot));
+  requireAppUrl(projectConfig);
 
   const callbacks: ExecutorCallbacks = {
     selectTags: (availableTags) => prompts.selectTags(availableTags),
@@ -37,6 +36,6 @@ export async function runExecuteTests(prompts: ExecutorPrompts, projectRoot: str
     withTestRunnerSpinner(realTestRunner),
     projectConfig.headedMode,
     callbacks,
-    testEnvVars(env)
+    testEnvVars(projectConfig, env)
   );
 }

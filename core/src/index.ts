@@ -5,6 +5,8 @@ export {
   projectConfigPath,
   saveProjectConfig,
   loadProjectConfig,
+  requireAppUrl,
+  testEnvVars,
 } from "./config/projectConfig.js";
 export type { ProjectConfig } from "./config/projectConfig.js";
 
@@ -15,8 +17,6 @@ export {
   ensureProjectEnvTemplate,
   loadProjectEnv,
   requireLlmConfig,
-  requireAppUrl,
-  testEnvVars,
 } from "./config/projectEnv.js";
 export type { ProviderName, ProjectEnv, LlmCredentials } from "./config/projectEnv.js";
 

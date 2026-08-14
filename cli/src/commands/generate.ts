@@ -22,12 +22,12 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
   const llmCredentials = requireLlmConfig(env, projectEnvPath(projectRoot));
-  const baseUrl = requireAppUrl(env, projectEnvPath(projectRoot));
 
   const projectConfig = await loadProjectConfig(projectRoot);
   if (!projectConfig) {
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
+  const baseUrl = requireAppUrl(projectConfig);
 
   const featureFiles = await listFeatureFiles(projectRoot, projectConfig.testsDir);
   if (featureFiles.length === 0) {
