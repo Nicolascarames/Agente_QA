@@ -567,6 +567,111 @@ class LoginPage:
     ]);
   });
 
+  it("verifies against the Site Explorer's resolved first-screen URL, not the raw baseUrl, when evidence is non-empty", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        screens: [
+          { stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' },
+          { stepText: "pantalla tras login", url: "https://example.com/dashboard", ariaSnapshot: "" },
+        ],
+      },
+    ]);
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    // Should use the FIRST captured screen's URL (the initial page state,
+    // matching the harness's own scope), not the second/post-action screen
+    // and not the raw baseUrl.
+    expect(verifier.receivedCalls[0].baseUrl).toBe("https://example.com/login");
+  });
+
+  it("falls back to the raw baseUrl for verification when the explorer returned no screens", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    expect(verifier.receivedCalls[0].baseUrl).toBe("https://example.com");
+  });
+
   it("retries when the verifier rejects a locator, feeding its error back as feedback", async () => {
     const featureFilePath = await writeFeature(
       'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
@@ -618,6 +723,60 @@ class LoginPage:
     expect(verifier.receivedCalls).toHaveLength(2);
     const secondAttemptPrompt = llm.receivedCalls[1].find((m) => m.role === "user")?.content;
     expect(secondAttemptPrompt).toContain("resolvió a 2 elementos reales");
+  });
+
+  it("surfaces verification warnings (e.g. a 0-element locator) via onVerificationStep without treating them as failures", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: true, warnings: "El locator get_error_message(...) no se encontró en la pantalla inicial (0 elementos)" },
+    ]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    expect(cb.onVerificationStep).toHaveBeenCalledWith(
+      expect.stringContaining("no se encontró en la pantalla inicial")
+    );
+    // Must not have retried or thrown — a warning-only result is a success.
+    expect(llm.receivedCalls).toHaveLength(1);
+    expect(verifier.receivedCalls).toHaveLength(1);
   });
 
   it("skips verification entirely (never calls the verifier) when extraction finds no checks", async () => {

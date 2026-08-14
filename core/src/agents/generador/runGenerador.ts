@@ -87,6 +87,7 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     throw new Error(`No se pudo verificar la aplicación real antes de generar el código: ${exploration.error}`);
   }
   const evidence = exploration.screens;
+  const verificationUrl = evidence[0]?.url ?? baseUrl;
 
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];
@@ -113,7 +114,8 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     if (checks.length === 0) break;
 
     callbacks.onVerificationStep(`Verificando ${checks.length} locator(s) contra la aplicación real...`);
-    const verification = await verifier.verify(files, checks, baseUrl, credentials);
+    const verification = await verifier.verify(files, checks, verificationUrl, credentials);
+    if (verification.warnings) callbacks.onVerificationStep(verification.warnings);
     if (verification.ok) break;
 
     const verifyErrors = verification.errors ?? "Error desconocido de verificación de locators.";
