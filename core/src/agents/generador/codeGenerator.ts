@@ -44,6 +44,8 @@ export async function generateCode(
   matchedPattern: Pattern | null,
   naming: CodeGenerationNaming,
   evidence: CodeGenerationEvidence[],
+  appLanguage: "es" | "en",
+  routes: Record<string, string>,
   retry?: CodeGenerationRetry
 ): Promise<GeneratedFile[]> {
   const raw = await llm.generate([
@@ -51,7 +53,7 @@ export async function generateCode(
       role: "system",
       content: "Eres un ingeniero de QA experto en Playwright, Python, pytest-bdd y Page Object Model.",
     },
-    { role: "user", content: codeGenerationPrompt(featureText, matchedPattern, naming, evidence, retry) },
+    { role: "user", content: codeGenerationPrompt(featureText, matchedPattern, naming, evidence, appLanguage, routes, retry) },
   ]);
 
   return parseGeneratedFiles(raw);

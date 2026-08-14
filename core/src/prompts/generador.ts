@@ -19,6 +19,8 @@ export function codeGenerationPrompt(
   matchedPattern: { name: string; pageObjectTemplate: string } | null,
   naming: CodeGenerationNaming,
   evidence: CodeGenerationEvidence[],
+  appLanguage: "es" | "en",
+  routes: Record<string, string>,
   retry?: CodeGenerationRetry
 ): string {
   const patternSection = matchedPattern
@@ -38,6 +40,13 @@ ${evidence
   .join("\n\n")}`
       : "No se pudo capturar evidencia real de la aplicación para este intento: usa el patrón conocido (si lo hay) o el propio feature como única guía.";
 
+  const languageLabel = appLanguage === "en" ? "inglés" : "español";
+  const languageSection = `La interfaz real de la aplicación bajo test está en ${languageLabel}. Los textos visibles que menciones o esperes (botones, mensajes, etiquetas, validaciones) deben asumirse en ese idioma — no los traduzcas al castellano aunque el resto de esta conversación esté en castellano.`;
+
+  const homeRouteSection = routes.home
+    ? `\n\nLa página principal de la aplicación (tras completar flujos como login) está en la ruta "${routes.home}"; si el escenario verifica una redirección a la página principal, usa esa ruta en vez de asumir la raíz de la URL base.`
+    : "";
+
   const retrySection = retry
     ? `\n\nEl intento anterior generó este código:
 """
@@ -52,6 +61,8 @@ ${retry.feedback}
 
   return `Eres un ingeniero de QA experto en Playwright + Python + pytest-bdd + Page Object Model.
 
+${languageSection}
+
 Dado este archivo Gherkin ya aprobado, ubicado en "features/${naming.featureFileName}":
 """
 ${featureText}
@@ -59,7 +70,7 @@ ${featureText}
 
 ${patternSection}
 
-${evidenceSection}
+${evidenceSection}${homeRouteSection}
 
 El proyecto ya tiene instalado el plugin "pytest-playwright": el fixture "page" (una página de navegador ya lista) está disponible automáticamente en cualquier test, no lo definas tú ni escribas ningún conftest.py.
 

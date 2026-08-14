@@ -24,7 +24,7 @@ class LoginPage:
 describe("generateCode", () => {
   it("parses the two # FILE: blocks into separate files", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    const files = await generateCode(featureText, llm, null, naming, []);
+    const files = await generateCode(featureText, llm, null, naming, [], "es", {});
 
     expect(files).toHaveLength(2);
     expect(files[0].path).toBe("tests/test_login.py");
@@ -41,7 +41,7 @@ describe("generateCode", () => {
       gherkinTemplate: "Feature: Login\n",
       pageObjectTemplate: "class LoginPage:\n    pass\n",
     };
-    await generateCode(featureText, llm, matchedPattern, naming, []);
+    await generateCode(featureText, llm, matchedPattern, naming, [], "es", {});
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain(featureText);
@@ -53,7 +53,7 @@ describe("generateCode", () => {
 
   it("instructs the model to read the app URL and test credentials from environment variables, never literal values", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    await generateCode(featureText, llm, null, naming, []);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain("AGENTE_QA_APP_URL");
@@ -63,7 +63,7 @@ describe("generateCode", () => {
 
   it("instructs the model to avoid ambiguous .or_() locator combinators", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    await generateCode(featureText, llm, null, naming, []);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain(".or_()");
@@ -74,7 +74,7 @@ describe("generateCode", () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
     await generateCode(featureText, llm, null, naming, [
       { stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' },
-    ]);
+    ], "es", {});
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain("https://example.com/login");
@@ -83,7 +83,7 @@ describe("generateCode", () => {
 
   it("tells the model no real evidence was captured when the list is empty", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
-    await generateCode(featureText, llm, null, naming, []);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
 
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain("No se pudo capturar evidencia real");
@@ -95,7 +95,7 @@ describe("generateCode", () => {
       { path: "tests/test_login.py", content: "broken code here\n" },
       { path: "pages/login_page.py", content: "class LoginPage:\n    pass\n" },
     ];
-    await generateCode(featureText, llm, null, naming, [], {
+    await generateCode(featureText, llm, null, naming, [], "es", {}, {
       previousFiles,
       feedback: "SyntaxError: unexpected token",
     });
@@ -107,7 +107,7 @@ describe("generateCode", () => {
 
   it("throws a clear error when the response has no # FILE: blocks", async () => {
     const llm = new FakeLLMProvider(["esto no tiene el formato esperado"]);
-    await expect(generateCode(featureText, llm, null, naming, [])).rejects.toThrow(/# FILE:/);
+    await expect(generateCode(featureText, llm, null, naming, [], "es", {})).rejects.toThrow(/# FILE:/);
   });
 
   it("throws a clear error when the response has the wrong number of file blocks", async () => {
@@ -120,6 +120,34 @@ class LoginPage:
 import pytest
 `;
     const llm = new FakeLLMProvider([threeFileResponse]);
-    await expect(generateCode(featureText, llm, null, naming, [])).rejects.toThrow(/2 esperados/);
+    await expect(generateCode(featureText, llm, null, naming, [], "es", {})).rejects.toThrow(/2 esperados/);
+  });
+
+  it("tells the model the app interface is in English when appLanguage is \"en\"", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "en", {});
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("inglés");
+  });
+
+  it("tells the model the app interface is in Spanish by default", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("español");
+  });
+
+  it("includes the project's known home route when routes.home is provided", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "es", { home: "/dashboard" });
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("/dashboard");
+  });
+
+  it("omits the home route section entirely when routes.home isn't provided", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).not.toContain("página principal de la aplicación");
   });
 });
