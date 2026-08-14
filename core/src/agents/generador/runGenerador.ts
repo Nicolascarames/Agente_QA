@@ -4,6 +4,8 @@ import type { LLMProvider } from "../../llm/provider.js";
 import type { Pattern } from "../../schemas/pattern.js";
 import type { CodeChecker } from "../../codeCheck/codeChecker.js";
 import type { SiteExplorer, ExplorationCredentials } from "../../siteExplorer/siteExplorer.js";
+import type { LocatorVerifier } from "../../locatorVerify/locatorVerifier.js";
+import { extractLocatorChecks } from "../../locatorVerify/extractLocatorChecks.js";
 import { saveProjectPattern } from "../../patterns/registry.js";
 import { parseFeatureHeader } from "./parseFeatureHeader.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
@@ -20,6 +22,7 @@ export interface GeneratorCallbacks {
   offerSavePattern(featureText: string): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
   onExplorationStep(message: string): void;
+  onVerificationStep(message: string): void;
 }
 
 export interface RunGeneradorOptions {
@@ -28,6 +31,7 @@ export interface RunGeneradorOptions {
   patterns: Pattern[];
   checker: CodeChecker;
   explorer: SiteExplorer;
+  verifier: LocatorVerifier;
   projectRoot: string;
   testsDir: string;
   baseUrl: string;
@@ -44,6 +48,7 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     patterns,
     checker,
     explorer,
+    verifier,
     projectRoot,
     testsDir,
     baseUrl,
@@ -88,14 +93,36 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     files = await generateCode(featureText, llm, matchedPattern, naming, evidence, appLanguage, routes, retry);
-    const result = await checker.check(files);
-    if (result.ok) break;
 
-    const errors = result.errors ?? "Error desconocido de verificación de código.";
-    if (attempt === MAX_ATTEMPTS) {
-      throw new Error(`El código generado no pasó la verificación tras ${MAX_ATTEMPTS} intentos. Último error:\n${errors}`);
+    const checkResult = await checker.check(files);
+    if (!checkResult.ok) {
+      const errors = checkResult.errors ?? "Error desconocido de verificación de código.";
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error(`El código generado no pasó la verificación tras ${MAX_ATTEMPTS} intentos. Último error:\n${errors}`);
+      }
+      retry = { previousFiles: files, feedback: errors };
+      continue;
     }
-    retry = { previousFiles: files, feedback: errors };
+
+    const { checks, skipped } = extractLocatorChecks(featureText, files);
+    if (skipped.length > 0) {
+      callbacks.onVerificationStep(
+        `${skipped.length} literal(es) no se pudieron verificar automáticamente:\n${skipped.join("\n")}`
+      );
+    }
+    if (checks.length === 0) break;
+
+    callbacks.onVerificationStep(`Verificando ${checks.length} locator(s) contra la aplicación real...`);
+    const verification = await verifier.verify(files, checks, baseUrl, credentials);
+    if (verification.ok) break;
+
+    const verifyErrors = verification.errors ?? "Error desconocido de verificación de locators.";
+    if (attempt === MAX_ATTEMPTS) {
+      throw new Error(
+        `El código generado no pasó la verificación de locators tras ${MAX_ATTEMPTS} intentos. Último error:\n${verifyErrors}`
+      );
+    }
+    retry = { previousFiles: files, feedback: verifyErrors };
   }
 
   for (const file of files) {

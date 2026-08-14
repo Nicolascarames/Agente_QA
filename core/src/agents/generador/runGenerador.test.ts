@@ -5,6 +5,7 @@ import path from "node:path";
 import { FakeLLMProvider } from "../../llm/testUtils.js";
 import { FakeCodeChecker } from "../../codeCheck/testUtils.js";
 import { FakeSiteExplorer } from "../../siteExplorer/testUtils.js";
+import { FakeLocatorVerifier } from "../../locatorVerify/testUtils.js";
 import { chromium } from "playwright";
 import { createRealSiteExplorer } from "../../siteExplorer/realSiteExplorer.js";
 import { startFixtureApp, FIXTURE_CREDENTIALS, type FixtureApp } from "../../siteExplorer/testFixtureApp.js";
@@ -31,6 +32,7 @@ function callbacks(overrides: Partial<GeneratorCallbacks> = {}): GeneratorCallba
     offerSavePattern: vi.fn(),
     confirmOverwrite: vi.fn().mockResolvedValue(true),
     onExplorationStep: vi.fn(),
+    onVerificationStep: vi.fn(),
     ...overrides,
   };
 }
@@ -73,6 +75,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -104,6 +107,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -140,6 +144,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -175,6 +180,7 @@ describe("runGenerador", () => {
         appLanguage: "es",
         routes: {},
         credentials: undefined,
+        verifier: new FakeLocatorVerifier([]),
         callbacks: cb,
       })
     ).rejects.toThrow(/4 intentos/);
@@ -213,6 +219,7 @@ describe("runGenerador", () => {
         appLanguage: "es",
         routes: {},
         credentials: undefined,
+        verifier: new FakeLocatorVerifier([]),
         callbacks: cb,
       })
     ).rejects.toThrow(/Cancelado/);
@@ -241,6 +248,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -273,6 +281,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -302,6 +311,7 @@ describe("runGenerador", () => {
         appLanguage: "es",
         routes: {},
         credentials: undefined,
+        verifier: new FakeLocatorVerifier([]),
         callbacks: cb,
       })
     ).rejects.toThrow(/ninguna ruta conocida respondió/);
@@ -333,6 +343,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -378,6 +389,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -404,6 +416,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: {},
       credentials: { username: "qa@example.com", password: "s3cret" },
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -436,6 +449,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: { login: "/acceso" },
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -466,6 +480,7 @@ describe("runGenerador", () => {
       appLanguage: "es",
       routes: { login: "/acceso" },
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
@@ -493,12 +508,192 @@ describe("runGenerador", () => {
       appLanguage: "en",
       routes: { home: "/dashboard" },
       credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
       callbacks: cb,
     });
 
     const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
     expect(promptContent).toContain("inglés");
     expect(promptContent).toContain("/dashboard");
+  });
+
+  it("verifies extracted locators against the real app, passing the checks it found", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    expect(verifier.receivedCalls).toHaveLength(1);
+    expect(verifier.receivedCalls[0].checks).toEqual([
+      { method: "get_error_message", argument: "Credenciales incorrectas" },
+    ]);
+  });
+
+  it("retries when the verifier rejects a locator, feeding its error back as feedback", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod, responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }, { ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: false, errors: "El locator get_error_message(...) resolvió a 2 elementos reales" },
+      { ok: true },
+    ]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    expect(checker.receivedCalls).toHaveLength(2);
+    expect(verifier.receivedCalls).toHaveLength(2);
+    const secondAttemptPrompt = llm.receivedCalls[1].find((m) => m.role === "user")?.content;
+    expect(secondAttemptPrompt).toContain("resolvió a 2 elementos reales");
+  });
+
+  it("skips verification entirely (never calls the verifier) when extraction finds no checks", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const verifier = new FakeLocatorVerifier([]);
+    const cb = callbacks();
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    expect(verifier.receivedCalls).toHaveLength(0);
+  });
+
+  it("surfaces unverifiable literals via onVerificationStep instead of failing silently", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithUntracedParam = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    mensaje_normalizado = mensaje_error.strip()
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_normalizado)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithUntracedParam]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const verifier = new FakeLocatorVerifier([]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    expect(verifier.receivedCalls).toHaveLength(0);
+    expect(cb.onVerificationStep).toHaveBeenCalledWith(expect.stringContaining("no se pudieron verificar"));
   });
 });
 
@@ -572,6 +767,7 @@ describe.skipIf(!chromiumAvailable)(
         appLanguage: "es",
         routes: {},
         credentials: FIXTURE_CREDENTIALS,
+        verifier: new FakeLocatorVerifier([]),
         callbacks: cb,
       });
 
