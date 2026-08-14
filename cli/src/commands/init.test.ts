@@ -11,6 +11,9 @@ function prompts(overrides: Partial<InitPrompts> = {}): InitPrompts {
     inputTestsDir: async () => "tests",
     confirmHeadedMode: async () => false,
     inputAppUrl: async () => "https://example.com",
+    selectAppLanguage: async () => "es",
+    inputRoute: async (label) => (label.includes("home") ? "/" : ""),
+    promptAdditionalRoutes: async () => ({}),
     selectGitignoreEntries: async (candidates) => candidates,
     ...overrides,
   };
@@ -35,7 +38,7 @@ describe("runInit", () => {
       headedMode: false,
       appUrl: "https://example.com",
       appLanguage: "es",
-      routes: {},
+      routes: { home: "/" },
     });
   });
 
@@ -47,7 +50,50 @@ describe("runInit", () => {
       headedMode: true,
       appUrl: "https://example.com",
       appLanguage: "es",
-      routes: {},
+      routes: { home: "/" },
+    });
+  });
+
+  it("saves appLanguage: \"en\" when the user picks English", async () => {
+    await runInit(prompts({ selectAppLanguage: async () => "en" }), tmpProject);
+
+    expect((await loadProjectConfig(tmpProject))?.appLanguage).toBe("en");
+  });
+
+  it("asks for the home and login routes, and only saves login when it's non-empty", async () => {
+    await runInit(
+      prompts({
+        inputRoute: async (label) => (label.includes("login") ? "/login" : "/"),
+      }),
+      tmpProject
+    );
+
+    expect((await loadProjectConfig(tmpProject))?.routes).toEqual({ home: "/", login: "/login" });
+  });
+
+  it("omits the login route when the user leaves it blank", async () => {
+    await runInit(
+      prompts({
+        inputRoute: async (label) => (label.includes("login") ? "" : "/"),
+      }),
+      tmpProject
+    );
+
+    expect((await loadProjectConfig(tmpProject))?.routes).toEqual({ home: "/" });
+  });
+
+  it("merges extra routes from promptAdditionalRoutes into the saved config", async () => {
+    await runInit(
+      prompts({
+        promptAdditionalRoutes: async () => ({ checkout: "/carrito", signup: "/registro" }),
+      }),
+      tmpProject
+    );
+
+    expect((await loadProjectConfig(tmpProject))?.routes).toEqual({
+      home: "/",
+      checkout: "/carrito",
+      signup: "/registro",
     });
   });
 

@@ -2,6 +2,9 @@ export interface InitPrompts {
   inputTestsDir(): Promise<string>;
   confirmHeadedMode(): Promise<boolean>;
   inputAppUrl(): Promise<string>;
+  selectAppLanguage(): Promise<"es" | "en">;
+  inputRoute(label: string): Promise<string>;
+  promptAdditionalRoutes(): Promise<Record<string, string>>;
   selectGitignoreEntries(candidates: string[]): Promise<string[]>;
 }
 

@@ -26,7 +26,12 @@ export async function runInit(prompts: InitPrompts, projectRoot: string): Promis
   const testsDir = await prompts.inputTestsDir();
   const headedMode = await prompts.confirmHeadedMode();
   const appUrl = await prompts.inputAppUrl();
-  await saveProjectConfig(projectRoot, { testsDir, headedMode, appUrl });
+  const appLanguage = await prompts.selectAppLanguage();
+  const homeRoute = await prompts.inputRoute("página principal (home)");
+  const loginRoute = await prompts.inputRoute("login");
+  const extraRoutes = await prompts.promptAdditionalRoutes();
+  const routes: Record<string, string> = { home: homeRoute, ...(loginRoute ? { login: loginRoute } : {}), ...extraRoutes };
+  await saveProjectConfig(projectRoot, { testsDir, headedMode, appUrl, appLanguage, routes });
 
   const { created, path: envPath } = await ensureProjectEnvTemplate(projectRoot);
 

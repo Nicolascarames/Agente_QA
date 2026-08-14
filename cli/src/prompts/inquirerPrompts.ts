@@ -36,6 +36,38 @@ export const realInitPrompts: InitPrompts = {
       },
     });
   },
+  async selectAppLanguage() {
+    return select<"es" | "en">({
+      message: "¿En qué idioma está la interfaz de la aplicación?",
+      choices: [
+        { name: "Español", value: "es" },
+        { name: "Inglés", value: "en" },
+      ],
+      default: "es",
+    });
+  },
+  async inputRoute(label) {
+    return input({ message: `¿Cuál es la ruta de ${label}? (relativa, ej. /login — déjalo vacío si no lo sabes)`, default: label.includes("home") ? "/" : "" });
+  },
+  async promptAdditionalRoutes() {
+    const routes: Record<string, string> = {};
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const addMore = await select<boolean>({
+        message: Object.keys(routes).length === 0 ? "¿Quieres añadir alguna otra ruta?" : "¿Añadir otra ruta más?",
+        choices: [
+          { name: "No", value: false },
+          { name: "Sí", value: true },
+        ],
+        default: false,
+      });
+      if (!addMore) break;
+      const name = await input({ message: "Nombre de la ruta (ej. checkout, dashboard):" });
+      const routePath = await input({ message: `¿Cuál es la ruta de "${name}"?` });
+      routes[name] = routePath;
+    }
+    return routes;
+  },
   async selectGitignoreEntries(candidates) {
     return checkbox({
       message: "¿Qué añado al .gitignore del proyecto?",
