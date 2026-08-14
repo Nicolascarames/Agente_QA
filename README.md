@@ -153,6 +153,26 @@ node cli/dist/bin/agente-qa.js init
 node cli/dist/bin/agente-qa.js chat
 ```
 
+### Probar sin crear ficheros en este repo
+
+`init`/`chat` escriben siempre en `process.cwd()` — lanzados como arriba,
+desde la raíz de Agente_QA, dejan `.agente-qa/` (config + `.env`) dentro de
+este repo. Para probar el CLI sin dejar nada aquí, lánzalo desde otra
+carpeta, con la ruta absoluta al build:
+
+```
+npm run build
+mkdir /tmp/agente-qa-smoke && cd /tmp/agente-qa-smoke
+node /ruta/absoluta/a/Agente_QA/cli/dist/bin/agente-qa.js init
+node /ruta/absoluta/a/Agente_QA/cli/dist/bin/agente-qa.js chat
+```
+
+(En PowerShell: `mkdir $env:TEMP\agente-qa-smoke; cd $env:TEMP\agente-qa-smoke`.)
+
+Todo lo que genere la sesión (`.agente-qa/`, tests generados, `node_modules`
+si hace falta) queda en esa carpeta temporal, nunca en Agente_QA — bórrala
+cuando termines.
+
 ## Uso
 
 Ambas formas se usan igual: la conversación siempre empieza con una presentación y un menú de opciones (crear plan de pruebas, generar tests, ejecutar tests, ver reportes, configurar).
