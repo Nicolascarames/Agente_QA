@@ -20,13 +20,15 @@ function parseFeatureSteps(featureText: string): FeatureStep[] {
   let pendingOutlineSteps: FeatureStep[] = [];
 
   function flushOutline(): void {
-    if (isOutline && examplesHeader && examplesRows.length > 0) {
+    if (isOutline) {
       const header = examplesHeader;
-      const rows = examplesRows.map((row) => {
-        const record: Record<string, string> = {};
-        header.forEach((col, i) => (record[col] = row[i] ?? ""));
-        return record;
-      });
+      const rows = header
+        ? examplesRows.map((row) => {
+            const record: Record<string, string> = {};
+            header.forEach((col, i) => (record[col] = row[i] ?? ""));
+            return record;
+          })
+        : [];
       for (const step of pendingOutlineSteps) step.outlineExamples = rows;
     }
     isOutline = false;
@@ -143,9 +145,9 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
       const placeholderMatch = rawValue.match(/^<([\p{L}\p{N}_]+)>$/u);
       if (placeholderMatch && step.outlineExamples) {
         const column = placeholderMatch[1];
-        if (!(column in step.outlineExamples[0])) {
+        if (step.outlineExamples.length === 0 || !(column in step.outlineExamples[0])) {
           skipped.push(
-            `Paso "${step.text}": la columna '${column}' no aparece en la tabla Examples de este Scenario Outline.`
+            `Paso "${step.text}": la columna '${column}' no aparece en la tabla Examples de este Scenario Outline (o la tabla no tiene filas).`
           );
           continue;
         }

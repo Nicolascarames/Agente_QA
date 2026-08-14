@@ -231,7 +231,7 @@ def verificar_mensaje_error(page, mensaje_error):
     const featureText = [
       "Feature: X",
       "  Scenario: normal",
-      '    Then debo ver un mensaje de error "<sin-outline>"',
+      '    Then debo ver un mensaje de error "<mensaje_error>"',
       "",
     ].join("\n");
 
@@ -249,7 +249,37 @@ def verificar_mensaje_error(page, mensaje_error):
 
     const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
 
-    expect(result.checks).toEqual([{ method: "get_error_message", argument: "<sin-outline>" }]);
+    expect(result.checks).toEqual([{ method: "get_error_message", argument: "<mensaje_error>" }]);
     expect(result.skipped).toEqual([]);
+  });
+
+  it("skips a placeholder in a Scenario Outline with an empty Examples table (header but no data rows)", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario Outline: fallos",
+      '    Then debo ver un mensaje de error "<mensaje_error>"',
+      "",
+      "    Examples:",
+      "      | mensaje_error |",
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+`;
+    const pageObject = `class LoginPage:
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toContain("mensaje_error");
   });
 });
