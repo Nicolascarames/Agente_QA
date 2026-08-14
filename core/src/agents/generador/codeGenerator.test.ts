@@ -150,4 +150,21 @@ import pytest
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).not.toContain("página principal de la aplicación");
   });
+
+  it("instructs the model to split a parametrized locator's construction (get_*) from acting on it", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("get_<algo>");
+    expect(userMessage?.content).toContain("click_button");
+  });
+
+  it("instructs the model to pass the step's parsers.parse value unmodified to the paired method", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("SIN transformar");
+  });
 });
