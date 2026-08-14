@@ -57,14 +57,16 @@ Verifica que todo quedó en el `PATH`: `ruff --version` y `pytest --version` deb
 
 ## Instalación — Plugin de Claude Code
 
-> Pendiente: nombre definitivo del marketplace/repositorio del plugin.
+**No disponible todavía.** El plugin de Claude Code está en fase de diseño, sin implementación — estará disponible en una próxima versión. Por ahora, la única forma de usar Agente_QA es la CLI standalone (npm) de abajo.
+
+Cuando se publique, la instalación será así (nombre del marketplace aún sin decidir):
 
 ```
 /plugin marketplace add <marketplace-agente-qa>
 /plugin install agente-qa@<marketplace>
 ```
 
-Requiere tener [Claude Code](https://code.claude.com) instalado y una sesión iniciada con tu cuenta (Pro, Max, Team o Enterprise).
+Requerirá tener [Claude Code](https://code.claude.com) instalado y una sesión iniciada con tu cuenta (Pro, Max, Team o Enterprise) — sin API key propia. Para explorar páginas y recuperar localizadores usará el [MCP de Playwright](https://github.com/microsoft/playwright-mcp) en vez de un navegador Node propio (detalle: [`docs/superpowers/specs/2026-08-14-plugin-playwright-mcp-design.md`](docs/superpowers/specs/2026-08-14-plugin-playwright-mcp-design.md)).
 
 ## Instalación — CLI standalone (npm)
 
