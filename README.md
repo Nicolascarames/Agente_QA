@@ -112,7 +112,7 @@ agente-qa chat
 Funciona igual — `init` sigue creando `.agente-qa/` dentro del repo donde lo
 ejecutes; la única diferencia es dónde vive el propio paquete `agente-qa`.
 
-`init` pregunta en qué carpeta del proyecto guardar los tests, y crea (si no existe ya) una plantilla `.env` en `<proyecto>/.agente-qa/.env` — fuera de git (`.agente-qa/.gitignore` ya la excluye). Ahí rellenas a mano, con un editor de texto, la URL de la aplicación que vas a probar, un usuario/contraseña de prueba (opcional, solo si vas a probar login) y el proveedor/API key/modelo del LLM. `init` nunca pide estos valores por chat ni sobrescribe el archivo si ya existe.
+`init` pregunta en qué carpeta del proyecto guardar los tests, la URL de la aplicación que vas a probar, en qué idioma está su interfaz (español por defecto, o inglés) y las rutas conocidas del proyecto (página principal, login, y cualquier otra que quieras añadir) — todo se guarda en `<proyecto>/.agente-qa/config.json` (sí va a git, no son datos sensibles). Además crea (si no existe ya) una plantilla `.env` en `<proyecto>/.agente-qa/.env` — fuera de git (`.agente-qa/.gitignore` ya la excluye) — donde rellenas a mano, con un editor de texto, un usuario/contraseña de prueba (opcional, solo si vas a probar login) y el proveedor/API key/modelo del LLM. `init` nunca pide estos dos últimos valores por chat ni sobrescribe el `.env` si ya existe.
 
 ### Proveedor LLM — opciones y cómo conseguir cada API key
 
@@ -128,10 +128,9 @@ Para las tres primeras opciones basta con `AGENTE_QA_LLM_PROVIDER` + `AGENTE_QA_
 - **`AGENTE_QA_LLM_BASE_URL`**: la que exponga ese proveedor, p. ej. `https://api.groq.com/openai/v1` (Groq) o `http://localhost:11434/v1` (Ollama en local).
 - **`AGENTE_QA_LLM_MODEL`**: el nombre exacto que ese proveedor use para el modelo, p. ej. `llama-3.3-70b-versatile` (Groq) o `llama3.3` (Ollama).
 
-Ejemplo de `<proyecto>/.agente-qa/.env` completo, eligiendo Groq como proveedor `openai-compatible`:
+Ejemplo de `<proyecto>/.agente-qa/.env` completo, eligiendo Groq como proveedor `openai-compatible` (la URL de la app, el idioma y las rutas ya no van aquí — se preguntan en `init`/`Configuración` y se guardan en `config.json`):
 
 ```
-AGENTE_QA_APP_URL=https://staging.mi-app.com
 AGENTE_QA_TEST_USERNAME=qa-tester@mi-app.com
 AGENTE_QA_TEST_PASSWORD=Sup3rSecreta!
 AGENTE_QA_LLM_PROVIDER=openai-compatible
