@@ -66,6 +66,33 @@ def verificar_mensaje_validacion(page, mensaje_validacion):
     ]);
   });
 
+  it("extracts locator checks when placeholder names themselves use unicode (ñ, tildes)", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: secure",
+      '    When introduzco la contraseña "mi_contraseña_123"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, when
+
+@when(parsers.parse('introduzco la contraseña "{contraseña}"'))
+def introducir_contraseña(page, contraseña):
+    login_page = LoginPage(page)
+    login_page.get_password_input(contraseña)
+`;
+    const pageObject = `class LoginPage:
+    def get_password_input(self, password):
+        return self.page.get_by_placeholder(password)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([
+      { method: "get_password_input", argument: "mi_contraseña_123" },
+    ]);
+  });
+
   it("produces no checks for a step whose literal flows into a plain action method (fill_*), not a get_* method", () => {
     const featureText = [
       "Feature: Login",
