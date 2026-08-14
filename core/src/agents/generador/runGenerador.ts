@@ -31,6 +31,8 @@ export interface RunGeneradorOptions {
   projectRoot: string;
   testsDir: string;
   baseUrl: string;
+  appLanguage: "es" | "en";
+  routes: Record<string, string>;
   credentials: ExplorationCredentials | undefined;
   callbacks: GeneratorCallbacks;
 }
@@ -45,15 +47,29 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     projectRoot,
     testsDir,
     baseUrl,
+    appLanguage,
+    routes,
     credentials,
     callbacks,
   } = options;
 
   const featureText = await fs.readFile(featureFilePath, "utf-8");
   const matchedPatternName = parseFeatureHeader(featureText);
-  const matchedPattern = matchedPatternName
+  const basePattern = matchedPatternName
     ? (patterns.find((p) => p.name === matchedPatternName) ?? null)
     : null;
+
+  const projectRoute = basePattern ? routes[basePattern.name] : undefined;
+  const matchedPattern: Pattern | null =
+    basePattern && projectRoute
+      ? {
+          ...basePattern,
+          navigationHints: {
+            requiresLogin: basePattern.navigationHints?.requiresLogin ?? false,
+            routeCandidates: [projectRoute, ...(basePattern.navigationHints?.routeCandidates ?? [])],
+          },
+        }
+      : basePattern;
 
   const featureFileName = path.basename(featureFilePath);
   const naming = { slug: toPythonModuleSlug(featureFileName.replace(/\.feature$/, "")), featureFileName };
@@ -71,7 +87,7 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
   let files: GeneratedFile[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    files = await generateCode(featureText, llm, matchedPattern, naming, evidence, retry);
+    files = await generateCode(featureText, llm, matchedPattern, naming, evidence, appLanguage, routes, retry);
     const result = await checker.check(files);
     if (result.ok) break;
 

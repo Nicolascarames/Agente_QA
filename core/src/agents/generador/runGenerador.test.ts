@@ -70,6 +70,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -99,6 +101,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -133,6 +137,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -166,6 +172,8 @@ describe("runGenerador", () => {
         projectRoot: tmpProject,
         testsDir: "tests",
         baseUrl: "https://example.com",
+        appLanguage: "es",
+        routes: {},
         credentials: undefined,
         callbacks: cb,
       })
@@ -202,6 +210,8 @@ describe("runGenerador", () => {
         projectRoot: tmpProject,
         testsDir: "tests",
         baseUrl: "https://example.com",
+        appLanguage: "es",
+        routes: {},
         credentials: undefined,
         callbacks: cb,
       })
@@ -228,6 +238,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -258,6 +270,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -285,6 +299,8 @@ describe("runGenerador", () => {
         projectRoot: tmpProject,
         testsDir: "tests",
         baseUrl: "https://example.com",
+        appLanguage: "es",
+        routes: {},
         credentials: undefined,
         callbacks: cb,
       })
@@ -314,6 +330,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -357,6 +375,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: undefined,
       callbacks: cb,
     });
@@ -381,6 +401,8 @@ describe("runGenerador", () => {
       projectRoot: tmpProject,
       testsDir: "tests",
       baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
       credentials: { username: "qa@example.com", password: "s3cret" },
       callbacks: cb,
     });
@@ -388,6 +410,63 @@ describe("runGenerador", () => {
     expect(explorer.receivedCalls[0].baseUrl).toBe("https://example.com");
     expect(explorer.receivedCalls[0].credentials).toEqual({ username: "qa@example.com", password: "s3cret" });
     expect(explorer.receivedCalls[0].headed).toBe(true);
+  });
+
+  it("prepends the project's configured route for the matched pattern to the explorer's route candidates", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    const patternWithHints: Pattern = {
+      ...loginPattern,
+      navigationHints: { routeCandidates: ["/login", "/signin"], requiresLogin: false },
+    };
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const cb = callbacks();
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [patternWithHints],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: { login: "/acceso" },
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    const passedPattern = explorer.receivedCalls[0].matchedPattern;
+    expect(passedPattern?.navigationHints?.routeCandidates).toEqual(["/acceso", "/login", "/signin"]);
+  });
+
+  it("passes appLanguage and routes through to the code generation prompt", async () => {
+    const featureFilePath = await writeFeature("Feature: Checkout\n");
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "en",
+      routes: { home: "/dashboard" },
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
+    expect(promptContent).toContain("inglés");
+    expect(promptContent).toContain("/dashboard");
   });
 });
 
@@ -458,6 +537,8 @@ describe.skipIf(!chromiumAvailable)(
         projectRoot: tmpProject,
         testsDir: "tests",
         baseUrl: app.url,
+        appLanguage: "es",
+        routes: {},
         credentials: FIXTURE_CREDENTIALS,
         callbacks: cb,
       });
