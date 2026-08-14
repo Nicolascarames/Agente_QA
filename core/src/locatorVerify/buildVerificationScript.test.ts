@@ -37,9 +37,9 @@ describe("buildVerificationScript", () => {
     expect(script).toContain("headless=True");
   });
 
-  it("navigates with the raw page directly, never through a Page Object goto() method", () => {
+  it("navigates with the raw page directly, never through a Page Object goto() method, and waits for the network to go idle before counting elements (client-side hydration)", () => {
     const script = buildVerificationScript(files, [], "https://example.com");
-    expect(script).toContain("page.goto(BASE_URL)");
+    expect(script).toContain('page.goto(BASE_URL, wait_until="networkidle")');
   });
 
   it("uses an empty string for PAGE_OBJECT_PATH when no pages/ file is present", () => {
@@ -52,5 +52,13 @@ describe("buildVerificationScript", () => {
 
     expect(script).toContain("try:");
     expect(script).toContain("except Exception as e:");
+  });
+
+  it("wraps each Page Object class's instantiation individually, so one class with an incompatible __init__ can't crash the whole script before any check runs", () => {
+    const script = buildVerificationScript(files, [], "https://example.com");
+
+    expect(script).toContain("for cls in classes:");
+    expect(script).toContain("instances.append(cls(page))");
+    expect(script).not.toContain("instances = [cls(page) for cls in classes]");
   });
 });

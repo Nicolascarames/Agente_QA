@@ -33,10 +33,15 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(BASE_URL)
+        page.goto(BASE_URL, wait_until="networkidle")
 
         classes = load_page_object_classes(PAGE_OBJECT_PATH)
-        instances = [cls(page) for cls in classes]
+        instances = []
+        for cls in classes:
+            try:
+                instances.append(cls(page))
+            except Exception:
+                pass
 
         for check in CHECKS:
             method_name = check["method"]
