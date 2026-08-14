@@ -62,6 +62,8 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     projectRoot,
     testsDir: projectConfig.testsDir,
     baseUrl,
+    appLanguage: projectConfig.appLanguage,
+    routes: projectConfig.routes,
     credentials,
     callbacks,
   });

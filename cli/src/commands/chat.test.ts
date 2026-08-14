@@ -114,4 +114,28 @@ describe("runCreatePlan", () => {
 
     expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
   });
+
+  it("passes the project's configured app language through to Gherkin generation", async () => {
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com", appLanguage: "en" });
+
+    const fake = new FakeLLMProvider([
+      '{"ambiguous": false, "questions": []}',
+      '{"matchedPatternName": "login"}',
+      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+    ]);
+    createProviderMock.mockReturnValue(fake);
+
+    const prompts: ChatPrompts = {
+      inputInitialText: vi.fn().mockResolvedValue("quiero probar el login"),
+      askUser: vi.fn(),
+      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+
+    await runCreatePlan(prompts, tmpProject);
+
+    const gherkinPrompt = fake.receivedCalls[2].find((m) => m.role === "user")?.content;
+    expect(gherkinPrompt).toContain("inglés");
+  });
 });

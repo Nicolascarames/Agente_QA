@@ -176,4 +176,39 @@ class LoginPage:
     expect(explorer.receivedCalls[0].baseUrl).toBe("https://example.com");
     expect(explorer.receivedCalls[0].credentials).toEqual({ username: "qa@example.com", password: "s3cret" });
   });
+
+  it("passes the project's configured app language and routes through to code generation", async () => {
+    await writeEnv(tmpProject, BASE_ENV);
+    await saveProjectConfig(tmpProject, {
+      testsDir: "tests",
+      appUrl: "https://example.com",
+      appLanguage: "en",
+      routes: { home: "/dashboard" },
+    });
+    const featuresDir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(featuresDir, { recursive: true });
+    await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
+
+    const scriptedResponse = `# FILE: tests/test_login.py
+scenarios("../features/login.feature")
+# FILE: pages/login_page.py
+class LoginPage:
+    pass
+`;
+    const fake = new FakeLLMProvider([scriptedResponse]);
+    createProviderMock.mockReturnValue(fake);
+    realCodeCheckerCheckMock.mockResolvedValue({ ok: true });
+
+    const prompts: GeneratorPrompts = {
+      selectFeatureFile: vi.fn().mockResolvedValue("login.feature"),
+      offerSavePattern: vi.fn().mockResolvedValue({ save: false }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+
+    await runGenerateTests(prompts, tmpProject);
+
+    const codegenPrompt = fake.receivedCalls[0].find((m) => m.role === "user")?.content;
+    expect(codegenPrompt).toContain("inglés");
+    expect(codegenPrompt).toContain("/dashboard");
+  });
 });

@@ -39,6 +39,7 @@ export async function runCreatePlan(prompts: ChatPrompts, projectRoot: string): 
     patterns,
     projectRoot,
     projectConfig.testsDir,
+    projectConfig.appLanguage,
     callbacks
   );
 
