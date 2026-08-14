@@ -5,6 +5,8 @@ import { z } from "zod";
 export const ProjectConfigSchema = z.object({
   testsDir: z.string().min(1),
   headedMode: z.boolean().default(false),
+  appLanguage: z.enum(["es", "en"]).default("es"),
+  routes: z.record(z.string()).default({}),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 

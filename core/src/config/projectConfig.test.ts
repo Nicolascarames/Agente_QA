@@ -21,12 +21,22 @@ describe("projectConfig", () => {
 
   it("saves and loads project config round-trip, defaulting headedMode to false when omitted", async () => {
     await saveProjectConfig(tmpProject, { testsDir: "tests" });
-    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests", headedMode: false });
+    expect(await loadProjectConfig(tmpProject)).toEqual({
+      testsDir: "tests",
+      headedMode: false,
+      appLanguage: "es",
+      routes: {},
+    });
   });
 
   it("saves and loads headedMode: true when explicitly given", async () => {
     await saveProjectConfig(tmpProject, { testsDir: "tests", headedMode: true });
-    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests", headedMode: true });
+    expect(await loadProjectConfig(tmpProject)).toEqual({
+      testsDir: "tests",
+      headedMode: true,
+      appLanguage: "es",
+      routes: {},
+    });
   });
 
   it("writes the file at <project>/.agente-qa/config.json", async () => {
@@ -38,5 +48,25 @@ describe("projectConfig", () => {
     await expect(saveProjectConfig(tmpProject, { testsDir: "" })).rejects.toThrow();
     const exists = await fs.stat(projectConfigPath(tmpProject)).then(() => true, () => false);
     expect(exists).toBe(false);
+  });
+
+  it("saves and loads an explicit appLanguage and routes", async () => {
+    await saveProjectConfig(tmpProject, {
+      testsDir: "tests",
+      appLanguage: "en",
+      routes: { home: "/", login: "/login" },
+    });
+    expect(await loadProjectConfig(tmpProject)).toEqual({
+      testsDir: "tests",
+      headedMode: false,
+      appLanguage: "en",
+      routes: { home: "/", login: "/login" },
+    });
+  });
+
+  it("rejects an invalid appLanguage value", async () => {
+    await expect(
+      saveProjectConfig(tmpProject, { testsDir: "tests", appLanguage: "fr" as never })
+    ).rejects.toThrow();
   });
 });

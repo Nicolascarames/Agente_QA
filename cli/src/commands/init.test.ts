@@ -29,13 +29,23 @@ describe("runInit", () => {
   it("saves the project config from the prompt answers", async () => {
     await runInit(prompts(), tmpProject);
 
-    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests", headedMode: false });
+    expect(await loadProjectConfig(tmpProject)).toEqual({
+      testsDir: "tests",
+      headedMode: false,
+      appLanguage: "es",
+      routes: {},
+    });
   });
 
   it("saves headedMode: true when the user confirms it", async () => {
     await runInit(prompts({ confirmHeadedMode: async () => true }), tmpProject);
 
-    expect(await loadProjectConfig(tmpProject)).toEqual({ testsDir: "tests", headedMode: true });
+    expect(await loadProjectConfig(tmpProject)).toEqual({
+      testsDir: "tests",
+      headedMode: true,
+      appLanguage: "es",
+      routes: {},
+    });
   });
 
   it("creates the .env template when it doesn't exist yet, and reports it as created", async () => {
