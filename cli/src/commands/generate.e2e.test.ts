@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { saveProjectConfig, projectEnvPath, FakeSiteExplorer } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath, FakeSiteExplorer, FakeLocatorVerifier } from "@agente-qa/core";
 
 function commandExists(cmd: string): boolean {
   return spawnSync(cmd, ["--version"]).error === undefined;
@@ -13,6 +13,7 @@ const hasRuff = commandExists("ruff");
 
 const generateTextMock = vi.fn();
 const createRealSiteExplorerMock = vi.fn();
+const createRealLocatorVerifierMock = vi.fn();
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
 }));
@@ -22,12 +23,14 @@ vi.mock("@ai-sdk/anthropic", () => ({
 vi.mock("../util/spinner.js", () => ({
   withLLMSpinner: (provider: unknown) => provider,
   withCodeCheckerSpinner: (checker: unknown) => checker,
+  withLocatorVerifierSpinner: (verifier: unknown) => verifier,
 }));
 vi.mock("@agente-qa/core", async () => {
   const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
   return {
     ...actual,
     createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
+    createRealLocatorVerifier: (...args: unknown[]) => createRealLocatorVerifierMock(...args),
   };
 });
 
@@ -58,6 +61,8 @@ describe.skipIf(!hasPython || !hasRuff)(
       generateTextMock.mockReset();
       createRealSiteExplorerMock.mockReset();
       createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
+      createRealLocatorVerifierMock.mockReset();
+      createRealLocatorVerifierMock.mockReturnValue(new FakeLocatorVerifier([]));
     });
 
     afterEach(async () => {

@@ -8,6 +8,11 @@ import type {
   TestRunner,
   TestRunOptions,
   TestRunResult,
+  LocatorVerifier,
+  LocatorCheck,
+  LocatorVerificationResult,
+  GeneratedFile,
+  ExplorationCredentials,
 } from "@agente-qa/core";
 
 export function withLLMSpinner(provider: LLMProvider): LLMProvider {
@@ -68,6 +73,31 @@ export function withTestRunnerSpinner(runner: TestRunner): TestRunner {
         if (!spinnerStopped) {
           spinner.fail("Fallo al ejecutar los tests.");
         }
+        throw err;
+      }
+    },
+  };
+}
+
+export function withLocatorVerifierSpinner(verifier: LocatorVerifier): LocatorVerifier {
+  return {
+    async verify(
+      files: GeneratedFile[],
+      checks: LocatorCheck[],
+      baseUrl: string,
+      credentials: ExplorationCredentials | undefined
+    ): Promise<LocatorVerificationResult> {
+      const spinner = ora(`Verificando ${checks.length} locator(s) contra la aplicación real...`).start();
+      try {
+        const result = await verifier.verify(files, checks, baseUrl, credentials);
+        if (result.ok) {
+          spinner.succeed("Locators verificados sin ambigüedad.");
+        } else {
+          spinner.fail("Algún locator generado es ambiguo en la aplicación real.");
+        }
+        return result;
+      } catch (err) {
+        spinner.fail("Fallo al verificar los locators.");
         throw err;
       }
     },

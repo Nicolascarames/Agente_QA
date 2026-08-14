@@ -17,18 +17,18 @@ Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, gener
 
 | | Plugin de Claude Code | CLI standalone (npm) |
 |---|---|---|
-| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python, `ruff` y los navegadores de Playwright para Node para "Generar tests Playwright"; + `pytest`, `pytest-bdd`, `pytest-playwright` y `pytest-html` para "Ejecutar tests") |
+| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python, `ruff`, los navegadores de Playwright para Node, y `pytest`/`pytest-bdd`/`pytest-playwright`/`pytest-html` para "Generar tests Playwright"; estos últimos también para "Ejecutar tests") |
 | Modelo LLM | Solo Claude | Anthropic, OpenAI, Google, o cualquier proveedor compatible con la API de OpenAI (Groq, Together, Ollama local...) vía API key propia |
 | Coste | Incluido en tu suscripción Claude | Pago por uso de API del proveedor elegido |
 | Dónde corre | Dentro de una sesión Claude Code | Terminal, standalone, también en CI |
 
-> A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3 y `ruff`** en el `PATH` — se usan para verificar que el código generado compila y pasa lint antes de escribirlo al proyecto — y los **navegadores de Playwright para Node** (`npx playwright install chromium`, una sola vez tras instalar `agente-qa`) — Agente 2 abre un navegador real para verificar rutas y localizadores contra la aplicación bajo test antes de generar código. No hace falta para "Crear plan de pruebas" (Agente 1).
+> A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3, `ruff`, y `pytest`/`pytest-bdd`/`pytest-playwright`/`pytest-html`** en el `PATH` — `ruff`+`py_compile` verifican que el código generado compila y pasa lint, y el stack de pytest se usa para lanzar un navegador real (headless) que comprueba que cada locator generado con un parámetro variable resuelve a exactamente un elemento en la aplicación real antes de aceptar el código — y los **navegadores de Playwright para Node** (`npx playwright install chromium`, una sola vez tras instalar `agente-qa`) para el propio "Site Explorer" de Agente 2. No hace falta para "Crear plan de pruebas" (Agente 1).
 >
-> A partir de "Ejecutar tests" (Agente 3), la CLI standalone necesita además **`pytest`, `pytest-bdd`, `pytest-playwright` y `pytest-html`** en el `PATH` — son las dependencias reales que ejecutan los tests generados por Agente 2, capturan screenshots/vídeo solo en fallo, y generan el reporte extendido que "Ver/generar reportes" (Agente 4) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 3 ya dejó escritos.
+> A partir de "Ejecutar tests" (Agente 3), la CLI standalone reutiliza el mismo stack de pytest para ejecutar los tests generados de verdad, capturar screenshots/vídeo solo en fallo, y generar el reporte extendido que "Ver/generar reportes" (Agente 4) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 3 ya dejó escritos.
 
 ### Instalar Python y las dependencias de test
 
-Solo hace falta si vas a usar "Generar tests Playwright" o "Ejecutar tests" (Agente 1, crear plan de pruebas, no lo necesita).
+Hace falta desde "Generar tests Playwright" en adelante (Agente 1, crear plan de pruebas, no lo necesita) — Agente 2 ya lanza un navegador real headless para verificar locators antes de aceptar el código, no solo Agente 3 al ejecutar los tests.
 
 **1. Python 3** (si no lo tienes ya — compruébalo con `python --version` o `python3 --version`):
 
@@ -44,7 +44,7 @@ playwright install
 ```
 
 - `ruff` — lo usa Agente 2 (Generar tests) para verificar lint/compilación antes de escribir nada al proyecto.
-- `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — los usa Agente 3 (Ejecutar tests) para correr los tests generados y producir el reporte extendido.
+- `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — Agente 2 (Generar tests) los usa para lanzar un navegador headless que verifica cada locator generado contra la aplicación real; Agente 3 (Ejecutar tests) reutiliza el mismo stack para correr los tests generados y producir el reporte extendido.
 - `playwright install` descarga los navegadores (Chromium/Firefox/WebKit) que usan los tests generados (Python `pytest-playwright`) — sin esto, `pytest-playwright` falla al lanzar el primer test aunque el paquete esté instalado.
 
 `agente-qa` en sí (no los tests que genera) también controla un navegador real durante "Generar tests Playwright", para verificar rutas y localizadores contra la aplicación antes de escribir código — es un Playwright para Node, aparte del anterior. Una sola vez, tras instalar `agente-qa`:

@@ -9,12 +9,13 @@ import {
   listFeatureFiles,
   realCodeChecker,
   createRealSiteExplorer,
+  createRealLocatorVerifier,
   runGenerador,
   projectEnvPath,
   type GeneratorCallbacks,
 } from "@agente-qa/core";
 import type { GeneratorPrompts } from "../prompts/types.js";
-import { withLLMSpinner, withCodeCheckerSpinner } from "../util/spinner.js";
+import { withLLMSpinner, withCodeCheckerSpinner, withLocatorVerifierSpinner } from "../util/spinner.js";
 
 export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: string): Promise<string[]> {
   const env = await loadProjectEnv(projectRoot);
@@ -51,6 +52,9 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     onExplorationStep: (message) => {
       console.log(message);
     },
+    onVerificationStep: (message) => {
+      console.log(message);
+    },
   };
 
   const { writtenPaths } = await runGenerador({
@@ -59,6 +63,7 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     patterns,
     checker: withCodeCheckerSpinner(realCodeChecker),
     explorer,
+    verifier: withLocatorVerifierSpinner(createRealLocatorVerifier()),
     projectRoot,
     testsDir: projectConfig.testsDir,
     baseUrl,

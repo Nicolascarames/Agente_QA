@@ -2,14 +2,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveProjectConfig, projectEnvPath, FakeLLMProvider, FakeSiteExplorer, realCodeChecker } from "@agente-qa/core";
+import {
+  saveProjectConfig,
+  projectEnvPath,
+  FakeLLMProvider,
+  FakeSiteExplorer,
+  FakeLocatorVerifier,
+  realCodeChecker,
+} from "@agente-qa/core";
 import type { GeneratorPrompts } from "../prompts/types.js";
 
 const createProviderMock = vi.fn();
 const realCodeCheckerCheckMock = vi.fn();
 const createRealSiteExplorerMock = vi.fn();
+const createRealLocatorVerifierMock = vi.fn();
 const withLLMSpinnerMock = vi.fn((provider: unknown) => provider);
 const withCodeCheckerSpinnerMock = vi.fn((checker: unknown) => checker);
+const withLocatorVerifierSpinnerMock = vi.fn((verifier: unknown) => verifier);
 
 vi.mock("@agente-qa/core", async () => {
   const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
@@ -18,12 +27,14 @@ vi.mock("@agente-qa/core", async () => {
     createProvider: (...args: unknown[]) => createProviderMock(...args),
     realCodeChecker: { check: (...args: unknown[]) => realCodeCheckerCheckMock(...args) },
     createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
+    createRealLocatorVerifier: (...args: unknown[]) => createRealLocatorVerifierMock(...args),
   };
 });
 
 vi.mock("../util/spinner.js", () => ({
   withLLMSpinner: (provider: unknown) => withLLMSpinnerMock(provider),
   withCodeCheckerSpinner: (checker: unknown) => withCodeCheckerSpinnerMock(checker),
+  withLocatorVerifierSpinner: (verifier: unknown) => withLocatorVerifierSpinnerMock(verifier),
 }));
 
 import { runGenerateTests } from "./generate.js";
@@ -50,10 +61,14 @@ describe("runGenerateTests", () => {
     realCodeCheckerCheckMock.mockReset();
     createRealSiteExplorerMock.mockReset();
     createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
+    createRealLocatorVerifierMock.mockReset();
+    createRealLocatorVerifierMock.mockReturnValue(new FakeLocatorVerifier([]));
     withLLMSpinnerMock.mockClear();
     withLLMSpinnerMock.mockImplementation((provider: unknown) => provider);
     withCodeCheckerSpinnerMock.mockClear();
     withCodeCheckerSpinnerMock.mockImplementation((checker: unknown) => checker);
+    withLocatorVerifierSpinnerMock.mockClear();
+    withLocatorVerifierSpinnerMock.mockImplementation((verifier: unknown) => verifier);
   });
 
   afterEach(async () => {
@@ -139,6 +154,36 @@ class LoginPage:
 
     expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
     expect(withCodeCheckerSpinnerMock.mock.calls[0][0]).toBe(realCodeChecker);
+  });
+
+  it("builds the locator verifier and wraps it with its spinner decorator before using it", async () => {
+    await writeEnv(tmpProject, BASE_ENV);
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+    const featuresDir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(featuresDir, { recursive: true });
+    await fs.writeFile(path.join(featuresDir, "login.feature"), "Feature: Login\n", "utf-8");
+
+    const scriptedResponse = `# FILE: tests/test_login.py
+scenarios("../features/login.feature")
+# FILE: pages/login_page.py
+class LoginPage:
+    pass
+`;
+    createProviderMock.mockReturnValue(new FakeLLMProvider([scriptedResponse]));
+    realCodeCheckerCheckMock.mockResolvedValue({ ok: true });
+    const verifier = new FakeLocatorVerifier([]);
+    createRealLocatorVerifierMock.mockReturnValue(verifier);
+
+    const prompts: GeneratorPrompts = {
+      selectFeatureFile: vi.fn().mockResolvedValue("login.feature"),
+      offerSavePattern: vi.fn().mockResolvedValue({ save: false }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+    };
+
+    await runGenerateTests(prompts, tmpProject);
+
+    expect(createRealLocatorVerifierMock).toHaveBeenCalled();
+    expect(withLocatorVerifierSpinnerMock.mock.calls[0][0]).toBe(verifier);
   });
 
   it("builds the site explorer from the LLM provider and passes app URL and test credentials through", async () => {
