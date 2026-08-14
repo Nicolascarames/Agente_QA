@@ -102,26 +102,50 @@ function templateToRegex(template: string): { regex: RegExp; paramNames: string[
 }
 
 function findMethodCallForParam(body: string, paramName: string): string | null {
-  for (const call of body.matchAll(/[\p{L}\p{N}_]+\.([\p{L}\p{N}_]+)\(([^)]*)\)/gu)) {
-    const [, method, argsStr] = call;
+  for (const call of body.matchAll(/([\p{L}\p{N}_]+)\.([\p{L}\p{N}_]+)\(([^)]*)\)/gu)) {
+    const [, receiver, method, argsStr] = call;
+    if (receiver === "page") continue; // the raw pytest-playwright fixture is never a Page Object instance
     const args = argsStr.split(",").map((a) => a.trim());
     if (args.includes(paramName)) return method;
   }
   return null;
 }
 
-function findDelegatedGetMethod(pageObjectSrc: string, actionMethod: string, paramName: string): string | null {
+// A step-def commonly asserts directly on the raw `page` fixture (e.g.
+// `expect(page.get_by_text(msg)).to_be_visible()`) instead of going through a
+// Page Object at all — that's ordinary, unremarkable pytest-playwright usage,
+// not a sign the parameter was transformed/lost. Used only to distinguish
+// that recognized "nothing to verify here, and that's fine" case from a
+// genuinely untraceable parameter (e.g. one run through `.strip()` first),
+// which is the case still worth a visible skip.
+function isParamPassedToPageFixture(body: string, paramName: string): boolean {
+  for (const call of body.matchAll(/([\p{L}\p{N}_]+)\.([\p{L}\p{N}_]+)\(([^)]*)\)/gu)) {
+    const [, receiver, , argsStr] = call;
+    if (receiver !== "page") continue;
+    const args = argsStr.split(",").map((a) => a.trim());
+    if (args.includes(paramName)) return true;
+  }
+  return false;
+}
+
+function findDelegatedGetMethod(
+  pageObjectSrc: string,
+  actionMethod: string,
+  paramName: string
+): { method: string | null; hasAnyGetCall: boolean } {
   const defRe = new RegExp(
     `def\\s+${actionMethod}\\(self,\\s*[^)]*\\):[\\s\\S]*?(?=\\n    def\\s|\\nclass\\s|$)`
   );
   const match = pageObjectSrc.match(defRe);
-  if (!match) return null;
+  if (!match) return { method: null, hasAnyGetCall: false };
+  let hasAnyGetCall = false;
   for (const call of match[0].matchAll(/self\.(get_[\p{L}\p{N}_]*)\(([^)]*)\)/gu)) {
+    hasAnyGetCall = true;
     const [, getMethod, argsStr] = call;
     const args = argsStr.split(",").map((a) => a.trim());
-    if (args.includes(paramName)) return getMethod;
+    if (args.includes(paramName)) return { method: getMethod, hasAnyGetCall };
   }
-  return null;
+  return { method: null, hasAnyGetCall };
 }
 
 export function extractLocatorChecks(featureText: string, files: GeneratedFile[]): LocatorExtractionResult {
@@ -155,15 +179,31 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
     for (const [paramName, rawValue] of Object.entries(params)) {
       const calledMethod = findMethodCallForParam(matchedDef.body, paramName);
       if (!calledMethod) {
-        skipped.push(
-          `Paso "${step.text}": el parámetro '${paramName}' no se pasa sin transformar (mismo nombre, sin recortar ni procesar) a ningún método del Page Object — no se puede verificar automáticamente.`
-        );
+        // A call on the raw `page` fixture (e.g. a plain Playwright assertion)
+        // is a recognized, ordinary pattern — nothing to verify, silently,
+        // same as a plain fill_* action. Only flag genuinely untraceable
+        // params (never passed unmodified to anything) as a visible gap.
+        if (!isParamPassedToPageFixture(matchedDef.body, paramName)) {
+          skipped.push(
+            `Paso "${step.text}": el parámetro '${paramName}' no se pasa sin transformar (mismo nombre, sin recortar ni procesar) a ningún método del Page Object — no se puede verificar automáticamente.`
+          );
+        }
         continue;
       }
 
-      const targetMethod = calledMethod.startsWith("get_")
-        ? calledMethod
-        : findDelegatedGetMethod(pageObjectFile.content, calledMethod, paramName);
+      let targetMethod: string | null;
+      if (calledMethod.startsWith("get_")) {
+        targetMethod = calledMethod;
+      } else {
+        const delegation = findDelegatedGetMethod(pageObjectFile.content, calledMethod, paramName);
+        targetMethod = delegation.method;
+        if (!targetMethod && delegation.hasAnyGetCall) {
+          skipped.push(
+            `Paso "${step.text}": el método '${calledMethod}' delega en un get_* del Page Object, pero ninguno recibe el parámetro '${paramName}' con el mismo nombre — puede que el Page Object use otro nombre de parámetro. No se puede verificar automáticamente.`
+          );
+          continue;
+        }
+      }
 
       if (!targetMethod) continue; // acción normal sin locator ambiguo (p.ej. fill_email) — nada que verificar
 

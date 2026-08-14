@@ -373,4 +373,102 @@ def pulsar_boton(page, button_name):
     expect(result.skipped).toHaveLength(1);
     expect(result.skipped[0]).toContain("button_name");
   });
+
+  it("surfaces a visible skip reason (not a silent drop) when the Page Object's action method delegates to a get_* call, but the delegated get_* is invoked with a DIFFERENT parameter name than the step-def's own parameter", () => {
+    // This is exactly the shape of the spec's own headline example
+    // (click_button/get_button): the Page Object's action method names its
+    // own parameter independently of the step-def's parameter name — nothing
+    // ties them together syntactically, so the cross-reference must surface
+    // the gap rather than silently treating it like a plain fill_* action.
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: ok",
+      '    When pulso el botón "Log In"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, when
+
+@when(parsers.parse('pulso el botón "{nombre_boton}"'))
+def pulsar_boton(page, nombre_boton):
+    login_page = LoginPage(page)
+    login_page.click_button(nombre_boton)
+`;
+    // click_button's OWN parameter is named button_name, not nombre_boton —
+    // the delegated self.get_button(button_name) call never mentions
+    // "nombre_boton" verbatim, even though this is a legitimate delegation.
+    const pageObject = `class LoginPage:
+    def get_button(self, button_name):
+        return self.page.get_by_role("button", name=button_name, exact=False)
+
+    def click_button(self, button_name):
+        self.get_button(button_name).click()
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toContain("click_button");
+    expect(result.skipped[0]).toContain("nombre_boton");
+  });
+});
+
+describe("extractLocatorChecks — page fixture calls are not Page Object methods", () => {
+  it("does not treat expect(page.get_by_text(...)) in an assertion step as a Page Object get_* call to verify", () => {
+    // Playwright's own SDK uses the identical get_by_* naming convention this
+    // project's convention uses for Page Object locator methods. A plain
+    // assertion step calling the raw `page` fixture directly must not be
+    // mistaken for a Page Object method — the real verification harness has
+    // no such method on any generated class.
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: fail",
+      '    Then debo ver un mensaje de error "Credenciales incorrectas"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, then
+from playwright.sync_api import expect
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar(page, mensaje_error):
+    expect(page.get_by_text(mensaje_error)).to_be_visible()
+`;
+    const pageObject = `class LoginPage:
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("still resolves a legitimate call through a receiver that merely contains the substring 'page' (e.g. login_page), not just exact 'page'", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: ok",
+      '    When pulso el botón "Log In"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, when
+
+@when(parsers.parse('pulso el botón "{button_name}"'))
+def pulsar_boton(page, button_name):
+    login_page = LoginPage(page)
+    login_page.get_button(button_name)
+`;
+    const pageObject = `class LoginPage:
+    def get_button(self, button_name):
+        return self.page.get_by_role("button", name=button_name, exact=False)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([{ method: "get_button", argument: "Log In" }]);
+    expect(result.skipped).toEqual([]);
+  });
 });
