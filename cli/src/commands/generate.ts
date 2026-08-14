@@ -53,18 +53,18 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
     },
   };
 
-  const { writtenPaths } = await runGenerador(
+  const { writtenPaths } = await runGenerador({
     featureFilePath,
     llm,
     patterns,
-    withCodeCheckerSpinner(realCodeChecker),
+    checker: withCodeCheckerSpinner(realCodeChecker),
     explorer,
     projectRoot,
-    projectConfig.testsDir,
+    testsDir: projectConfig.testsDir,
     baseUrl,
     credentials,
-    callbacks
-  );
+    callbacks,
+  });
 
   return writtenPaths;
 }

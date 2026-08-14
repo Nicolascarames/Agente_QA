@@ -61,9 +61,18 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const cb = callbacks();
 
-    const { writtenPaths } = await runGenerador(
-      featureFilePath, llm, [loginPattern], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    const { writtenPaths } = await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     expect(writtenPaths).toHaveLength(2);
     expect(cb.offerSavePattern).not.toHaveBeenCalled();
@@ -81,9 +90,18 @@ describe("runGenerador", () => {
       offerSavePattern: vi.fn().mockResolvedValue({ save: true, name: "checkout", description: "Flujo de compra" }),
     });
 
-    await runGenerador(
-      featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     expect(cb.offerSavePattern).toHaveBeenCalledWith("Feature: Checkout\n");
     const savedRaw = await fs.readFile(
@@ -106,9 +124,18 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
-    await runGenerador(
-      featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     expect(checker.receivedCalls).toHaveLength(3);
     expect(explorer.receivedCalls).toHaveLength(1);
@@ -130,9 +157,18 @@ describe("runGenerador", () => {
     const cb = callbacks();
 
     await expect(
-      runGenerador(
-        featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-      )
+      runGenerador({
+        featureFilePath,
+        llm,
+        patterns: [],
+        checker,
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+      })
     ).rejects.toThrow(/4 intentos/);
 
     expect(cb.offerSavePattern).not.toHaveBeenCalled();
@@ -157,9 +193,18 @@ describe("runGenerador", () => {
     const cb = callbacks({ confirmOverwrite: vi.fn().mockResolvedValue(false) });
 
     await expect(
-      runGenerador(
-        featureFilePath, llm, [loginPattern], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-      )
+      runGenerador({
+        featureFilePath,
+        llm,
+        patterns: [loginPattern],
+        checker,
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+      })
     ).rejects.toThrow(/Cancelado/);
 
     expect(await fs.readFile(path.join(tmpProject, "tests", "tests", "test_login.py"), "utf-8")).toBe(
@@ -174,9 +219,18 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const cb = callbacks();
 
-    await runGenerador(
-      featureFilePath, llm, [loginPattern], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
     expect(promptContent).toContain("features/login.feature");
@@ -195,9 +249,18 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
-    await runGenerador(
-      featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
     expect(promptContent).toContain("test_recuperar_contrasena.py");
@@ -213,9 +276,18 @@ describe("runGenerador", () => {
     const cb = callbacks();
 
     await expect(
-      runGenerador(
-        featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-      )
+      runGenerador({
+        featureFilePath,
+        llm,
+        patterns: [],
+        checker,
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+      })
     ).rejects.toThrow(/ninguna ruta conocida respondió/);
 
     expect(llm.receivedCalls).toHaveLength(0);
@@ -233,9 +305,18 @@ describe("runGenerador", () => {
     ]);
     const cb = callbacks();
 
-    await runGenerador(
-      featureFilePath, llm, [loginPattern], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
     expect(promptContent).toContain("https://example.com/login");
@@ -267,9 +348,18 @@ describe("runGenerador", () => {
     ]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
-    await runGenerador(
-      featureFilePath, llm, [], checker, explorer, tmpProject, "tests", "https://example.com", undefined, cb
-    );
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+    });
 
     const promptContent = llm.receivedCalls[0].find((m) => m.role === "user")?.content;
     expect(promptContent).toContain("s3cret-value");
@@ -282,18 +372,18 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
-    await runGenerador(
+    await runGenerador({
       featureFilePath,
       llm,
-      [],
+      patterns: [],
       checker,
       explorer,
-      tmpProject,
-      "tests",
-      "https://example.com",
-      { username: "qa@example.com", password: "s3cret" },
-      cb
-    );
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: { username: "qa@example.com", password: "s3cret" },
+      callbacks: cb,
+    });
 
     expect(explorer.receivedCalls[0].baseUrl).toBe("https://example.com");
     expect(explorer.receivedCalls[0].credentials).toEqual({ username: "qa@example.com", password: "s3cret" });
@@ -359,18 +449,18 @@ describe.skipIf(!chromiumAvailable)(
       const checker = new FakeCodeChecker([{ ok: true }]);
       const cb = callbacks();
 
-      await runGenerador(
+      await runGenerador({
         featureFilePath,
-        codegenLlm,
-        [leakyPattern],
+        llm: codegenLlm,
+        patterns: [leakyPattern],
         checker,
         explorer,
-        tmpProject,
-        "tests",
-        app.url,
-        FIXTURE_CREDENTIALS,
-        cb
-      );
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: app.url,
+        credentials: FIXTURE_CREDENTIALS,
+        callbacks: cb,
+      });
 
       expect(explorerLlm.receivedCalls).toHaveLength(0);
       const promptContent = codegenLlm.receivedCalls[0].find((m) => m.role === "user")?.content;

@@ -57,7 +57,7 @@ export type { CodeGenerationEvidence } from "./prompts/generador.js";
 export { writeTestFiles, testFileExists, testFilePath } from "./agents/generador/writeTestFiles.js";
 export { listFeatureFiles } from "./agents/generador/listFeatureFiles.js";
 export { runGenerador } from "./agents/generador/runGenerador.js";
-export type { GeneratorCallbacks } from "./agents/generador/runGenerador.js";
+export type { GeneratorCallbacks, RunGeneradorOptions } from "./agents/generador/runGenerador.js";
 
 export type {
   ScreenEvidence,

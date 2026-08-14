@@ -22,18 +22,33 @@ export interface GeneratorCallbacks {
   onExplorationStep(message: string): void;
 }
 
-export async function runGenerador(
-  featureFilePath: string,
-  llm: LLMProvider,
-  patterns: Pattern[],
-  checker: CodeChecker,
-  explorer: SiteExplorer,
-  projectRoot: string,
-  testsDir: string,
-  baseUrl: string,
-  credentials: ExplorationCredentials | undefined,
-  callbacks: GeneratorCallbacks
-): Promise<{ writtenPaths: string[] }> {
+export interface RunGeneradorOptions {
+  featureFilePath: string;
+  llm: LLMProvider;
+  patterns: Pattern[];
+  checker: CodeChecker;
+  explorer: SiteExplorer;
+  projectRoot: string;
+  testsDir: string;
+  baseUrl: string;
+  credentials: ExplorationCredentials | undefined;
+  callbacks: GeneratorCallbacks;
+}
+
+export async function runGenerador(options: RunGeneradorOptions): Promise<{ writtenPaths: string[] }> {
+  const {
+    featureFilePath,
+    llm,
+    patterns,
+    checker,
+    explorer,
+    projectRoot,
+    testsDir,
+    baseUrl,
+    credentials,
+    callbacks,
+  } = options;
+
   const featureText = await fs.readFile(featureFilePath, "utf-8");
   const matchedPatternName = parseFeatureHeader(featureText);
   const matchedPattern = matchedPatternName
