@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { assertSafeRelativePath } from "../util/assertSafeRelativePath.js";
+import { checkLocatorPatterns } from "./locatorLint.js";
 import type { CodeChecker, CodeFile, CodeCheckResult } from "./codeChecker.js";
 
 export class MissingCodeToolError extends Error {
@@ -87,6 +88,11 @@ export function createRealCodeChecker(options?: {
         const lint = await runOrThrowMissing(ruffCommand, ["check", tmpDir], tmpDir, "ruff");
         if (lint.code !== 0) {
           errors.push(lint.stdout || lint.stderr);
+        }
+
+        const locatorResult = checkLocatorPatterns(files);
+        if (!locatorResult.ok && locatorResult.errors) {
+          errors.push(locatorResult.errors);
         }
 
         return errors.length === 0 ? { ok: true } : { ok: false, errors: errors.join("\n\n") };

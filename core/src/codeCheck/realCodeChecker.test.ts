@@ -52,4 +52,18 @@ describe.skipIf(!hasPython || !hasRuff)("realCodeChecker (requires Python + ruff
     expect(result.ok).toBe(false);
     expect(result.errors).toBeTruthy();
   });
+
+  it("reports ok:false when the generated code combines locators with .or_(", async () => {
+    const result = await realCodeChecker.check([
+      {
+        path: "pages/login_page.py",
+        content:
+          "class LoginPage:\n" +
+          "    def __init__(self, page):\n" +
+          '        self.password_input = page.get_by_placeholder("Your password").or_(page.get_by_label("Password"))\n',
+      },
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(".or_()");
+  });
 });
