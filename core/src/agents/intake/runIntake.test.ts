@@ -43,6 +43,7 @@ describe("runIntake", () => {
       [loginPattern],
       tmpProject,
       "tests",
+      "es",
       callbacks
     );
 
@@ -79,6 +80,7 @@ describe("runIntake", () => {
       [],
       tmpProject,
       "tests",
+      "es",
       callbacks
     );
 
@@ -118,6 +120,7 @@ describe("runIntake", () => {
       [loginPattern],
       tmpProject,
       "tests",
+      "es",
       firstRunCallbacks
     );
     expect(firstRunCallbacks.confirmOverwrite).not.toHaveBeenCalled();
@@ -144,6 +147,7 @@ describe("runIntake", () => {
         [loginPattern],
         tmpProject,
         "tests",
+        "es",
         rejectRunCallbacks
       )
     ).rejects.toThrow(/Cancelado/);
@@ -167,6 +171,7 @@ describe("runIntake", () => {
       [loginPattern],
       tmpProject,
       "tests",
+      "es",
       acceptRunCallbacks
     );
     expect(thirdPlan.featureText).not.toBe(originalContent);

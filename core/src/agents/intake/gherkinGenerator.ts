@@ -20,11 +20,12 @@ function stripCodeFences(raw: string): string {
 export async function generateGherkin(
   text: string,
   llm: LLMProvider,
-  matchedPattern: Pattern | null
+  matchedPattern: Pattern | null,
+  appLanguage: "es" | "en"
 ): Promise<GherkinPlan> {
   const raw = await llm.generate([
     { role: "system", content: "Eres un analista de QA experto en especificaciones Gherkin." },
-    { role: "user", content: gherkinGenerationPrompt(text, matchedPattern) },
+    { role: "user", content: gherkinGenerationPrompt(text, matchedPattern, appLanguage) },
   ]);
 
   const featureText = stripCodeFences(raw);

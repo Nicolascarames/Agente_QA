@@ -18,6 +18,7 @@ export async function runIntake(
   patterns: Pattern[],
   projectRoot: string,
   testsDir: string,
+  appLanguage: "es" | "en",
   callbacks: IntakeCallbacks
 ): Promise<{ plan: GherkinPlan; filePath: string }> {
   let text = initialText;
@@ -34,14 +35,14 @@ export async function runIntake(
 
   const matched = await matchPattern(text, patterns, llm);
 
-  let plan = await generateGherkin(text, llm, matched);
+  let plan = await generateGherkin(text, llm, matched, appLanguage);
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const decision = await callbacks.presentForApproval(plan);
     if (decision.approved) break;
     text = `${text}\n\nPlan anterior:\n"""\n${plan.featureText}\n"""\n\nCambios solicitados sobre el plan anterior:\n${decision.feedback ?? ""}`;
-    plan = await generateGherkin(text, llm, matched);
+    plan = await generateGherkin(text, llm, matched, appLanguage);
   }
 
   const alreadyExists = await featureFileExists(projectRoot, testsDir, plan.fileName);
