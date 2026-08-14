@@ -65,4 +65,29 @@ describe("checkLocatorPatterns", () => {
     const result = checkLocatorPatterns([{ path: "pages/login_page.py", content: buggyPageObject }]);
     expect(result.ok).toBe(false);
   });
+
+  it("does not flag a comment line that merely mentions .or_(", () => {
+    const result = checkLocatorPatterns([
+      {
+        path: "pages/login_page.py",
+        content:
+          "class LoginPage:\n" +
+          "    def __init__(self, page):\n" +
+          "        # evita .or_() aquí, usa un locator único\n" +
+          '        self.password_input = page.get_by_label("Contraseña")\n',
+      },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("still flags real .or_( usage on a line that also has a comment-like string later", () => {
+    const result = checkLocatorPatterns([
+      {
+        path: "pages/login_page.py",
+        content:
+          '        self.x = page.get_by_role("button").or_(page.get_by_text("x"))  # not a comment start\n',
+      },
+    ]);
+    expect(result.ok).toBe(false);
+  });
 });

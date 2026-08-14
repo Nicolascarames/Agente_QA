@@ -15,6 +15,7 @@ export function checkLocatorPatterns(files: CodeFile[]): CodeCheckResult {
   for (const file of files) {
     const lines = file.content.split("\n");
     lines.forEach((line, index) => {
+      if (line.trim().startsWith("#")) return;
       if (LOCATOR_OR_PATTERN.test(line)) {
         matches.push(`${file.path}:${index + 1}: ${EXPLANATION}`);
       }
