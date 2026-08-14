@@ -13,13 +13,58 @@ interface FeatureStep {
 
 function parseFeatureSteps(featureText: string): FeatureStep[] {
   const steps: FeatureStep[] = [];
+  let isOutline = false;
+  let inExamples = false;
+  let examplesHeader: string[] | null = null;
+  let examplesRows: string[][] = [];
+  let pendingOutlineSteps: FeatureStep[] = [];
+
+  function flushOutline(): void {
+    if (isOutline && examplesHeader && examplesRows.length > 0) {
+      const header = examplesHeader;
+      const rows = examplesRows.map((row) => {
+        const record: Record<string, string> = {};
+        header.forEach((col, i) => (record[col] = row[i] ?? ""));
+        return record;
+      });
+      for (const step of pendingOutlineSteps) step.outlineExamples = rows;
+    }
+    isOutline = false;
+    inExamples = false;
+    examplesHeader = null;
+    examplesRows = [];
+    pendingOutlineSteps = [];
+  }
+
   for (const rawLine of featureText.split(/\r?\n/)) {
     const line = rawLine.trim();
+    if (/^Scenario Outline:/i.test(line)) {
+      flushOutline();
+      isOutline = true;
+      continue;
+    }
+    if (/^Scenario:/i.test(line)) {
+      flushOutline();
+      continue;
+    }
+    if (/^Examples:/i.test(line)) {
+      inExamples = true;
+      continue;
+    }
+    if (inExamples && line.startsWith("|")) {
+      const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+      if (!examplesHeader) examplesHeader = cells;
+      else examplesRows.push(cells);
+      continue;
+    }
     const match = line.match(/^(?:Given|When|Then|And|But)\s+(.*)$/);
     if (match) {
-      steps.push({ text: match[1], outlineExamples: null });
+      const step: FeatureStep = { text: match[1], outlineExamples: null };
+      steps.push(step);
+      if (isOutline) pendingOutlineSteps.push(step);
     }
   }
+  flushOutline();
   return steps;
 }
 
@@ -95,7 +140,21 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
       const calledMethod = findMethodCallForParam(matchedDef.body, paramName);
       if (!calledMethod || !calledMethod.startsWith("get_")) continue;
 
-      checks.push({ method: calledMethod, argument: rawValue });
+      const placeholderMatch = rawValue.match(/^<([\p{L}\p{N}_]+)>$/u);
+      if (placeholderMatch && step.outlineExamples) {
+        const column = placeholderMatch[1];
+        if (!(column in step.outlineExamples[0])) {
+          skipped.push(
+            `Paso "${step.text}": la columna '${column}' no aparece en la tabla Examples de este Scenario Outline.`
+          );
+          continue;
+        }
+        for (const row of step.outlineExamples) {
+          checks.push({ method: calledMethod, argument: row[column] });
+        }
+      } else {
+        checks.push({ method: calledMethod, argument: rawValue });
+      }
     }
   }
 

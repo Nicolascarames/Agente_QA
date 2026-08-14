@@ -124,3 +124,132 @@ def introducir_correo(page, correo):
     expect(result).toEqual({ checks: [], skipped: [] });
   });
 });
+
+describe("extractLocatorChecks — Scenario Outline resolution", () => {
+  it("resolves an Outline placeholder to one LocatorCheck per Examples row", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario Outline: fallos",
+      '    When introduzco el correo electrónico "<correo>"',
+      '    Then debo ver un mensaje de error "<mensaje_error>"',
+      "",
+      "    Examples:",
+      "      | correo                     | mensaje_error                    |",
+      "      | usuario.valido@ejemplo.com | Correo o contraseña incorrectos  |",
+      "      | no.registrado@ejemplo.com  | Correo o contraseña incorrectos  |",
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+`;
+    const pageObject = `class LoginPage:
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([
+      { method: "get_error_message", argument: "Correo o contraseña incorrectos" },
+      { method: "get_error_message", argument: "Correo o contraseña incorrectos" },
+    ]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("resolves distinct values per row, not just a repeated one", () => {
+    const featureText = [
+      "Feature: Validación",
+      "  Scenario Outline: validaciones",
+      '    Then debo ver el mensaje de validación "<mensaje_validacion>"',
+      "",
+      "    Examples:",
+      "      | mensaje_validacion                       |",
+      "      | El correo electrónico es obligatorio     |",
+      "      | La contraseña es obligatoria              |",
+      "      | Formato de correo electrónico no válido   |",
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.parse('debo ver el mensaje de validación "{mensaje_validacion}"'))
+def verificar_mensaje_validacion(page, mensaje_validacion):
+    login_page = LoginPage(page)
+    login_page.get_validation_message(mensaje_validacion)
+`;
+    const pageObject = `class LoginPage:
+    def get_validation_message(self, message):
+        return self.page.get_by_text(message)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks.map((c) => c.argument)).toEqual([
+      "El correo electrónico es obligatorio",
+      "La contraseña es obligatoria",
+      "Formato de correo electrónico no válido",
+    ]);
+  });
+
+  it("skips (with a visible reason) a placeholder-shaped literal whose column isn't in the Examples header", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario Outline: fallos",
+      '    Then debo ver un mensaje de error "<mensaje_error>"',
+      "",
+      "    Examples:",
+      "      | otra_columna |",
+      "      | x            |",
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+`;
+    const pageObject = `class LoginPage:
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toContain("mensaje_error");
+  });
+
+  it("does not treat a literal that merely looks like <this> as a placeholder outside a Scenario Outline", () => {
+    const featureText = [
+      "Feature: X",
+      "  Scenario: normal",
+      '    Then debo ver un mensaje de error "<sin-outline>"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+`;
+    const pageObject = `class LoginPage:
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([{ method: "get_error_message", argument: "<sin-outline>" }]);
+    expect(result.skipped).toEqual([]);
+  });
+});
