@@ -283,3 +283,94 @@ def verificar_mensaje_error(page, mensaje_error):
     expect(result.skipped[0]).toContain("mensaje_error");
   });
 });
+
+describe("extractLocatorChecks — action-method delegation and untraceable params", () => {
+  it("resolves an action method that delegates to a paired get_* method with the same bare parameter", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: ok",
+      '    When pulso el botón "Log In"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, when
+
+@when(parsers.parse('pulso el botón "{button_name}"'))
+def pulsar_boton(page, button_name):
+    login_page = LoginPage(page)
+    login_page.click_button(button_name)
+`;
+    const pageObject = `class LoginPage:
+    def get_button(self, button_name):
+        return self.page.get_by_role("button", name=button_name, exact=False)
+
+    def click_button(self, button_name):
+        self.get_button(button_name).click()
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([{ method: "get_button", argument: "Log In" }]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("does not flag a plain action method that never delegates to any get_* as a gap", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: ok",
+      '    When introduzco el correo electrónico "usuario@ejemplo.com"',
+      "",
+    ].join("\n");
+
+    const stepDefs = `from pytest_bdd import parsers, when
+
+@when(parsers.parse('introduzco el correo electrónico "{correo}"'))
+def introducir_correo(page, correo):
+    login_page = LoginPage(page)
+    login_page.fill_email(correo)
+`;
+    const pageObject = `class LoginPage:
+    def fill_email(self, email):
+        self.email_input.fill(email)
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("surfaces a visible skip reason (not a silent drop) when the step parameter is transformed before being passed on", () => {
+    const featureText = [
+      "Feature: Login",
+      "  Scenario: ok",
+      '    When pulso el botón "Log In"',
+      "",
+    ].join("\n");
+
+    // Realistic, unremarkable LLM output: normalizes whitespace before use —
+    // nothing exotic, but it breaks the bare-identifier convention the
+    // cross-reference relies on.
+    const stepDefs = `from pytest_bdd import parsers, when
+
+@when(parsers.parse('pulso el botón "{button_name}"'))
+def pulsar_boton(page, button_name):
+    login_page = LoginPage(page)
+    nombre_normalizado = button_name.strip()
+    login_page.click_button(nombre_normalizado)
+`;
+    const pageObject = `class LoginPage:
+    def get_button(self, button_name):
+        return self.page.get_by_role("button", name=button_name, exact=False)
+
+    def click_button(self, button_name):
+        self.get_button(button_name).click()
+`;
+
+    const result = extractLocatorChecks(featureText, files(stepDefs, pageObject));
+
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toContain("button_name");
+  });
+});

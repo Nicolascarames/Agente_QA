@@ -110,6 +110,20 @@ function findMethodCallForParam(body: string, paramName: string): string | null 
   return null;
 }
 
+function findDelegatedGetMethod(pageObjectSrc: string, actionMethod: string, paramName: string): string | null {
+  const defRe = new RegExp(
+    `def\\s+${actionMethod}\\(self,\\s*[^)]*\\):[\\s\\S]*?(?=\\n    def\\s|\\nclass\\s|$)`
+  );
+  const match = pageObjectSrc.match(defRe);
+  if (!match) return null;
+  for (const call of match[0].matchAll(/self\.(get_[\p{L}\p{N}_]*)\(([^)]*)\)/gu)) {
+    const [, getMethod, argsStr] = call;
+    const args = argsStr.split(",").map((a) => a.trim());
+    if (args.includes(paramName)) return getMethod;
+  }
+  return null;
+}
+
 export function extractLocatorChecks(featureText: string, files: GeneratedFile[]): LocatorExtractionResult {
   const stepDefsFile = files.find((f) => f.path.startsWith("tests/"));
   const pageObjectFile = files.find((f) => f.path.startsWith("pages/"));
@@ -140,7 +154,18 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
 
     for (const [paramName, rawValue] of Object.entries(params)) {
       const calledMethod = findMethodCallForParam(matchedDef.body, paramName);
-      if (!calledMethod || !calledMethod.startsWith("get_")) continue;
+      if (!calledMethod) {
+        skipped.push(
+          `Paso "${step.text}": el parámetro '${paramName}' no se pasa sin transformar (mismo nombre, sin recortar ni procesar) a ningún método del Page Object — no se puede verificar automáticamente.`
+        );
+        continue;
+      }
+
+      const targetMethod = calledMethod.startsWith("get_")
+        ? calledMethod
+        : findDelegatedGetMethod(pageObjectFile.content, calledMethod, paramName);
+
+      if (!targetMethod) continue; // acción normal sin locator ambiguo (p.ej. fill_email) — nada que verificar
 
       const placeholderMatch = rawValue.match(/^<([\p{L}\p{N}_]+)>$/u);
       if (placeholderMatch && step.outlineExamples) {
@@ -152,10 +177,10 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
           continue;
         }
         for (const row of step.outlineExamples) {
-          checks.push({ method: calledMethod, argument: row[column] });
+          checks.push({ method: targetMethod, argument: row[column] });
         }
       } else {
-        checks.push({ method: calledMethod, argument: rawValue });
+        checks.push({ method: targetMethod, argument: rawValue });
       }
     }
   }
