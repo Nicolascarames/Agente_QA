@@ -61,12 +61,12 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
 
   const projectRoute = basePattern ? routes[basePattern.name] : undefined;
   const matchedPattern: Pattern | null =
-    basePattern && projectRoute
+    basePattern && projectRoute && basePattern.navigationHints
       ? {
           ...basePattern,
           navigationHints: {
-            requiresLogin: basePattern.navigationHints?.requiresLogin ?? false,
-            routeCandidates: [projectRoute, ...(basePattern.navigationHints?.routeCandidates ?? [])],
+            requiresLogin: basePattern.navigationHints.requiresLogin,
+            routeCandidates: [projectRoute, ...basePattern.navigationHints.routeCandidates],
           },
         }
       : basePattern;

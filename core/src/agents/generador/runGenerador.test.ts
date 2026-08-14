@@ -418,6 +418,7 @@ describe("runGenerador", () => {
       ...loginPattern,
       navigationHints: { routeCandidates: ["/login", "/signin"], requiresLogin: false },
     };
+    const originalCandidates = [...patternWithHints.navigationHints!.routeCandidates];
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
     const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
@@ -440,6 +441,37 @@ describe("runGenerador", () => {
 
     const passedPattern = explorer.receivedCalls[0].matchedPattern;
     expect(passedPattern?.navigationHints?.routeCandidates).toEqual(["/acceso", "/login", "/signin"]);
+    expect(patternWithHints.navigationHints?.routeCandidates).toEqual(originalCandidates);
+  });
+
+  it("does NOT synthesize navigationHints for a matched pattern that has none, even with a configured route", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    // loginPattern has no navigationHints at all — this is the shape of every
+    // user-saved custom pattern (saveProjectPattern never sets one).
+    expect(loginPattern.navigationHints).toBeUndefined();
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: { login: "/acceso" },
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    const passedPattern = explorer.receivedCalls[0].matchedPattern;
+    expect(passedPattern?.navigationHints).toBeUndefined();
+    expect(passedPattern).toEqual(loginPattern);
   });
 
   it("passes appLanguage and routes through to the code generation prompt", async () => {

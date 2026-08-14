@@ -27,12 +27,16 @@ export const realInitPrompts: InitPrompts = {
     return input({
       message: "¿Cuál es la URL de la aplicación que vas a probar?",
       validate: (value) => {
+        let url: URL;
         try {
-          new URL(value);
-          return true;
+          url = new URL(value);
         } catch {
           return "Introduce una URL válida (ej. https://mi-app.com)";
         }
+        if (url.username !== "" || url.password !== "") {
+          return 'La URL no puede incluir usuario/contraseña (ej. "https://usuario:clave@host"). Ese archivo se sube a git: guarda las credenciales de test en el .env del proyecto, no aquí.';
+        }
+        return true;
       },
     });
   },

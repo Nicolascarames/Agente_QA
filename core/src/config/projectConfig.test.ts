@@ -84,6 +84,25 @@ describe("projectConfig", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects an appUrl with embedded credentials", async () => {
+    await expect(
+      saveProjectConfig(tmpProject, {
+        testsDir: "tests",
+        appUrl: "https://qa-user:Sup3rSecreta@staging.mi-app.com",
+      })
+    ).rejects.toThrow();
+  });
+
+  it("throws a friendly castellano message when loading a pre-upgrade config.json with no appUrl", async () => {
+    const filePath = projectConfigPath(tmpProject);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify({ testsDir: "tests", headedMode: false }), "utf-8");
+
+    await expect(loadProjectConfig(tmpProject)).rejects.toThrow(/appUrl/);
+    await expect(loadProjectConfig(tmpProject)).rejects.toThrow(/agente-qa init|Configuración/);
+    await expect(loadProjectConfig(tmpProject)).rejects.toThrow(/ejecuta/i);
+  });
+
   describe("requireAppUrl", () => {
     it("returns the configured appUrl", () => {
       expect(

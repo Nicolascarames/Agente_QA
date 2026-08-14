@@ -6,7 +6,23 @@ import type { ProjectEnv } from "./projectEnv.js";
 export const ProjectConfigSchema = z.object({
   testsDir: z.string().min(1),
   headedMode: z.boolean().default(false),
-  appUrl: z.string().url(),
+  appUrl: z
+    .string()
+    .url()
+    .refine(
+      (value) => {
+        try {
+          const url = new URL(value);
+          return url.username === "" && url.password === "";
+        } catch {
+          return true; // URL inválida: ya la rechaza el .url() de arriba.
+        }
+      },
+      {
+        message:
+          'La URL no puede incluir usuario/contraseña (ej. "https://usuario:clave@host"). config.json se sube a git: guarda las credenciales de test en .agente-qa/.env, no en la URL.',
+      }
+    ),
   appLanguage: z.enum(["es", "en"]).default("es"),
   routes: z.record(z.string(), z.string()).default({}),
 });
@@ -27,13 +43,26 @@ export async function saveProjectConfig(
 }
 
 export async function loadProjectConfig(projectRoot: string): Promise<ProjectConfig | null> {
+  const filePath = projectConfigPath(projectRoot);
+  let raw: string;
   try {
-    const raw = await fs.readFile(projectConfigPath(projectRoot), "utf-8");
-    return ProjectConfigSchema.parse(JSON.parse(raw));
+    raw = await fs.readFile(filePath, "utf-8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw err;
   }
+
+  const result = ProjectConfigSchema.safeParse(JSON.parse(raw));
+  if (!result.success) {
+    const details = result.error.issues
+      .map((issue) => `  - ${issue.path.join(".") || "(config)"}: ${issue.message}`)
+      .join("\n");
+    throw new Error(
+      `El archivo ${filePath} es de una versión antigua o tiene valores inválidos:\n${details}\n` +
+        `Ejecuta 'agente-qa init' (o la opción "Configuración" del menú) para completarlo.`
+    );
+  }
+  return result.data;
 }
 
 export function requireAppUrl(config: ProjectConfig): string {
