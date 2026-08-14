@@ -161,6 +161,18 @@ desde la raíz de Agente_QA, dejan `.agente-qa/` (config + `.env`) dentro de
 este repo. Para probar el CLI sin dejar nada aquí, lánzalo desde otra
 carpeta, con la ruta absoluta al build:
 
+- **Por qué `node <ruta>` y no `agente-qa` directo**: en modo desarrollo el
+  paquete solo está compilado, no instalado (ni local ni global) — no hay
+  symlink de `bin` que registre `agente-qa` como comando del `PATH`. Hay
+  que invocar el archivo compilado directamente con `node`.
+- **Dónde se genera esa ruta**: `npm run build` compila `cli/src/` a
+  `cli/dist/`, incluyendo `cli/dist/bin/agente-qa.js` — esa es la ruta
+  absoluta a usar (`<raíz-de-Agente_QA>/cli/dist/bin/agente-qa.js`).
+  `dist/` está en `.gitignore`, así que no aparece en el árbol de archivos
+  del editor a menos que actives "mostrar archivos ignorados" — solo
+  existe después de correr `npm run build`, y se regenera cada vez que lo
+  corres.
+
 ```
 npm run build
 mkdir /tmp/agente-qa-smoke && cd /tmp/agente-qa-smoke
