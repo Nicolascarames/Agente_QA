@@ -75,4 +75,13 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.generateSummaryMarkdown).toBe("function");
     expect(typeof core.runReportes).toBe("function");
   });
+
+  it("exports the locator verification surface", () => {
+    expect(typeof core.FakeLocatorVerifier).toBe("function");
+    expect(typeof core.extractLocatorChecks).toBe("function");
+    expect(typeof core.buildVerificationScript).toBe("function");
+    expect(typeof core.createRealLocatorVerifier).toBe("function");
+    expect(typeof core.realLocatorVerifier.verify).toBe("function");
+    expect(typeof core.MissingLocatorVerifierToolError).toBe("function");
+  });
 });

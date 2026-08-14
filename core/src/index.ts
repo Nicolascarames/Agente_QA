@@ -74,6 +74,17 @@ export type { CodeFile, CodeCheckResult, CodeChecker } from "./codeCheck/codeChe
 export { FakeCodeChecker } from "./codeCheck/testUtils.js";
 export { createRealCodeChecker, realCodeChecker, MissingCodeToolError } from "./codeCheck/realCodeChecker.js";
 
+export type { LocatorCheck, LocatorVerificationResult, LocatorVerifier } from "./locatorVerify/locatorVerifier.js";
+export { FakeLocatorVerifier } from "./locatorVerify/testUtils.js";
+export { extractLocatorChecks } from "./locatorVerify/extractLocatorChecks.js";
+export type { LocatorExtractionResult } from "./locatorVerify/extractLocatorChecks.js";
+export { buildVerificationScript } from "./locatorVerify/buildVerificationScript.js";
+export {
+  createRealLocatorVerifier,
+  realLocatorVerifier,
+  MissingLocatorVerifierToolError,
+} from "./locatorVerify/realLocatorVerifier.js";
+
 export { listAvailableTags } from "./agents/ejecutor/listAvailableTags.js";
 export { runEjecutor } from "./agents/ejecutor/runEjecutor.js";
 export type { ExecutorCallbacks, EjecutorResult, CaptureMode } from "./agents/ejecutor/runEjecutor.js";
