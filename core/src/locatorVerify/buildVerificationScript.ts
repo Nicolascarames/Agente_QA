@@ -54,18 +54,25 @@ def main():
                 }))
                 continue
 
-            locator = target(argument)
-            count = locator.count()
-            entry = {"method": method_name, "argument": argument, "count": count}
-            if count != 1:
-                matches = []
-                for element in locator.all()[:5]:
-                    try:
-                        matches.append(element.evaluate("el => el.outerHTML")[:200])
-                    except Exception:
-                        matches.append("<no se pudo leer outerHTML>")
-                entry["matches"] = matches
-            print(json.dumps(entry))
+            try:
+                locator = target(argument)
+                count = locator.count()
+                entry = {"method": method_name, "argument": argument, "count": count}
+                if count != 1:
+                    matches = []
+                    for element in locator.all()[:5]:
+                        try:
+                            matches.append(element.evaluate("el => el.outerHTML")[:200])
+                        except Exception:
+                            matches.append("<no se pudo leer outerHTML>")
+                    entry["matches"] = matches
+                print(json.dumps(entry))
+            except Exception as e:
+                print(json.dumps({
+                    "method": method_name,
+                    "argument": argument,
+                    "error": f"error al verificar el locator: {e}",
+                }))
 
         browser.close()
 

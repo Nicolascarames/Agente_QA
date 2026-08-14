@@ -46,4 +46,11 @@ describe("buildVerificationScript", () => {
     const script = buildVerificationScript([{ path: "tests/test_x.py", content: "" }], [], "https://example.com");
     expect(script).toContain('PAGE_OBJECT_PATH = ""');
   });
+
+  it("wraps each check's count/matches logic in a try/except so one crashing locator can't kill the rest of the loop", () => {
+    const script = buildVerificationScript(files, [{ method: "get_button", argument: "Log In" }], "https://example.com");
+
+    expect(script).toContain("try:");
+    expect(script).toContain("except Exception as e:");
+  });
 });

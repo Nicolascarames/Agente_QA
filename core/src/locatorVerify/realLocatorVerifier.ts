@@ -112,6 +112,7 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
 
         const failures: string[] = [];
         const lines = result.stdout.split("\n").filter((line) => line.trim().length > 0);
+        let parsedCount = 0;
         for (const line of lines) {
           let entry: VerificationEntry;
           try {
@@ -119,13 +120,16 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
           } catch {
             continue;
           }
+          parsedCount++;
           if (entry.error || entry.count !== 1) {
             failures.push(formatFailure(entry));
           }
         }
 
-        if (result.code !== 0 && lines.length === 0) {
-          failures.push(result.stderr || result.stdout || "El script de verificación de locators terminó con error.");
+        if (parsedCount < checks.length) {
+          failures.push(
+            `El script de verificación de locators solo devolvió resultados para ${parsedCount} de ${checks.length} locators esperados (posible fallo o cierre inesperado del proceso).\n${result.stderr || result.stdout || ""}`.trim()
+          );
         }
 
         return failures.length === 0 ? { ok: true } : { ok: false, errors: failures.join("\n\n") };
