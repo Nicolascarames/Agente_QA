@@ -9,6 +9,7 @@ export interface LocatorCheck {
 export interface LocatorVerificationResult {
   ok: boolean;
   errors?: string;
+  warnings?: string;
 }
 
 export interface LocatorVerifier {

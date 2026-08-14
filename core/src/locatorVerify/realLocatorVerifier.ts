@@ -23,6 +23,8 @@ interface RunResult {
   stderr: string;
 }
 
+const BROWSER_MISSING_SIGNATURE = "playwright install";
+
 function runCapture(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env });
@@ -53,6 +55,10 @@ function formatFailure(entry: VerificationEntry): string {
   }
   const matchesText = (entry.matches ?? []).map((html, i) => `${i + 1}) ${html}`).join("\n");
   return `El locator ${entry.method}(${JSON.stringify(entry.argument)}) resolvió a ${entry.count} elementos reales:\n${matchesText}\nHazlo más específico para que resuelva exactamente a 1 elemento.`;
+}
+
+function formatUnverified(entry: VerificationEntry): string {
+  return `El locator ${entry.method}(${JSON.stringify(entry.argument)}) no se encontró en la pantalla inicial (0 elementos) — puede que solo aparezca tras una acción previa (login, envío de formulario) que este harness no simula; no se pudo verificar automáticamente.`;
 }
 
 export function createRealLocatorVerifier(options?: { pythonCommand?: string }): LocatorVerifier {
@@ -111,6 +117,7 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
         const result = await runCapture(pythonCommand, [scriptPath], tmpDir, env);
 
         const failures: string[] = [];
+        const warnings: string[] = [];
         const lines = result.stdout.split("\n").filter((line) => line.trim().length > 0);
         let parsedCount = 0;
         for (const line of lines) {
@@ -121,9 +128,28 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
             continue;
           }
           parsedCount++;
-          if (entry.error || entry.count !== 1) {
+          if (entry.error) {
+            failures.push(formatFailure(entry));
+          } else if (entry.count === 0) {
+            warnings.push(formatUnverified(entry));
+          } else if (entry.count !== 1) {
             failures.push(formatFailure(entry));
           }
+        }
+
+        if (
+          parsedCount === 0 &&
+          `${result.stdout}${result.stderr}`.includes(BROWSER_MISSING_SIGNATURE)
+        ) {
+          // Zero parsed results plus this exact hint means the generated
+          // script never ran the checks at all (chromium.launch() blew up
+          // because the Playwright browsers aren't installed) — an
+          // environment problem, not a code-quality problem the LLM can fix
+          // by retrying. Attributing it correctly avoids burning all
+          // MAX_ATTEMPTS retries on something outside the LLM's control.
+          throw new MissingLocatorVerifierToolError(
+            `no se encontraron los navegadores de Playwright (ejecuta "playwright install")\n${result.stderr || result.stdout}`.trim()
+          );
         }
 
         if (parsedCount < checks.length) {
@@ -132,7 +158,8 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
           );
         }
 
-        return failures.length === 0 ? { ok: true } : { ok: false, errors: failures.join("\n\n") };
+        if (failures.length > 0) return { ok: false, errors: failures.join("\n\n") };
+        return warnings.length === 0 ? { ok: true } : { ok: true, warnings: warnings.join("\n\n") };
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }
