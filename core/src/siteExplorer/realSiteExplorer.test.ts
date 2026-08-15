@@ -191,6 +191,43 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
         expect(result.screens.some((s) => s.stepText.includes("tras iniciar sesión"))).toBe(true);
         // the probe never leaks the real password
         expect(probe?.ariaSnapshot).not.toContain(FIXTURE_CREDENTIALS.password);
+        // the probe submits a fixed, clearly-fake email — never the real
+        // username — so it grounds the same "unknown user" error path the
+        // generated scenario's invented email will hit, not "existing user,
+        // wrong password".
+        expect(probe?.ariaSnapshot).not.toContain(FIXTURE_CREDENTIALS.username);
+      }
+    );
+
+    it.skipIf(!chromiumAvailable)(
+      "skips the probe entirely, without throwing, when the real password happens to equal the probe's fixed constant",
+      async () => {
+        const pattern: Pattern = {
+          name: "login",
+          description: "login",
+          gherkinTemplate: "Feature: Login\n",
+          pageObjectTemplate: "",
+          navigationHints: {
+            routeCandidates: ["/login"],
+            requiresLogin: true,
+            negativeProbe: { kind: "invalid-credentials" },
+          },
+        };
+        const explorer = createRealSiteExplorer(new FakeLLMProvider([]));
+        // Must match INVALID_PROBE_PASSWORD in realSiteExplorer.ts exactly: this
+        // reproduces the (extremely unlikely, but guarded-against) case where a
+        // user's real test password collides with the probe's fixed constant —
+        // without the guard, that would risk a SUCCESSFUL login being captured
+        // under a stepText that claims it failed.
+        const collidingCredentials = { username: FIXTURE_CREDENTIALS.username, password: "agente-qa-invalid-password" };
+
+        const result = await explorer.explore(
+          baseInput({ baseUrl: app.url, matchedPattern: pattern, credentials: collidingCredentials })
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.screens.some((s) => s.stepText.includes("credenciales incorrectas"))).toBe(false);
       }
     );
 

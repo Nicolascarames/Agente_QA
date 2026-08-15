@@ -146,10 +146,23 @@ const LOGIN_FIELD_LABEL = /correo|usuario|email|user/i;
 const PASSWORD_FIELD_LABEL = /contraseña|password/i;
 const SUBMIT_BUTTON_NAME = /iniciar sesión|ingresar|log ?in/i;
 
-// A deliberately wrong password, fixed and never derived from the real one, so
-// the probe can never accidentally submit a valid credential. Only ever used
-// once per exploration: some apps lock accounts after N failed attempts, which
-// is why the probe is opt-in per pattern instead of global.
+// Deliberately wrong, fixed module constants — never derived from or equal to
+// the real credentials, never registered anywhere — so the probe can never
+// accidentally submit a valid credential. Two independent reasons both apply:
+//  1. Grounding: the intake prompt tells the model that invalid credentials in
+//     a generated scenario ARE written as literals, and since there's no way to
+//     know the real username is wrong, the model invents an unregistered email
+//     (the "unknown user" error path). The probe must capture evidence for that
+//     SAME path — not "existing user, wrong password" — or apps that word the
+//     two differently ground the wrong literal. Submitting the real username
+//     here would capture the wrong error message.
+//  2. Safety: never risks locking out the user's real test account after N
+//     failed attempts on their actual username.
+// ".invalid" is the RFC 2606 TLD reserved to guarantee it never resolves to a
+// real registered domain. Only ever used once per exploration: some apps lock
+// accounts after N failed attempts, which is why the probe is opt-in per
+// pattern instead of global.
+const INVALID_PROBE_EMAIL = "agente-qa-probe-does-not-exist@example.invalid";
 const INVALID_PROBE_PASSWORD = "agente-qa-invalid-password";
 
 /**
@@ -161,8 +174,8 @@ const INVALID_PROBE_PASSWORD = "agente-qa-invalid-password";
  * returning a screen) while no longer actually submitting the form, quietly
  * degrading its captured evidence back into the untouched login page. `email`/
  * `password` are what actually gets typed into the form; `credentials` is only
- * used for captureEvidence's redaction, so the probe's real password stays
- * redacted from evidence even though it's never the one typed in.
+ * used for captureEvidence's redaction, so the real credentials stay redacted
+ * from evidence even when neither is the one typed in (the probe's case).
  */
 async function submitLoginForm(
   page: Page,
@@ -204,9 +217,15 @@ async function performNegativeLoginProbe(
   page: Page,
   credentials: ExplorationCredentials
 ): Promise<ScreenEvidence | null> {
+  // If the real password ever happened to equal the probe's fixed constant, a
+  // login with a real-looking value would have a chance of succeeding instead
+  // of failing — and the resulting screen would be captured under a stepText
+  // that claims it failed, grounding a literal in nonsense. Bail out instead
+  // of ever risking that.
+  if (credentials.password === INVALID_PROBE_PASSWORD) return null;
   return submitLoginForm(
     page,
-    credentials.username,
+    INVALID_PROBE_EMAIL,
     INVALID_PROBE_PASSWORD,
     "tras un intento de inicio de sesión con credenciales incorrectas",
     credentials
@@ -282,7 +301,7 @@ async function exploreByHints(
       screens.push(postLogin);
     }
 
-    return { ok: true, screens };
+    return { ok: true, screens, source: "hints" };
   }
 
   return null;
@@ -333,6 +352,7 @@ async function exploreAgentically(
       return {
         ok: true,
         screens: [await captureEvidence(page, "estado final del escenario", input.credentials)],
+        source: "agentic",
       };
     }
     if (action.action === "fail") {
