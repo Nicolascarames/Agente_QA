@@ -7,6 +7,8 @@ import type { SiteExplorer, ExplorationCredentials } from "../../siteExplorer/si
 import type { LocatorVerifier } from "../../locatorVerify/locatorVerifier.js";
 import { extractLocatorChecks } from "../../locatorVerify/extractLocatorChecks.js";
 import { saveProjectPattern } from "../../patterns/registry.js";
+import { applyProjectRoute } from "../../patterns/applyProjectRoute.js";
+import { evidenceCacheKey, readCachedEvidence, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
 import { parseFeatureHeader } from "./parseFeatureHeader.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
 import { testFileExists, testFilePath, writeTestFiles } from "./writeTestFiles.js";
@@ -64,29 +66,24 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     ? (patterns.find((p) => p.name === matchedPatternName) ?? null)
     : null;
 
-  const projectRoute = basePattern ? routes[basePattern.name] : undefined;
-  const matchedPattern: Pattern | null =
-    basePattern && projectRoute && basePattern.navigationHints
-      ? {
-          ...basePattern,
-          navigationHints: {
-            requiresLogin: basePattern.navigationHints.requiresLogin,
-            routeCandidates: [projectRoute, ...basePattern.navigationHints.routeCandidates],
-          },
-        }
-      : basePattern;
+  const matchedPattern = applyProjectRoute(basePattern, routes);
 
   const featureFileName = path.basename(featureFilePath);
   const naming = { slug: toPythonModuleSlug(featureFileName.replace(/\.feature$/, "")), featureFileName };
 
-  const exploration = await explorer.explore(
-    { featureText, matchedPattern, baseUrl, credentials, headed: true },
-    callbacks.onExplorationStep
-  );
-  if (!exploration.ok) {
-    throw new Error(`No se pudo verificar la aplicación real antes de generar el código: ${exploration.error}`);
+  const cacheKey = evidenceCacheKey({ appUrl: baseUrl, patternName: basePattern?.name ?? null, routes });
+  let evidence = await readCachedEvidence(projectRoot, cacheKey);
+  if (!evidence) {
+    const exploration = await explorer.explore(
+      { featureText, matchedPattern, baseUrl, credentials, headed: true },
+      callbacks.onExplorationStep
+    );
+    if (!exploration.ok) {
+      throw new Error(`No se pudo verificar la aplicación real antes de generar el código: ${exploration.error}`);
+    }
+    evidence = exploration.screens;
+    await writeCachedEvidence(projectRoot, cacheKey, evidence);
   }
-  const evidence = exploration.screens;
   const verificationUrl = evidence[0]?.url ?? baseUrl;
 
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;

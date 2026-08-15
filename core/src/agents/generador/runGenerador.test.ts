@@ -5,6 +5,7 @@ import path from "node:path";
 import { FakeLLMProvider } from "../../llm/testUtils.js";
 import { FakeCodeChecker } from "../../codeCheck/testUtils.js";
 import { FakeSiteExplorer } from "../../siteExplorer/testUtils.js";
+import { evidenceCacheKey, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
 import { FakeLocatorVerifier } from "../../locatorVerify/testUtils.js";
 import { chromium } from "playwright";
 import { createRealSiteExplorer } from "../../siteExplorer/realSiteExplorer.js";
@@ -317,6 +318,38 @@ describe("runGenerador", () => {
     ).rejects.toThrow(/ninguna ruta conocida respondió/);
 
     expect(llm.receivedCalls).toHaveLength(0);
+  });
+
+  it("reuses the evidence cached by the intake instead of exploring again", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    await writeCachedEvidence(
+      tmpProject,
+      evidenceCacheKey({ appUrl: "https://example.com", patternName: "login", routes: {} }),
+      [{ stepText: "cacheada", url: "https://example.com/login", ariaSnapshot: '- heading "Desde caché"' }]
+    );
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([]); // no scripted result: exploring would fail
+    const cb = callbacks();
+
+    const { writtenPaths } = await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
+      callbacks: cb,
+    });
+
+    expect(writtenPaths).toHaveLength(2);
+    expect(llm.lastPrompt()).toContain("Desde caché");
   });
 
   it("passes the explorer's real evidence into the code generation prompt", async () => {
