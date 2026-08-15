@@ -637,7 +637,7 @@ class LoginPage:
     ]);
   });
 
-  it("verifies against the Site Explorer's resolved first-screen URL, not the raw baseUrl, when evidence is non-empty", async () => {
+  it("verifies against all captured screens' URLs, not just the first, and not the raw baseUrl, when evidence is non-empty", async () => {
     const featureFilePath = await writeFeature(
       'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
     );
@@ -666,7 +666,11 @@ class LoginPage:
         ok: true,
         screens: [
           { stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' },
-          { stepText: "pantalla tras login", url: "https://example.com/dashboard", ariaSnapshot: "" },
+          {
+            stepText: "pantalla tras login",
+            url: "https://example.com/dashboard",
+            ariaSnapshot: '- text: Credenciales incorrectas',
+          },
         ],
       },
     ]);
@@ -689,10 +693,14 @@ class LoginPage:
       callbacks: cb,
     });
 
-    // Should use the FIRST captured screen's URL (the initial page state,
-    // matching the harness's own scope), not the second/post-action screen
-    // and not the raw baseUrl.
-    expect(verifier.receivedCalls[0].urls).toEqual(["https://example.com/login"]);
+    // A locator that's only visible after an action (e.g. an error message
+    // shown on a later screen) must still be checked against the screen where
+    // it actually appears — so every captured screen's URL is passed, not
+    // just the first, and not the raw baseUrl.
+    expect(verifier.receivedCalls[0].urls).toEqual([
+      "https://example.com/login",
+      "https://example.com/dashboard",
+    ]);
   });
 
   it("falls back to the raw baseUrl for verification when the explorer returned no screens", async () => {
@@ -923,6 +931,126 @@ class LoginPage:
 
     expect(verifier.receivedCalls).toHaveLength(0);
     expect(cb.onVerificationStep).toHaveBeenCalledWith(expect.stringContaining("no se pudieron verificar"));
+  });
+
+  it("aborts immediately, without retrying, when the feature expects a literal the app does not have", async () => {
+    const featureFilePath = await writeFeature(
+      '# agente-qa:pattern=login\nFeature: Login\n  Scenario: entrar\n    Then veo el título "Dream and Growth" en la pantalla de inicio\n'
+    );
+    const generated = `# FILE: tests/test_login.py
+@then(parsers.re(r'veo el título "(?P<title>[^"]*)" en la pantalla de inicio'))
+def veo_el_titulo(login_page, title):
+    expect(login_page.get_heading(title)).to_be_visible()
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_heading(self, title):
+        return self.page.get_by_role("heading", name=title)
+`;
+    const llm = new FakeLLMProvider([generated, generated, generated, generated]);
+    const checker = new FakeCodeChecker([{ ok: true }, { ok: true }, { ok: true }, { ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        screens: [
+          {
+            stepText: "tras iniciar sesión",
+            url: "https://example.com/",
+            ariaSnapshot: '- heading "Sueño y crecimiento" [level=1]',
+          },
+        ],
+      },
+    ]);
+    const verifier = new FakeLocatorVerifier([]);
+    const cb = callbacks();
+
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm,
+        patterns: [loginPattern],
+        checker,
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        appLanguage: "es",
+        routes: {},
+        credentials: undefined,
+        verifier,
+        callbacks: cb,
+      })
+    ).rejects.toThrow(/Sueño y crecimiento/);
+
+    // one LLM call only: retrying cannot change a literal that lives in the .feature
+    expect(llm.callCount()).toBe(1);
+    // nothing was written
+    await expect(
+      fs.readFile(path.join(tmpProject, "tests", "tests", "test_login.py"), "utf-8")
+    ).rejects.toThrow();
+  });
+
+  it("verifies against every captured screen, not just the first", async () => {
+    // Note: this uses a step definition with a traceable get_* call (unlike
+    // the module-level `scriptedResponse` fixture, which has no step defs at
+    // all and so extracts zero checks — extractLocatorChecks would never call
+    // the verifier for it, making the assertion below untestable).
+    const featureFilePath = await writeFeature(
+      '# agente-qa:pattern=login\nFeature: Login\n  Scenario: x\n    Then veo el botón "Entrar"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('veo el botón "{nombre_boton}"'))
+def veo_el_boton(page, nombre_boton):
+    login_page = LoginPage(page)
+    login_page.get_button(nombre_boton)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_button(self, name):
+        return self.page.get_by_role("button", name=name)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        screens: [
+          { stepText: "login", url: "https://example.com/login", ariaSnapshot: '- button "Entrar"' },
+          { stepText: "panel", url: "https://example.com/panel", ariaSnapshot: '- heading "Panel"' },
+        ],
+      },
+    ]);
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      verifier,
+      callbacks: callbacks(),
+    });
+
+    expect(verifier.receivedCalls.at(-1)?.urls).toEqual([
+      "https://example.com/login",
+      "https://example.com/panel",
+    ]);
   });
 });
 

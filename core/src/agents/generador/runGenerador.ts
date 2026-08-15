@@ -6,6 +6,7 @@ import type { CodeChecker } from "../../codeCheck/codeChecker.js";
 import type { SiteExplorer, ExplorationCredentials, ScreenEvidence } from "../../siteExplorer/siteExplorer.js";
 import type { LocatorVerifier } from "../../locatorVerify/locatorVerifier.js";
 import { extractLocatorChecks } from "../../locatorVerify/extractLocatorChecks.js";
+import { checkExpectedLiterals, formatMissingLiterals, candidateTexts } from "../../locatorVerify/checkExpectedLiterals.js";
 import { saveProjectPattern } from "../../patterns/registry.js";
 import { applyProjectRoute } from "../../patterns/applyProjectRoute.js";
 import { evidenceCacheKey, readCachedEvidence, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
@@ -84,7 +85,7 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     evidence = exploration.screens;
     await writeCachedEvidence(projectRoot, cacheKey, evidence);
   }
-  const verificationUrl = evidence[0]?.url ?? baseUrl;
+  const verificationUrls = evidence.length > 0 ? evidence.map((screen) => screen.url) : [baseUrl];
 
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];
@@ -108,10 +109,25 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
         `${skipped.length} literal(es) no se pudieron verificar automáticamente:\n${skipped.join("\n")}`
       );
     }
+
+    // A missing literal is never retryable: the value comes from the .feature,
+    // so all four attempts would produce the identical check. The only way the
+    // model could "pass" is by no longer passing the literal to a get_* method
+    // — weakening the assertion to satisfy the verifier. Fail fast instead.
+    const missingLiterals = checkExpectedLiterals(checks, evidence);
+    if (missingLiterals.length > 0) {
+      throw new Error(
+        `El archivo .feature espera textos que no existen en la aplicación real:\n\n${formatMissingLiterals(
+          missingLiterals,
+          candidateTexts(evidence)
+        )}\n\nCorrige el archivo .feature (o vuelve a crear el plan de pruebas, que ahora se genera a partir de la aplicación real) y repite la generación.`
+      );
+    }
+
     if (checks.length === 0) break;
 
     callbacks.onVerificationStep(`Verificando ${checks.length} locator(s) contra la aplicación real...`);
-    const verification = await verifier.verify(files, checks, [verificationUrl], credentials);
+    const verification = await verifier.verify(files, checks, verificationUrls, credentials);
     if (verification.warnings) callbacks.onVerificationStep(verification.warnings);
     if (verification.ok) break;
 
