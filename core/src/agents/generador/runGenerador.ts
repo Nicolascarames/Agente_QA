@@ -3,7 +3,7 @@ import path from "node:path";
 import type { LLMProvider } from "../../llm/provider.js";
 import type { Pattern } from "../../schemas/pattern.js";
 import type { CodeChecker } from "../../codeCheck/codeChecker.js";
-import type { SiteExplorer, ExplorationCredentials } from "../../siteExplorer/siteExplorer.js";
+import type { SiteExplorer, ExplorationCredentials, ScreenEvidence } from "../../siteExplorer/siteExplorer.js";
 import type { LocatorVerifier } from "../../locatorVerify/locatorVerifier.js";
 import { extractLocatorChecks } from "../../locatorVerify/extractLocatorChecks.js";
 import { saveProjectPattern } from "../../patterns/registry.js";
@@ -72,8 +72,8 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
   const naming = { slug: toPythonModuleSlug(featureFileName.replace(/\.feature$/, "")), featureFileName };
 
   const cacheKey = evidenceCacheKey({ appUrl: baseUrl, patternName: basePattern?.name ?? null, routes });
-  let evidence = await readCachedEvidence(projectRoot, cacheKey);
-  if (!evidence) {
+  let evidence: ScreenEvidence[] = (await readCachedEvidence(projectRoot, cacheKey)) ?? [];
+  if (evidence.length === 0) {
     const exploration = await explorer.explore(
       { featureText, matchedPattern, baseUrl, credentials, headed: true },
       callbacks.onExplorationStep

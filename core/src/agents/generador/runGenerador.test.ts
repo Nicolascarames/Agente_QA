@@ -352,6 +352,43 @@ describe("runGenerador", () => {
     expect(llm.lastPrompt()).toContain("Desde caché");
   });
 
+  it("treats a cached-but-empty evidence array as a miss and explores instead of proceeding with no evidence", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    await writeCachedEvidence(
+      tmpProject,
+      evidenceCacheKey({ appUrl: "https://example.com", patternName: "login", routes: {} }),
+      []
+    );
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        screens: [{ stepText: "explorada de verdad", url: "https://example.com/login", ariaSnapshot: '- heading "Recién explorada"' }],
+      },
+    ]);
+    const cb = callbacks();
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [loginPattern],
+      checker,
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      verifier: new FakeLocatorVerifier([]),
+      callbacks: cb,
+    });
+
+    expect(explorer.receivedCalls).toHaveLength(1);
+    expect(llm.lastPrompt()).toContain("Recién explorada");
+  });
+
   it("passes the explorer's real evidence into the code generation prompt", async () => {
     const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
     const llm = new FakeLLMProvider([scriptedResponse]);

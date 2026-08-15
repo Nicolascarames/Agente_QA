@@ -28,4 +28,18 @@ describe("applyProjectRoute", () => {
   it("returns null for a null pattern", () => {
     expect(applyProjectRoute(null, { login: "/entrar" })).toBeNull();
   });
+
+  it("preserves negativeProbe when prepending a configured route", () => {
+    const withProbe: Pattern = {
+      ...base,
+      navigationHints: {
+        routeCandidates: ["/login"],
+        requiresLogin: true,
+        negativeProbe: { kind: "invalid-credentials" },
+      },
+    };
+    const result = applyProjectRoute(withProbe, { login: "/entrar" });
+    expect(result?.navigationHints?.negativeProbe).toEqual({ kind: "invalid-credentials" });
+    expect(result?.navigationHints?.routeCandidates).toEqual(["/entrar", "/login"]);
+  });
 });
