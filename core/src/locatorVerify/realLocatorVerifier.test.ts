@@ -145,6 +145,41 @@ describe.skipIf(!hasPytestStack)(
       expect(result.warnings).toContain("0 elementos");
     }, 20000);
 
+    // Regression lock: blocking on count===0 was tried and reverted (2026-08-14)
+    // because it aborted generation on its own motivating case — a locator that
+    // only appears after an action (e.g. a login error message) legitimately
+    // resolves to 0 on every fresh navigation, even across multiple captured
+    // screens. Do not flip this back to ok:false; the real defense against an
+    // invented literal is the offline checkExpectedLiterals pre-check against
+    // captured evidence, not this runtime .count() check.
+    it("reports ok:true with a warning when a locator resolves to 0 elements on every one of several verified screens", async () => {
+      const firstScreenPath = path.join(tmpDir, "first.html");
+      await fs.writeFile(
+        firstScreenPath,
+        "<!doctype html><html><body>" + '<button type="button">Menu</button>' + "</body></html>",
+        "utf-8"
+      );
+      const secondScreenPath = path.join(tmpDir, "second.html");
+      await fs.writeFile(
+        secondScreenPath,
+        "<!doctype html><html><body>" + '<button type="button">Settings</button>' + "</body></html>",
+        "utf-8"
+      );
+      const firstUrl = pathToFileURL(firstScreenPath).toString();
+      const secondUrl = pathToFileURL(secondScreenPath).toString();
+
+      const result = await realLocatorVerifier.verify(
+        generatedFiles(),
+        [{ method: "get_button", argument: "Log in" }],
+        [firstUrl, secondUrl],
+        undefined
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.warnings).toContain("get_button");
+      expect(result.warnings).toContain("0 elementos");
+    }, 20000);
+
     it("throws MissingLocatorVerifierToolError (not a locator failure fed back to the LLM) when the script produces zero results and the output carries Playwright's browser-missing hint", async () => {
       // Real end-to-end reproduction, not a mocked RunResult: a Page Object
       // whose module-level code raises before any check can run drives the

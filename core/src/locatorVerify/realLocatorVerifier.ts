@@ -58,7 +58,7 @@ function formatFailure(entry: VerificationEntry): string {
 }
 
 function formatUnverified(entry: VerificationEntry): string {
-  return `El locator ${entry.method}(${JSON.stringify(entry.argument)}) no se encontró en la pantalla inicial (0 elementos) — puede que solo aparezca tras una acción previa (login, envío de formulario) que este harness no simula; no se pudo verificar automáticamente.`;
+  return `El locator ${entry.method}(${JSON.stringify(entry.argument)}) no se encontró en ninguna de las pantallas verificadas (0 elementos) — puede que solo aparezca tras una acción previa (login, envío de formulario) que este harness no simula; no se pudo verificar automáticamente.`;
 }
 
 export function createRealLocatorVerifier(options?: { pythonCommand?: string }): LocatorVerifier {
