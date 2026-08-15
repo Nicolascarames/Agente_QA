@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveProjectConfig, projectEnvPath, FakeLLMProvider } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath, FakeLLMProvider, FakeSiteExplorer } from "@agente-qa/core";
 import type { ChatPrompts } from "../prompts/types.js";
 
 const createProviderMock = vi.fn();
+const createRealSiteExplorerMock = vi.fn();
 const withLLMSpinnerMock = vi.fn((provider: unknown) => provider);
 
 vi.mock("@agente-qa/core", async () => {
@@ -13,6 +14,7 @@ vi.mock("@agente-qa/core", async () => {
   return {
     ...actual,
     createProvider: (...args: unknown[]) => createProviderMock(...args),
+    createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
   };
 });
 
@@ -36,6 +38,8 @@ describe("runCreatePlan", () => {
   beforeEach(async () => {
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-project-"));
     createProviderMock.mockReset();
+    createRealSiteExplorerMock.mockReset();
+    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
     withLLMSpinnerMock.mockClear();
     withLLMSpinnerMock.mockImplementation((provider: unknown) => provider);
   });

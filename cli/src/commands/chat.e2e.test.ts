@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveProjectConfig, projectEnvPath } from "@agente-qa/core";
+import { saveProjectConfig, projectEnvPath, FakeSiteExplorer } from "@agente-qa/core";
 
 const generateTextMock = vi.fn();
+const createRealSiteExplorerMock = vi.fn();
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
 }));
@@ -14,6 +15,13 @@ vi.mock("@ai-sdk/anthropic", () => ({
 vi.mock("../util/spinner.js", () => ({
   withLLMSpinner: (provider: unknown) => provider,
 }));
+vi.mock("@agente-qa/core", async () => {
+  const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
+  return {
+    ...actual,
+    createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
+  };
+});
 
 import { runCreatePlan } from "./chat.js";
 import type { ChatPrompts } from "../prompts/types.js";
@@ -31,6 +39,8 @@ describe("end-to-end: create plan via the real wiring, only the network call moc
     );
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     generateTextMock.mockReset();
+    createRealSiteExplorerMock.mockReset();
+    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
   });
 
   afterEach(async () => {
