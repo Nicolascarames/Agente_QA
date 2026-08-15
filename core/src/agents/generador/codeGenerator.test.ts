@@ -167,4 +167,23 @@ import pytest
     const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
     expect(userMessage?.content).toContain("SIN transformar");
   });
+
+  it("instructs the model to use parsers.re for quoted step parameters", async () => {
+    const llm = new FakeLLMProvider([
+      "# FILE: tests/test_x.py\nprint(1)\n# FILE: pages/x_page.py\nprint(2)\n",
+    ]);
+    await generateCode(
+      "Feature: X\n",
+      llm,
+      null,
+      { slug: "x", featureFileName: "x.feature" },
+      [],
+      "es",
+      {}
+    );
+    const prompt = llm.lastPrompt();
+    expect(prompt).toContain("parsers.re");
+    expect(prompt).toContain("(?P<");
+    expect(prompt).toContain("[^\"]*");
+  });
 });

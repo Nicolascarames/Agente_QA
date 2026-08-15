@@ -86,6 +86,14 @@ def click_button(self, button_name: str):
 """
 Los locators FIJOS (sin parámetro, definidos una vez como atributos en el constructor, p. ej. "self.submit_button") no necesitan este patrón.
 
+Para los parámetros de un step que van entre comillas en el Gherkin, usa SIEMPRE "parsers.re" con un grupo con nombre que admita el valor vacío, nunca la forma con llaves: esa forma exige al menos un carácter y un Scenario Outline con una celda vacía en Examples (validación de campos obligatorios) fallaría con StepDefinitionNotFoundError. Ejemplo:
+"""
+@when(parsers.re(r'introduzco el correo electrónico "(?P<email>[^"]*)" y la contraseña "(?P<password>[^"]*)"'))
+def introduzco_credenciales(login_page, email, password):
+    login_page.fill_credentials(email, password)
+"""
+El nombre del grupo debe coincidir exactamente con el nombre del parámetro de la función.
+
 El valor que un step recibe de "parsers.parse" debe pasarse SIN transformar (mismo nombre de variable, sin recortar espacios, cambiar mayúsculas/minúsculas ni ningún otro procesamiento) como argumento posicional del método "get_*" o de acción correspondiente: una herramienta automática cruza el archivo Gherkin con este código para verificar los locators contra la aplicación real antes de aceptarlo, y solo puede seguir el rastro de un valor si llega intacto y con el mismo nombre de variable en ambos lados.
 
 La URL de la aplicación bajo test y las credenciales de una cuenta de prueba NUNCA se escriben como texto literal en este código: se guarda en el repositorio del usuario. Léelas siempre con "os.environ": "os.environ[\"AGENTE_QA_APP_URL\"]" para la URL base, y si el escenario prueba un login, "os.environ[\"AGENTE_QA_TEST_USERNAME\"]" / "os.environ[\"AGENTE_QA_TEST_PASSWORD\"]" para usuario y contraseña.

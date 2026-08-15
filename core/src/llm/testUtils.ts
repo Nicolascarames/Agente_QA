@@ -16,4 +16,14 @@ export class FakeLLMProvider implements LLMProvider {
     }
     return next;
   }
+
+  lastPrompt(): string {
+    const last = this.receivedCalls.at(-1);
+    if (!last) throw new Error("FakeLLMProvider: no se ha registrado ninguna llamada");
+    return last.map((message) => message.content).join("\n\n");
+  }
+
+  callCount(): number {
+    return this.receivedCalls.length;
+  }
 }
