@@ -14,12 +14,12 @@ function normalize(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function candidateTexts(screens: ScreenEvidence[]): string[] {
+export function candidateTexts(screens: ScreenEvidence[]): string[] {
   const found: string[] = [];
   for (const screen of screens) {
     for (const line of screen.ariaSnapshot.split("\n")) {
       for (const quoted of line.matchAll(/"([^"]+)"/g)) found.push(quoted[1]);
-      const text = line.match(/text:\s*(.+)$/);
+      const text = line.match(/^- text:\s*(.+)$/);
       if (text) found.push(text[1].trim());
     }
   }

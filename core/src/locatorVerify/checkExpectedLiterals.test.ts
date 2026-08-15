@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkExpectedLiterals, formatMissingLiterals } from "./checkExpectedLiterals.js";
+import { checkExpectedLiterals, formatMissingLiterals, candidateTexts } from "./checkExpectedLiterals.js";
 import type { ScreenEvidence } from "../siteExplorer/siteExplorer.js";
 
 const screens: ScreenEvidence[] = [
@@ -69,5 +69,46 @@ describe("checkExpectedLiterals", () => {
     ]);
     expect(message).toContain("Dream and Growth");
     expect(message).toContain("Sueño y crecimiento");
+  });
+
+  it("end-to-end: derives candidates from screens and formats without hand-typed arrays", () => {
+    const missing = checkExpectedLiterals(
+      [{ method: "get_heading", argument: "Dream and Growth" }],
+      screens
+    );
+    expect(missing).toHaveLength(1);
+    expect(missing[0].closest).toBeNull();
+
+    // Use exported candidateTexts to derive candidates the way the next task will
+    const extracted = candidateTexts(screens);
+    const message = formatMissingLiterals(missing, extracted);
+
+    expect(message).toContain("Dream and Growth");
+    expect(message).toContain("Welcome back");
+    expect(message).toContain("Log in");
+    expect(message).toContain("Authentication failed");
+    expect(message).toContain("Sueño y crecimiento");
+  });
+
+  it("does not emit garbled candidates from lines with embedded text: labels", () => {
+    const screensWithEmbedded: ScreenEvidence[] = [
+      {
+        stepText: "screen with listitem containing Alt text label",
+        url: "https://app.test/",
+        ariaSnapshot: `- listitem "Alt text: photo of a cat"
+- text: Image metadata loaded.`,
+      },
+    ];
+
+    const candidates = candidateTexts(screensWithEmbedded);
+
+    // Should extract "Alt text: photo of a cat" from quoted string (correct)
+    expect(candidates).toContain("Alt text: photo of a cat");
+    // Should extract "Image metadata loaded." from - text: line (correct)
+    expect(candidates).toContain("Image metadata loaded.");
+    // Should NOT extract garbled "photo of a cat\"" fragment (the regex bug)
+    expect(candidates).not.toContain('photo of a cat"');
+    // Should NOT extract the literal "text:" as a candidate
+    expect(candidates).not.toContain("text:");
   });
 });
