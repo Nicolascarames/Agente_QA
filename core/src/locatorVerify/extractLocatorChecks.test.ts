@@ -498,6 +498,37 @@ def veo_el_mensaje(login_page, mensaje_error):
     ]);
   });
 
+  it("does not throw when an optional named group doesn't participate in a given match", () => {
+    // The "usuario" named group only exists inside the second alternation
+    // branch — when the step text takes the first branch, that group never
+    // participates, so JS's match[i+1] is `undefined` at runtime even though
+    // it's typed as `string`. Before the guard, the later `rawValue.match(...)`
+    // call threw a TypeError straight out of extractLocatorChecks.
+    const stepDefs = `from pytest_bdd import parsers, given
+
+@given(parsers.re(r'entro (?:como invitado|como usuario "(?P<usuario>[^"]*)")'))
+def entrar(login_page, usuario):
+    login_page.get_saludo(usuario)
+`;
+    const pageObject = `class LoginPage:
+    def get_saludo(self, usuario):
+        return self.page.get_by_text(usuario)
+`;
+    const feature = `Feature: Login
+  Scenario: invitado
+    Given entro como invitado
+`;
+    const generatedFiles = [
+      { path: "tests/test_login.py", content: stepDefs },
+      { path: "pages/login_page.py", content: pageObject },
+    ];
+
+    expect(() => extractLocatorChecks(feature, generatedFiles)).not.toThrow();
+
+    const result = extractLocatorChecks(feature, generatedFiles);
+    expect(result.checks).toEqual([{ method: "get_saludo", argument: "" }]);
+  });
+
   it("resolves Scenario Outline rows with empty cells through a parsers.re step", () => {
     const stepDefs = `from pytest_bdd import parsers, then
 

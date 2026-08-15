@@ -222,7 +222,11 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
       const match = step.text.match(compiled.regex);
       if (match) {
         matchedDef = compiled.def;
-        compiled.paramNames.forEach((name, i) => (params[name] = match[i + 1]));
+        // An optional named group that doesn't participate in a given match
+        // yields `undefined` at runtime even though TS's RegExpMatchArray types
+        // it as `string` — guard it instead of letting `rawValue.match(...)`
+        // below throw a TypeError out of this function (and out of runGenerador).
+        compiled.paramNames.forEach((name, i) => (params[name] = match[i + 1] ?? ""));
         break;
       }
     }
