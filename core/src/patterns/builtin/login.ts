@@ -44,5 +44,6 @@ export const loginPattern: Pattern = {
   navigationHints: {
     routeCandidates: ["/login", "/signin", "/sign-in", "/"],
     requiresLogin: true,
+    negativeProbe: { kind: "invalid-credentials" },
   },
 };
