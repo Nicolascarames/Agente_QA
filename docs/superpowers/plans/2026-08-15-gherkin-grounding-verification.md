@@ -327,14 +327,32 @@ git commit -m "feat(core): teach the locator extractor to read parsers.re step d
 ### Task 3: Regla de `parsers.re` en el prompt del generador
 
 **Files:**
+- Modify: `core/src/llm/testUtils.ts` (dos accesores nuevos en `FakeLLMProvider`)
 - Modify: `core/src/prompts/generador.ts` (dentro del texto devuelto por `codeGenerationPrompt`)
 - Modify: `core/src/agents/generador/codeGenerator.test.ts` (nuevo test de contenido del prompt)
 
 **Interfaces:**
 - Consumes: `codeGenerationPrompt(featureText, matchedPattern, naming, evidence, appLanguage, routes, retry?)` — firma sin cambios.
-- Produces: nada nuevo.
+- Produces: `FakeLLMProvider.lastPrompt(): string` y `FakeLLMProvider.callCount(): number` — los usan las tareas 7, 8, 9 y 14.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Add the two accessors to the shared fake**
+
+`FakeLLMProvider` hoy solo expone `receivedCalls: Message[][]`. Añadir a la clase en
+`core/src/llm/testUtils.ts`:
+
+```ts
+  lastPrompt(): string {
+    const last = this.receivedCalls.at(-1);
+    if (!last) throw new Error("FakeLLMProvider: no se ha registrado ninguna llamada");
+    return last.map((message) => message.content).join("\n\n");
+  }
+
+  callCount(): number {
+    return this.receivedCalls.length;
+  }
+```
+
+- [ ] **Step 2: Write the failing test**
 
 Añadir a `core/src/agents/generador/codeGenerator.test.ts`, siguiendo el estilo del test existente `"instructs the model to pass the step's parsers.parse value unmodified to the paired method"`:
 
@@ -361,12 +379,12 @@ Añadir a `core/src/agents/generador/codeGenerator.test.ts`, siguiendo el estilo
 
 Nota para el implementador: usa el mismo helper que ya usan los tests vecinos de ese fichero para leer el prompt enviado (`llm.lastPrompt()` o el equivalente existente en `FakeLLMProvider`); no inventes uno nuevo.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 3: Run test to verify it fails**
 
 Run: `npx vitest run core/src/agents/generador/codeGenerator.test.ts`
 Expected: FAIL — el prompt no contiene `parsers.re`.
 
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 4: Write the implementation**
 
 En `core/src/prompts/generador.ts`, insertar este párrafo justo ANTES del párrafo que empieza por `El valor que un step recibe de`:
 
@@ -388,15 +406,15 @@ El nombre del grupo debe coincidir exactamente con el nombre del parámetro de l
 
 Importante: el párrafo describe la forma prohibida sin escribir la llamada literal `parsers.parse(...)` con un parámetro entrecomillado, para no inducir al modelo a copiarla en un comentario — el lint de la Task 1 ignora comentarios, pero es mejor no provocar el reintento.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run core/src/agents/generador/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add core/src/prompts/generador.ts core/src/agents/generador/codeGenerator.test.ts
+git add core/src/llm/testUtils.ts core/src/prompts/generador.ts core/src/agents/generador/codeGenerator.test.ts
 git commit -m "feat(core): instruct the generator to use parsers.re for quoted step params"
 ```
 
@@ -1602,7 +1620,7 @@ git commit -m "feat(core): check expected literals against captured evidence off
 
 **Interfaces:**
 - Consumes: nada nuevo.
-- Produces: `LocatorVerifier.verify(files, checks, urls: string[], credentials)` — `baseUrl: string` pasa a `urls: string[]`. `buildVerificationScript(files, checks, urls: string[])`.
+- Produces: `LocatorVerifier.verify(files, checks, urls: string[], credentials)` — `baseUrl: string` pasa a `urls: string[]`. `buildVerificationScript(files, checks, urls: string[])`. En `core/src/locatorVerify/testUtils.ts`, el campo `baseUrl: string` de `FakeLocatorVerifierCall` pasa a `urls: string[]` (la Task 14 lo lee vía `receivedCalls.at(-1)?.urls`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1970,15 +1988,15 @@ class LoginPage:
       callbacks: callbacks(),
     });
 
-    // FakeLocatorVerifier records the urls it was called with; if it exposes no
-    // such accessor yet, add one alongside its existing recording fields.
-    expect(verifier.lastUrls).toEqual(["https://example.com/login", "https://example.com/panel"]);
+    expect(verifier.receivedCalls.at(-1)?.urls).toEqual([
+      "https://example.com/login",
+      "https://example.com/panel",
+    ]);
   });
 ```
 
-Si `FakeLLMProvider` no expone `callCount()` ni `FakeLocatorVerifier` un `lastUrls`, añádelos
-a `core/src/llm/testUtils.ts` y `core/src/locatorVerify/testUtils.ts` junto a los accesores
-que ya tengan; no crees dobles nuevos.
+`FakeLLMProvider.callCount()`/`lastPrompt()` existen desde la Task 3, y
+`FakeLocatorVerifierCall.urls` desde la Task 12: no añadas accesores nuevos.
 
 - [ ] **Step 2: Run it and see it fail**
 
