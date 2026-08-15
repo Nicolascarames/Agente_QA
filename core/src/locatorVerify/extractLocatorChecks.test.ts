@@ -472,3 +472,59 @@ def pulsar_boton(page, button_name):
     expect(result.skipped).toEqual([]);
   });
 });
+
+describe("extractLocatorChecks — parsers.re step definitions", () => {
+  it("extracts checks from a parsers.re step definition", () => {
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.re(r'veo el mensaje de error "(?P<mensaje_error>[^"]*)"'))
+def veo_el_mensaje(login_page, mensaje_error):
+    expect(login_page.get_error_message(mensaje_error)).to_be_visible()
+`;
+    const pageObject = `class LoginPage:
+    def get_error_message(self, mensaje_error):
+        return self.page.get_by_text(mensaje_error)
+`;
+    const feature = `Feature: Login
+  Scenario: error
+    Then veo el mensaje de error "Credenciales inválidas"
+`;
+    const result = extractLocatorChecks(feature, [
+      { path: "tests/test_login.py", content: stepDefs },
+      { path: "pages/login_page.py", content: pageObject },
+    ]);
+    expect(result.checks).toEqual([
+      { method: "get_error_message", argument: "Credenciales inválidas" },
+    ]);
+  });
+
+  it("resolves Scenario Outline rows with empty cells through a parsers.re step", () => {
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.re(r'veo el mensaje de validación "(?P<mensaje>[^"]*)"'))
+def veo_validacion(login_page, mensaje):
+    expect(login_page.get_validation_message(mensaje)).to_be_visible()
+`;
+    const pageObject = `class LoginPage:
+    def get_validation_message(self, mensaje):
+        return self.page.get_by_text(mensaje)
+`;
+    const feature = `Feature: Login
+  Scenario Outline: validación
+    Then veo el mensaje de validación "<mensaje>"
+
+    Examples:
+      | mensaje            |
+      | Email obligatorio  |
+      |                    |
+`;
+    const result = extractLocatorChecks(feature, [
+      { path: "tests/test_login.py", content: stepDefs },
+      { path: "pages/login_page.py", content: pageObject },
+    ]);
+    expect(result.checks).toEqual([
+      { method: "get_validation_message", argument: "Email obligatorio" },
+      { method: "get_validation_message", argument: "" },
+    ]);
+  });
+});

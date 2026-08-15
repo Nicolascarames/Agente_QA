@@ -72,32 +72,51 @@ function parseFeatureSteps(featureText: string): FeatureStep[] {
 
 interface ParsedStepDef {
   template: string;
-  isDynamic: boolean;
+  kind: "plain" | "parse" | "re";
   body: string;
 }
 
 const STEP_DEF_PATTERN =
-  /@(?:given|when|then)\(\s*(?:parsers\.parse\(\s*(['"])([\s\S]*?)\1\s*\)|(['"])([\s\S]*?)\3)\s*\)\s*\r?\ndef\s+[\p{L}\p{N}_]+\([^)]*\):\s*\r?\n((?:[ \t]+.*\r?\n?)*)/gu;
+  /@(?:given|when|then)\(\s*(?:parsers\.parse\(\s*(['"])([\s\S]*?)\1\s*\)|parsers\.re\(\s*r?(['"])([\s\S]*?)\3\s*\)|(['"])([\s\S]*?)\5)\s*\)\s*\r?\ndef\s+[\p{L}\p{N}_]+\([^)]*\):\s*\r?\n((?:[ \t]+.*\r?\n?)*)/gu;
 
 function parseStepDefs(stepDefsSrc: string): ParsedStepDef[] {
   const defs: ParsedStepDef[] = [];
   for (const m of stepDefsSrc.matchAll(STEP_DEF_PATTERN)) {
-    const [, , parseTemplate, , plainTemplate, body] = m;
-    const template = parseTemplate ?? plainTemplate;
-    defs.push({ template, isDynamic: parseTemplate !== undefined, body });
+    const [, , parseTemplate, , reTemplate, , plainTemplate, body] = m;
+    if (parseTemplate !== undefined) defs.push({ template: parseTemplate, kind: "parse", body });
+    else if (reTemplate !== undefined) defs.push({ template: reTemplate, kind: "re", body });
+    else defs.push({ template: plainTemplate, kind: "plain", body });
   }
   return defs;
 }
 
-function templateToRegex(template: string): { regex: RegExp; paramNames: string[] } {
+export function parseStepTemplate(
+  template: string,
+  kind: "plain" | "parse" | "re"
+): { regex: RegExp; paramNames: string[] } {
   const paramNames: string[] = [];
+
+  if (kind === "re") {
+    // The template already IS a regex (Python `re` flavour). Python's named
+    // group syntax `(?P<name>...)` is not valid in JS, so rewrite it to a plain
+    // capturing group and keep the name. Everything else Playwright-generated
+    // step defs use ([^"]*, .*?, character classes) is identical in both flavours.
+    const pattern = template.replace(/\(\?P<([\p{L}\p{N}_]+)>/gu, (_, name: string) => {
+      paramNames.push(name);
+      return "(";
+    });
+    return { regex: new RegExp(`^${pattern}$`, "u"), paramNames };
+  }
+
   let pattern = template.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Parameter names can contain unicode letters (Spanish feature text: "contraseña",
-  // "categoría") — a plain \w class silently fails to match them.
-  pattern = pattern.replace(/\\\{([\p{L}\p{N}_]+)\\\}/gu, (_, name: string) => {
-    paramNames.push(name);
-    return "(.*?)";
-  });
+  if (kind === "parse") {
+    // Parameter names can contain unicode letters (Spanish feature text:
+    // "contraseña", "categoría") — a plain \w class silently fails to match them.
+    pattern = pattern.replace(/\\\{([\p{L}\p{N}_]+)\\\}/gu, (_, name: string) => {
+      paramNames.push(name);
+      return "(.*?)";
+    });
+  }
   return { regex: new RegExp(`^${pattern}$`, "u"), paramNames };
 }
 
@@ -159,14 +178,14 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
   }
 
   const steps = parseFeatureSteps(featureText);
-  const dynamicStepDefs = parseStepDefs(stepDefsFile.content).filter((d) => d.isDynamic);
+  const dynamicStepDefs = parseStepDefs(stepDefsFile.content).filter((d) => d.kind !== "plain");
 
   for (const step of steps) {
     let matchedDef: ParsedStepDef | null = null;
     let params: Record<string, string> = {};
 
     for (const def of dynamicStepDefs) {
-      const { regex, paramNames } = templateToRegex(def.template);
+      const { regex, paramNames } = parseStepTemplate(def.template, def.kind);
       const match = step.text.match(regex);
       if (match) {
         matchedDef = def;
