@@ -146,34 +146,29 @@ const LOGIN_FIELD_LABEL = /correo|usuario|email|user/i;
 const PASSWORD_FIELD_LABEL = /contraseña|password/i;
 const SUBMIT_BUTTON_NAME = /iniciar sesión|ingresar|log ?in/i;
 
-async function performRealLogin(
-  page: Page,
-  credentials: ExplorationCredentials
-): Promise<ScreenEvidence | null> {
-  const emailField = page.getByLabel(LOGIN_FIELD_LABEL).first();
-  const passwordField = page.getByLabel(PASSWORD_FIELD_LABEL).first();
-  const submitButton = page.getByRole("button", { name: SUBMIT_BUTTON_NAME }).first();
-
-  if ((await emailField.count()) === 0 || (await passwordField.count()) === 0) {
-    return null;
-  }
-
-  await emailField.fill(credentials.username);
-  await passwordField.fill(credentials.password);
-  await submitButton.click();
-  await page.waitForLoadState("networkidle").catch(() => {});
-
-  return captureEvidence(page, "tras iniciar sesión con las credenciales de test", credentials);
-}
-
 // A deliberately wrong password, fixed and never derived from the real one, so
 // the probe can never accidentally submit a valid credential. Only ever used
 // once per exploration: some apps lock accounts after N failed attempts, which
 // is why the probe is opt-in per pattern instead of global.
 const INVALID_PROBE_PASSWORD = "agente-qa-invalid-password";
 
-async function performNegativeLoginProbe(
+/**
+ * Shared by performRealLogin and performNegativeLoginProbe: both need the
+ * exact same field-locator heuristic (LOGIN_FIELD_LABEL/PASSWORD_FIELD_LABEL/
+ * SUBMIT_BUTTON_NAME), which gets tuned as new apps are tested. Keeping one
+ * implementation means a future tuning of that heuristic can't silently apply
+ * to only one of the two paths — e.g. the probe going on "succeeding" (still
+ * returning a screen) while no longer actually submitting the form, quietly
+ * degrading its captured evidence back into the untouched login page. `email`/
+ * `password` are what actually gets typed into the form; `credentials` is only
+ * used for captureEvidence's redaction, so the probe's real password stays
+ * redacted from evidence even though it's never the one typed in.
+ */
+async function submitLoginForm(
   page: Page,
+  email: string,
+  password: string,
+  stepText: string,
   credentials: ExplorationCredentials
 ): Promise<ScreenEvidence | null> {
   const emailField = page.getByLabel(LOGIN_FIELD_LABEL).first();
@@ -184,13 +179,35 @@ async function performNegativeLoginProbe(
     return null;
   }
 
-  await emailField.fill(credentials.username);
-  await passwordField.fill(INVALID_PROBE_PASSWORD);
+  await emailField.fill(email);
+  await passwordField.fill(password);
   await submitButton.click();
   await page.waitForLoadState("networkidle").catch(() => {});
 
-  return captureEvidence(
+  return captureEvidence(page, stepText, credentials);
+}
+
+async function performRealLogin(
+  page: Page,
+  credentials: ExplorationCredentials
+): Promise<ScreenEvidence | null> {
+  return submitLoginForm(
     page,
+    credentials.username,
+    credentials.password,
+    "tras iniciar sesión con las credenciales de test",
+    credentials
+  );
+}
+
+async function performNegativeLoginProbe(
+  page: Page,
+  credentials: ExplorationCredentials
+): Promise<ScreenEvidence | null> {
+  return submitLoginForm(
+    page,
+    credentials.username,
+    INVALID_PROBE_PASSWORD,
     "tras un intento de inicio de sesión con credenciales incorrectas",
     credentials
   );
