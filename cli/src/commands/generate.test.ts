@@ -60,7 +60,7 @@ describe("runGenerateTests", () => {
     createProviderMock.mockReset();
     realCodeCheckerCheckMock.mockReset();
     createRealSiteExplorerMock.mockReset();
-    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
+    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]));
     createRealLocatorVerifierMock.mockReset();
     createRealLocatorVerifierMock.mockReturnValue(new FakeLocatorVerifier([]));
     withLLMSpinnerMock.mockClear();
@@ -206,7 +206,7 @@ class LoginPage:
     const fake = new FakeLLMProvider([scriptedResponse]);
     createProviderMock.mockReturnValue(fake);
     realCodeCheckerCheckMock.mockResolvedValue({ ok: true });
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     createRealSiteExplorerMock.mockReturnValue(explorer);
 
     const prompts: GeneratorPrompts = {

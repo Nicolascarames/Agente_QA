@@ -60,7 +60,7 @@ describe.skipIf(!hasPython || !hasRuff)(
       );
       generateTextMock.mockReset();
       createRealSiteExplorerMock.mockReset();
-      createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
+      createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]));
       createRealLocatorVerifierMock.mockReset();
       createRealLocatorVerifierMock.mockReturnValue(new FakeLocatorVerifier([]));
     });

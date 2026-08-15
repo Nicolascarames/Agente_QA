@@ -39,7 +39,7 @@ describe("runCreatePlan", () => {
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-project-"));
     createProviderMock.mockReset();
     createRealSiteExplorerMock.mockReset();
-    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
+    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]));
     withLLMSpinnerMock.mockClear();
     withLLMSpinnerMock.mockImplementation((provider: unknown) => provider);
   });

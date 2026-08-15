@@ -83,9 +83,20 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
       throw new Error(`No se pudo verificar la aplicación real antes de generar el código: ${exploration.error}`);
     }
     evidence = exploration.screens;
-    await writeCachedEvidence(projectRoot, cacheKey, evidence);
+    // Only a hints-driven result is safe to cache — see the "source" doc
+    // comment on ExplorationResult in siteExplorer.ts. An agentic result is
+    // specific to this feature's own text and must never be reused by a later,
+    // unrelated feature request that happens to share the same cache key.
+    if (exploration.source === "hints") {
+      await writeCachedEvidence(projectRoot, cacheKey, evidence);
+    }
   }
-  const verificationUrls = evidence.length > 0 ? evidence.map((screen) => screen.url) : [baseUrl];
+  // De-duplicated, order-preserving: the login pattern's initial screen and its
+  // negative-probe screen commonly share a URL (both captured on the login
+  // route before/after the probe), which would otherwise make the verification
+  // script navigate to and re-check the identical page twice.
+  const verificationUrls =
+    evidence.length > 0 ? Array.from(new Set(evidence.map((screen) => screen.url))) : [baseUrl];
 
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];

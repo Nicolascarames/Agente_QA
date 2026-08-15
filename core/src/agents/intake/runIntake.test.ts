@@ -7,6 +7,7 @@ import { FakeSiteExplorer } from "../../siteExplorer/testUtils.js";
 import { evidenceCacheKey, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
 import { runIntake, type IntakeCallbacks } from "./runIntake.js";
 import type { Pattern } from "../../schemas/pattern.js";
+import type { SiteExplorer } from "../../siteExplorer/siteExplorer.js";
 
 const loginPattern: Pattern = {
   name: "login",
@@ -39,7 +40,7 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
     ]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
 
     const { plan, filePath } = await runIntake({
       initialText: "quiero probar el login",
@@ -71,7 +72,7 @@ describe("runIntake", () => {
       "Feature: Caso custom\n  Scenario: x\n    Given a\n",
       "Feature: Caso custom v2\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
     ]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
 
     callbacks.askUser = vi.fn().mockResolvedValue("Chrome");
     callbacks.presentForApproval = vi
@@ -117,7 +118,7 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
     ]);
-    const firstRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const firstRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const firstRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
@@ -147,7 +148,7 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: y\n    Given a2\n    When b2\n    Then c2\n",
     ]);
-    const rejectRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const rejectRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const confirmOverwriteReject = vi.fn().mockResolvedValue(false);
     const rejectRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
@@ -178,7 +179,7 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: z\n    Given a3\n    When b3\n    Then c3\n",
     ]);
-    const acceptRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const acceptRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const acceptRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
@@ -212,6 +213,7 @@ describe("runIntake", () => {
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [
           { stepText: "pantalla en /", url: "https://app.test/", ariaSnapshot: '- heading "Welcome back"' },
         ],
@@ -292,5 +294,141 @@ describe("runIntake", () => {
     });
 
     expect(llm.lastPrompt()).toContain("Desde caché");
+  });
+
+  it("continues without evidence, and says so, when the explorer THROWS instead of returning { ok: false }", async () => {
+    // createRealSiteExplorer.explore can throw MissingExplorerToolError (e.g.
+    // the user hasn't run "npx playwright install chromium") because
+    // launchBrowser sits outside its try/finally. Before this test, runIntake
+    // only branched on exploration.ok, so a thrown error propagated straight
+    // out of runIntake — a capability regression on the product's entry point,
+    // since the intake never touched a browser before this feature existed.
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const throwingExplorer: SiteExplorer = {
+      async explore() {
+        throw new Error("No se pudo abrir el navegador para explorar la aplicación: falta chromium.");
+      },
+    };
+    const steps: string[] = [];
+
+    const { plan } = await runIntake({
+      initialText: "probar el login",
+      llm,
+      patterns: [],
+      explorer: throwingExplorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "en",
+      routes: {},
+      callbacks: { ...callbacks, onExplorationStep: (m) => steps.push(m) },
+    });
+
+    expect(plan.featureText).toContain("Feature: Login");
+    expect(steps.join("\n")).toContain("falta chromium");
+    expect(llm.lastPrompt()).toContain("No se pudo capturar evidencia");
+  });
+
+  it("does not cache an agentic exploration result — a second run for the same (unmatched) request re-explores instead of reusing it", async () => {
+    // patterns: [] makes matchPattern short-circuit with zero LLM calls, so
+    // both runs share the identical cache key (appUrl + null patternName +
+    // routes) despite being two logically different requests — exactly the
+    // scenario a cached agentic result would corrupt if it were reused.
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const explorer = new FakeSiteExplorer([
+      { ok: true, screens: [{ stepText: "a", url: "https://app.test/a", ariaSnapshot: "agentic-1" }], source: "agentic" },
+      { ok: true, screens: [{ stepText: "b", url: "https://app.test/b", ariaSnapshot: "agentic-2" }], source: "agentic" },
+    ]);
+
+    const run = () =>
+      runIntake({
+        initialText: "probar el login",
+        llm,
+        patterns: [],
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://app.test/",
+        appLanguage: "en",
+        routes: {},
+        callbacks,
+      });
+
+    await run();
+    await run();
+
+    // Two scripted results consumed: if the first had been cached, the second
+    // run would have reused it and FakeSiteExplorer would never be called again.
+    expect(explorer.receivedCalls).toHaveLength(2);
+  });
+
+  it("caches a hints-driven exploration result — a second run for the same request reuses it without exploring again", async () => {
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        source: "hints",
+        screens: [{ stepText: "hints", url: "https://app.test/hints", ariaSnapshot: "hints-evidence" }],
+      },
+    ]);
+
+    const run = () =>
+      runIntake({
+        initialText: "probar el login",
+        llm,
+        patterns: [],
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://app.test/",
+        appLanguage: "en",
+        routes: {},
+        callbacks,
+      });
+
+    // Only ONE scripted result: if the second run tried to explore again,
+    // FakeSiteExplorer would throw for lack of a scripted response.
+    await run();
+    await run();
+
+    expect(explorer.receivedCalls).toHaveLength(1);
+  });
+
+  it("forwards the real test credentials into the explorer's received call", async () => {
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
+    const credentials = { username: "qa@example.com", password: "s3cret" };
+
+    await runIntake({
+      initialText: "probar el login",
+      llm,
+      patterns: [],
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "en",
+      routes: {},
+      credentials,
+      callbacks,
+    });
+
+    expect(explorer.receivedCalls[0].credentials).toEqual(credentials);
   });
 });

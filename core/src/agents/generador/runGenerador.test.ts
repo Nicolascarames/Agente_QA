@@ -61,7 +61,7 @@ describe("runGenerador", () => {
     const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks();
 
     const { writtenPaths } = await runGenerador({
@@ -91,7 +91,7 @@ describe("runGenerador", () => {
     const featureFilePath = await writeFeature("Feature: Checkout\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({
       offerSavePattern: vi.fn().mockResolvedValue({ save: true, name: "checkout", description: "Flujo de compra" }),
     });
@@ -130,7 +130,7 @@ describe("runGenerador", () => {
       { ok: false, errors: "SyntaxError: line 2" },
       { ok: true },
     ]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
     await runGenerador({
@@ -165,7 +165,7 @@ describe("runGenerador", () => {
       { ok: false, errors: "e3" },
       { ok: false, errors: "e4" },
     ]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks();
 
     await expect(
@@ -204,7 +204,7 @@ describe("runGenerador", () => {
 
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({ confirmOverwrite: vi.fn().mockResolvedValue(false) });
 
     await expect(
@@ -234,7 +234,7 @@ describe("runGenerador", () => {
     const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks();
 
     await runGenerador({
@@ -267,7 +267,7 @@ describe("runGenerador", () => {
 
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
     await runGenerador({
@@ -352,6 +352,83 @@ describe("runGenerador", () => {
     expect(llm.lastPrompt()).toContain("Desde caché");
   });
 
+  it("does not cache an agentic exploration result — a second run for the same (unmatched) feature re-explores instead of reusing it", async () => {
+    // No matched pattern (no "# agente-qa:pattern=" header), so both runs share
+    // the identical cache key (appUrl + null patternName + routes) despite
+    // being two logically different features — exactly the scenario a cached
+    // agentic result would corrupt if it were reused.
+    const featureFilePath = await writeFeature("Feature: Checkout\n");
+    const llm = new FakeLLMProvider([scriptedResponse, scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }, { ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      { ok: true, screens: [{ stepText: "a", url: "https://example.com/a", ariaSnapshot: "agentic-1" }], source: "agentic" },
+      { ok: true, screens: [{ stepText: "b", url: "https://example.com/b", ariaSnapshot: "agentic-2" }], source: "agentic" },
+    ]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    const run = () =>
+      runGenerador({
+        featureFilePath,
+        llm,
+        patterns: [],
+        checker,
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        appLanguage: "es",
+        routes: {},
+        credentials: undefined,
+        verifier: new FakeLocatorVerifier([]),
+        callbacks: cb,
+      });
+
+    await run();
+    await run();
+
+    // Two scripted results consumed: if the first had been cached, the second
+    // run would have reused it and FakeSiteExplorer would never be called again.
+    expect(explorer.receivedCalls).toHaveLength(2);
+  });
+
+  it("caches a hints-driven exploration result — a second run for the same feature reuses it without exploring again", async () => {
+    const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
+    const llm = new FakeLLMProvider([scriptedResponse, scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }, { ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        source: "hints",
+        screens: [{ stepText: "hints", url: "https://example.com/hints", ariaSnapshot: "hints-evidence" }],
+      },
+    ]);
+    const cb = callbacks();
+
+    const run = () =>
+      runGenerador({
+        featureFilePath,
+        llm,
+        patterns: [loginPattern],
+        checker,
+        explorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        appLanguage: "es",
+        routes: {},
+        credentials: undefined,
+        verifier: new FakeLocatorVerifier([]),
+        callbacks: cb,
+      });
+
+    // Only ONE scripted result: if the second run tried to explore again,
+    // FakeSiteExplorer would throw for lack of a scripted response.
+    await run();
+    await run();
+
+    expect(explorer.receivedCalls).toHaveLength(1);
+  });
+
   it("treats a cached-but-empty evidence array as a miss and explores instead of proceeding with no evidence", async () => {
     const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
     await writeCachedEvidence(
@@ -364,6 +441,7 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [{ stepText: "explorada de verdad", url: "https://example.com/login", ariaSnapshot: '- heading "Recién explorada"' }],
       },
     ]);
@@ -396,6 +474,7 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [{ stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' }],
       },
     ]);
@@ -440,6 +519,7 @@ describe("runGenerador", () => {
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [
           { stepText: "x", url: "https://example.com/login", ariaSnapshot: 'textbox "Password": s3cret-value' },
         ],
@@ -471,7 +551,7 @@ describe("runGenerador", () => {
     const featureFilePath = await writeFeature("Feature: Checkout\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
     await runGenerador({
@@ -504,7 +584,7 @@ describe("runGenerador", () => {
     const originalCandidates = [...patternWithHints.navigationHints!.routeCandidates];
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks();
 
     await runGenerador({
@@ -535,7 +615,7 @@ describe("runGenerador", () => {
     expect(loginPattern.navigationHints).toBeUndefined();
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
     await runGenerador({
@@ -563,7 +643,7 @@ describe("runGenerador", () => {
     const featureFilePath = await writeFeature("Feature: Checkout\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
     await runGenerador({
@@ -611,7 +691,7 @@ class LoginPage:
 `;
     const llm = new FakeLLMProvider([responseWithGetMethod]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
@@ -664,6 +744,7 @@ class LoginPage:
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [
           { stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' },
           {
@@ -703,6 +784,73 @@ class LoginPage:
     ]);
   });
 
+  it("dedupes verification URLs shared across captured screens (e.g. the login pattern's initial and probe screens), preserving order", async () => {
+    const featureFilePath = await writeFeature(
+      'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
+    );
+    const responseWithGetMethod = `# FILE: tests/test_login.py
+from pytest_bdd import scenarios, then, parsers
+
+scenarios("../features/login.feature")
+
+
+@then(parsers.parse('debo ver un mensaje de error "{mensaje_error}"'))
+def verificar_mensaje_error(page, mensaje_error):
+    login_page = LoginPage(page)
+    login_page.get_error_message(mensaje_error)
+# FILE: pages/login_page.py
+class LoginPage:
+    def __init__(self, page):
+        self.page = page
+
+    def get_error_message(self, message):
+        return self.page.get_by_text(message)
+`;
+    const llm = new FakeLLMProvider([responseWithGetMethod]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        source: "hints",
+        screens: [
+          { stepText: "pantalla de login", url: "https://example.com/login", ariaSnapshot: 'textbox "Email"' },
+          {
+            stepText: "tras un intento de inicio de sesión con credenciales incorrectas",
+            url: "https://example.com/login",
+            ariaSnapshot: "- text: Credenciales incorrectas",
+          },
+          { stepText: "pantalla tras login", url: "https://example.com/dashboard", ariaSnapshot: '- heading "Panel"' },
+        ],
+      },
+    ]);
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+    const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      patterns: [],
+      checker,
+      explorer,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      appLanguage: "es",
+      routes: {},
+      credentials: undefined,
+      callbacks: cb,
+    });
+
+    // The login screen's URL repeats (initial + probe screens); it must appear
+    // only once, and in the order it was first seen, or the verification script
+    // would navigate to and re-check the identical page twice.
+    expect(verifier.receivedCalls[0].urls).toEqual([
+      "https://example.com/login",
+      "https://example.com/dashboard",
+    ]);
+  });
+
   it("falls back to the raw baseUrl for verification when the explorer returned no screens", async () => {
     const featureFilePath = await writeFeature(
       'Feature: Login\n  Scenario: x\n    Then debo ver un mensaje de error "Credenciales incorrectas"\n'
@@ -727,7 +875,7 @@ class LoginPage:
 `;
     const llm = new FakeLLMProvider([responseWithGetMethod]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
@@ -774,7 +922,7 @@ class LoginPage:
 `;
     const llm = new FakeLLMProvider([responseWithGetMethod, responseWithGetMethod]);
     const checker = new FakeCodeChecker([{ ok: true }, { ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const verifier = new FakeLocatorVerifier([
       { ok: false, errors: "El locator get_error_message(...) resolvió a 2 elementos reales" },
       { ok: true },
@@ -827,7 +975,7 @@ class LoginPage:
 `;
     const llm = new FakeLLMProvider([responseWithGetMethod]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const verifier = new FakeLocatorVerifier([
       { ok: true, warnings: "El locator get_error_message(...) no se encontró en la pantalla inicial (0 elementos)" },
     ]);
@@ -861,7 +1009,7 @@ class LoginPage:
     const featureFilePath = await writeFeature("# agente-qa:pattern=login\nFeature: Login\n");
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const verifier = new FakeLocatorVerifier([]);
     const cb = callbacks();
 
@@ -909,7 +1057,7 @@ class LoginPage:
 `;
     const llm = new FakeLLMProvider([responseWithUntracedParam]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const verifier = new FakeLocatorVerifier([]);
     const cb = callbacks({ offerSavePattern: vi.fn().mockResolvedValue({ save: false }) });
 
@@ -954,6 +1102,7 @@ class LoginPage:
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [
           {
             stepText: "tras iniciar sesión",
@@ -1023,6 +1172,7 @@ class LoginPage:
     const explorer = new FakeSiteExplorer([
       {
         ok: true,
+        source: "hints",
         screens: [
           { stepText: "login", url: "https://example.com/login", ariaSnapshot: '- button "Entrar"' },
           { stepText: "panel", url: "https://example.com/panel", ariaSnapshot: '- heading "Panel"' },

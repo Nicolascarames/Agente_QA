@@ -15,12 +15,12 @@ function input(overrides: Partial<ExplorationInput> = {}): ExplorationInput {
 describe("FakeSiteExplorer", () => {
   it("returns scripted results in order and records the input it was called with", async () => {
     const fake = new FakeSiteExplorer([
-      { ok: true, screens: [] },
+      { ok: true, screens: [], source: "hints" },
       { ok: false, error: "no se encontró la ruta" },
     ]);
 
     const first = await fake.explore(input({ baseUrl: "https://a.com" }));
-    expect(first).toEqual({ ok: true, screens: [] });
+    expect(first).toEqual({ ok: true, screens: [], source: "hints" });
 
     const second = await fake.explore(input());
     expect(second).toEqual({ ok: false, error: "no se encontró la ruta" });
@@ -30,7 +30,7 @@ describe("FakeSiteExplorer", () => {
   });
 
   it("calls onStep when provided", async () => {
-    const fake = new FakeSiteExplorer([{ ok: true, screens: [] }]);
+    const fake = new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]);
     const steps: string[] = [];
 
     await fake.explore(input(), (message) => steps.push(message));

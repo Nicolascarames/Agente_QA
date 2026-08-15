@@ -1,7 +1,12 @@
 import type { LLMProvider } from "../../llm/provider.js";
 import type { Pattern } from "../../schemas/pattern.js";
 import type { GherkinPlan } from "../../schemas/gherkinPlan.js";
-import type { SiteExplorer, ExplorationCredentials, ScreenEvidence } from "../../siteExplorer/siteExplorer.js";
+import type {
+  SiteExplorer,
+  ExplorationCredentials,
+  ExplorationResult,
+  ScreenEvidence,
+} from "../../siteExplorer/siteExplorer.js";
 import { evidenceCacheKey, readCachedEvidence, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
 import { applyProjectRoute } from "../../patterns/applyProjectRoute.js";
 import { checkAmbiguity } from "./ambiguityChecker.js";
@@ -55,19 +60,37 @@ export async function runIntake(
   let evidence: ScreenEvidence[] = (await readCachedEvidence(projectRoot, cacheKey)) ?? [];
   if (evidence.length === 0) {
     callbacks.onExplorationStep("Explorando la aplicación real para anclar los textos esperados...");
-    const exploration = await explorer.explore(
-      {
-        featureText: text,
-        matchedPattern: patternWithRoute,
-        baseUrl,
-        credentials,
-        headed: false,
-      },
-      callbacks.onExplorationStep
-    );
+    let exploration: ExplorationResult;
+    try {
+      exploration = await explorer.explore(
+        {
+          featureText: text,
+          matchedPattern: patternWithRoute,
+          baseUrl,
+          credentials,
+          headed: false,
+        },
+        callbacks.onExplorationStep
+      );
+    } catch (err) {
+      // The intake is the product's entry point: a user who hasn't run
+      // `npx playwright install chromium` (MissingExplorerToolError) or hits any
+      // other thrown error must still be able to create a test plan. Route it
+      // through the same non-fatal degradation path as an { ok: false } result.
+      const message = err instanceof Error ? err.message : String(err);
+      exploration = { ok: false, error: message };
+    }
     if (exploration.ok) {
       evidence = exploration.screens;
-      await writeCachedEvidence(projectRoot, cacheKey, evidence);
+      // Only a hints-driven result is safe to cache: it's deterministic given
+      // (appUrl, patternName, routes). An agentic result is specific to this
+      // feature's own text — caching it would hand a later, unrelated feature
+      // request (same appUrl/patternName/routes, since none of those carry any
+      // feature identity) these screens instead of its own. See
+      // ExplorationResult's "source" doc comment in siteExplorer.ts.
+      if (exploration.source === "hints") {
+        await writeCachedEvidence(projectRoot, cacheKey, evidence);
+      }
     } else {
       // Not fatal: the user still reviews and approves the .feature, and the
       // generator's verification blocks later if the literals don't hold up.

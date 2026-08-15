@@ -40,7 +40,7 @@ describe("end-to-end: create plan via the real wiring, only the network call moc
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     generateTextMock.mockReset();
     createRealSiteExplorerMock.mockReset();
-    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [] }]));
+    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]));
   });
 
   afterEach(async () => {
