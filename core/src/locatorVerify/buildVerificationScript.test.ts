@@ -80,4 +80,24 @@ describe("buildVerificationScript", () => {
     expect(script).toContain("wait_for_load_state");
     expect(script).toContain("timeout=3000");
   });
+
+  it("guards navigation with a try/except so a url that fails to load doesn't abort the whole run", () => {
+    const script = buildVerificationScript([], [{ method: "get_x", argument: "y" }], ["https://app.test/a", "https://app.test/b"]);
+    const gotoIndex = script.indexOf("page.goto(url");
+    const precedingTry = script.lastIndexOf("try:", gotoIndex);
+    expect(precedingTry).toBeGreaterThan(-1);
+    expect(script.slice(precedingTry, gotoIndex)).not.toContain("except");
+
+    const gotoExcept = script.indexOf("except Exception:", gotoIndex);
+    const continueIndex = script.indexOf("continue", gotoExcept);
+    const nextIdleWait = script.indexOf("wait_for_load_state", gotoIndex);
+    expect(gotoExcept).toBeGreaterThan(-1);
+    expect(continueIndex).toBeGreaterThan(gotoExcept);
+    expect(continueIndex).toBeLessThan(nextIdleWait);
+  });
+
+  it("clears a previously recorded error once a later url resolves the same check without an exception", () => {
+    const script = buildVerificationScript([], [{ method: "get_x", argument: "y" }], ["https://app.test/a", "https://app.test/b"]);
+    expect(script).toContain('results[index].pop("error", None)');
+  });
 });

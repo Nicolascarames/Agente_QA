@@ -48,10 +48,18 @@ def main():
                 pass
 
         for url in URLS:
-            # networkidle as a goto condition hangs for the full 30s default on
-            # apps with a persistent connection (websockets, chat widgets,
-            # analytics). Load first, then give the hydration a short window.
-            page.goto(url, wait_until="load")
+            try:
+                # networkidle as a goto condition hangs for the full 30s default on
+                # apps with a persistent connection (websockets, chat widgets,
+                # analytics). Load first, then give the hydration a short window.
+                page.goto(url, wait_until="load")
+            except Exception:
+                # A url that fails to load (timeout, an SPA route that 404s
+                # on direct navigation, a stale post-login url) must not
+                # abort the whole run: the other urls may still resolve
+                # every check, and aborting here would zero out results
+                # that already succeeded on an earlier url.
+                continue
             try:
                 page.wait_for_load_state("networkidle", timeout=3000)
             except Exception:
@@ -66,14 +74,21 @@ def main():
                         target = getattr(instance, method_name)
                         break
                 if target is None:
-                    results[index]["error"] = (
-                        f"no se encontro el metodo {method_name} en ningun Page Object generado"
-                    )
+                    if results[index]["count"] == 0:
+                        results[index]["error"] = (
+                            f"no se encontro el metodo {method_name} en ningun Page Object generado"
+                        )
                     continue
 
                 try:
                     locator = target(argument)
                     count = locator.count()
+                    # A successful resolution on this url means the check is
+                    # verifiable here, so drop any error recorded on an
+                    # earlier url — a check that failed on screen 1 but
+                    # resolves on screen 2 must not be reported as a
+                    # failure (same "any captured screen" rule as count).
+                    results[index].pop("error", None)
                     if count > results[index]["count"]:
                         results[index]["count"] = count
                         matches = []
@@ -85,7 +100,8 @@ def main():
                                     matches.append("<no se pudo leer outerHTML>")
                         results[index]["matches"] = matches
                 except Exception as e:
-                    results[index]["error"] = f"error al verificar el locator: {e}"
+                    if results[index]["count"] == 0:
+                        results[index]["error"] = f"error al verificar el locator: {e}"
 
         browser.close()
 

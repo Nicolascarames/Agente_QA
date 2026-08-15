@@ -217,5 +217,78 @@ class LoginPage:
 
       expect(result).toEqual({ ok: true });
     }, 20000);
+
+    it("reports ok:true when a locator is absent from the first captured screen but resolves to exactly 1 real element on the second", async () => {
+      // The bug this task fixes: the harness used to verify only against
+      // the first captured screen, so a locator belonging to a later
+      // screen (e.g. the post-login dashboard) was wrongly judged against
+      // a screen where it never legitimately appears. A check must now
+      // pass if it resolves cleanly on ANY captured screen.
+      const firstScreenPath = path.join(tmpDir, "first.html");
+      await fs.writeFile(
+        firstScreenPath,
+        "<!doctype html><html><body>" + '<button type="button">Menu</button>' + "</body></html>",
+        "utf-8"
+      );
+      const secondScreenPath = path.join(tmpDir, "second.html");
+      await fs.writeFile(
+        secondScreenPath,
+        "<!doctype html><html><body>" + '<button type="submit">Log in</button>' + "</body></html>",
+        "utf-8"
+      );
+      const firstUrl = pathToFileURL(firstScreenPath).toString();
+      const secondUrl = pathToFileURL(secondScreenPath).toString();
+
+      const result = await realLocatorVerifier.verify(
+        generatedFiles(),
+        [{ method: "get_button", argument: "Log in" }],
+        [firstUrl, secondUrl],
+        undefined
+      );
+
+      expect(result).toEqual({ ok: true });
+    }, 20000);
+
+    it("reports ok:true when a locator errors on the first captured screen but resolves cleanly on the second, instead of keeping the earlier error", async () => {
+      // A per-url exception must not stick once a later url resolves the
+      // same check without one — mirrors the count-based "any screen"
+      // rule, applied to the error path instead of the count path.
+      const firstScreenPath = path.join(tmpDir, "first.html");
+      await fs.writeFile(firstScreenPath, "<!doctype html><html><body></body></html>", "utf-8");
+      const secondScreenPath = path.join(tmpDir, "second.html");
+      await fs.writeFile(
+        secondScreenPath,
+        "<!doctype html><html><body>" + '<div class="marker"></div><h1>Panel</h1>' + "</body></html>",
+        "utf-8"
+      );
+      const firstUrl = pathToFileURL(firstScreenPath).toString();
+      const secondUrl = pathToFileURL(secondScreenPath).toString();
+
+      const errorProneOnFirstScreen = `from playwright.sync_api import Page, Locator
+
+
+class DashboardPage:
+    def __init__(self, page: Page):
+        self.page = page
+
+    def get_panel(self, text: str) -> Locator:
+        if self.page.locator("div.marker").count() == 0:
+            raise RuntimeError("marker not present yet — page not ready")
+        return self.page.get_by_role("heading", name=text, exact=False)
+`;
+      const files: GeneratedFile[] = [
+        { path: "tests/test_dashboard.py", content: "" },
+        { path: "pages/dashboard_page.py", content: errorProneOnFirstScreen },
+      ];
+
+      const result = await realLocatorVerifier.verify(
+        files,
+        [{ method: "get_panel", argument: "Panel" }],
+        [firstUrl, secondUrl],
+        undefined
+      );
+
+      expect(result).toEqual({ ok: true });
+    }, 20000);
   }
 );
