@@ -30,6 +30,11 @@ function cacheDir(projectRoot: string): string {
 }
 
 function cacheFilePath(projectRoot: string, key: string): string {
+  // Validate that key is a 16-character hex string to prevent path traversal attacks.
+  // evidenceCacheKey generates hex strings; anything else indicates misuse.
+  if (!/^[a-f0-9]{16}$/.test(key)) {
+    throw new Error(`Clave de caché inválida: debe ser una cadena hexadecimal de 16 caracteres, se recibió "${key}"`);
+  }
   return path.join(cacheDir(projectRoot), `exploration-${key}.json`);
 }
 
@@ -45,19 +50,24 @@ export async function readCachedEvidence(
     return null;
   }
 
-  let parsed: CacheFile;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as CacheFile;
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
 
-  const capturedAt = Date.parse(parsed.capturedAt ?? "");
+  // Guard against null or non-objects (e.g., JSON.parse("null") succeeds but returns null).
+  // This must be checked before accessing any properties.
+  if (parsed === null || typeof parsed !== "object") return null;
+
+  const casted = parsed as CacheFile;
+  const capturedAt = Date.parse(casted.capturedAt ?? "");
   if (Number.isNaN(capturedAt)) return null;
   if (now.getTime() - capturedAt > EVIDENCE_CACHE_TTL_MS) return null;
-  if (!Array.isArray(parsed.screens)) return null;
+  if (!Array.isArray(casted.screens)) return null;
 
-  return parsed.screens;
+  return casted.screens;
 }
 
 export async function writeCachedEvidence(
