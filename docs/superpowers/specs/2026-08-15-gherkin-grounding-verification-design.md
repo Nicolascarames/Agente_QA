@@ -146,10 +146,13 @@ escribe el paso sin literal (p. ej. "veo un mensaje de error") en vez de inventa
 **Caché.** `core/src/siteExplorer/evidenceCache.ts`, fichero
 `.agente-qa/cache/exploration-<hash>.json`, clave = hash de `appUrl` + nombre del patrón +
 `routes`, TTL 30 minutos vía `capturedAt` almacenado. `runGenerador` la lee antes de
-explorar: el flujo completo sigue costando una exploración, no dos. `init` añade
-`.agente-qa/cache/` al `.agente-qa/.gitignore`, y el directorio se crea con permisos 0700 y
-los ficheros con 0600, igual que `.env` — un snapshot de accesibilidad contiene datos
-reales de la aplicación del usuario aunque las credenciales estén redactadas.
+explorar: el flujo completo sigue costando una exploración, no dos. El directorio se crea
+con permisos 0700 y los ficheros con 0600, igual que `.env` — un snapshot de accesibilidad
+contiene datos reales de la aplicación del usuario aunque las credenciales estén redactadas
+— y la propia función de escritura deja un `.gitignore` con `*` dentro de la carpeta de
+caché. Se hace así, y no añadiendo una línea al `.agente-qa/.gitignore` desde `init`, porque
+un proyecto ya inicializado no vuelve a pasar por `init`: la evidencia acabaría en git hasta
+que el usuario lo re-ejecutase.
 
 ### 3.3 Fase 2 — cierre del bucle de verificación
 
@@ -170,7 +173,12 @@ El feature espera el título "Dream and Growth", que no aparece en ninguna panta
 verificada. El texto real más parecido es "Sueño y crecimiento".
 ```
 
-Ese mensaje entra como `feedback` en el bucle de reintento que ya existe.
+Ese mensaje **aborta la generación de inmediato**, sin consumir ningún reintento. El bucle
+de reintento regenera código Python, y el literal vive en el `.feature`: el argumento del
+check sería idéntico en los cuatro intentos. Peor, la única forma que tendría el modelo de
+"aprobar" es dejar de pasar el literal a un método `get_*` — debilitar la aserción para
+pasar la verificación. El mensaje remite al usuario a corregir el `.feature` o a regenerar
+el plan, que con la Fase 1 ya sale anclado.
 
 **Verificación multipantalla.** `LocatorVerifier.verify` cambia `baseUrl: string` por
 `urls: string[]` y comprueba cada check contra todas las pantallas capturadas. Un check
