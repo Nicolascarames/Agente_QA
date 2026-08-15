@@ -186,4 +186,13 @@ import pytest
     expect(prompt).toContain("(?P<");
     expect(prompt).toContain("[^\"]*");
   });
+
+  it("instructs the model to read test credentials unconditionally, never by comparing a Gherkin literal", async () => {
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    await generateCode(featureText, llm, null, naming, [], "es", {});
+
+    const userMessage = llm.receivedCalls[0].find((m) => m.role === "user");
+    expect(userMessage?.content).toContain("Lee esas variables de forma incondicional");
+    expect(userMessage?.content).toContain("if email == ...");
+  });
 });

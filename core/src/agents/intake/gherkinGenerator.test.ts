@@ -109,4 +109,13 @@ describe("generateGherkin", () => {
     await generateGherkin("quiero probar el login", llm, null, "es", []);
     expect(llm.lastPrompt()).toContain("No se pudo capturar evidencia");
   });
+
+  it("tells the model to write a credential-free step for valid logins, and keep invalid credentials literal", async () => {
+    const llm = new FakeLLMProvider(["Feature: Login\n  Scenario: x\n    Given y\n"]);
+    await generateGherkin("quiero probar el login", llm, null, "es", []);
+    const prompt = llm.lastPrompt();
+    expect(prompt).toContain("NO escribas el correo ni la contraseña como texto literal");
+    expect(prompt).toContain("Las credenciales inválidas");
+    expect(prompt).toContain("forman parte del escenario");
+  });
 });

@@ -76,5 +76,7 @@ ${evidenceSection}
 
 ${languageSection}
 
+Para los escenarios que inician sesión con una cuenta válida, NO escribas el correo ni la contraseña como texto literal: escribe un paso sin datos, por ejemplo "Cuando introduzco las credenciales de la cuenta de prueba". El código generado leerá esas credenciales de la configuración del proyecto. Las credenciales inválidas (para probar el error de login) sí se escriben literales: no son secretos y forman parte del escenario.
+
 Responde ÚNICAMENTE con el contenido completo del archivo .feature, empezando por la línea "Feature:". No incluyas explicaciones ni bloques de código markdown.`;
 }

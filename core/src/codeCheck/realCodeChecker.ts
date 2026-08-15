@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { assertSafeRelativePath } from "../util/assertSafeRelativePath.js";
 import { checkLocatorPatterns } from "./locatorLint.js";
 import { checkStepParsers } from "./stepParserLint.js";
+import { checkCredentialSubstitution } from "./credentialLint.js";
 import type { CodeChecker, CodeFile, CodeCheckResult } from "./codeChecker.js";
 
 export class MissingCodeToolError extends Error {
@@ -99,6 +100,11 @@ export function createRealCodeChecker(options?: {
         const stepParserResult = checkStepParsers(files);
         if (!stepParserResult.ok && stepParserResult.errors) {
           errors.push(stepParserResult.errors);
+        }
+
+        const credentialResult = checkCredentialSubstitution(files);
+        if (!credentialResult.ok && credentialResult.errors) {
+          errors.push(credentialResult.errors);
         }
 
         return errors.length === 0 ? { ok: true } : { ok: false, errors: errors.join("\n\n") };
