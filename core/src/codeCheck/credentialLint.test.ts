@@ -14,6 +14,17 @@ describe("checkCredentialSubstitution", () => {
     expect(result.errors).toContain("pages/login_page.py:1");
   });
 
+  it("rejects the multi-line if-body form (comparison and env-read on separate, nearby lines)", () => {
+    const result = checkCredentialSubstitution([
+      {
+        path: "pages/login_page.py",
+        content: 'if email == "user@example.com":\n    email = os.environ["AGENTE_QA_TEST_USERNAME"]\n',
+      },
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pages/login_page.py:1");
+  });
+
   it("accepts reading the credential unconditionally", () => {
     const result = checkCredentialSubstitution([
       { path: "pages/login_page.py", content: 'email = os.environ["AGENTE_QA_TEST_USERNAME"]\n' },
