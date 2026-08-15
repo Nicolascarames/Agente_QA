@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { assertSafeRelativePath } from "../util/assertSafeRelativePath.js";
 import { checkLocatorPatterns } from "./locatorLint.js";
+import { checkStepParsers } from "./stepParserLint.js";
 import type { CodeChecker, CodeFile, CodeCheckResult } from "./codeChecker.js";
 
 export class MissingCodeToolError extends Error {
@@ -93,6 +94,11 @@ export function createRealCodeChecker(options?: {
         const locatorResult = checkLocatorPatterns(files);
         if (!locatorResult.ok && locatorResult.errors) {
           errors.push(locatorResult.errors);
+        }
+
+        const stepParserResult = checkStepParsers(files);
+        if (!stepParserResult.ok && stepParserResult.errors) {
+          errors.push(stepParserResult.errors);
         }
 
         return errors.length === 0 ? { ok: true } : { ok: false, errors: errors.join("\n\n") };
