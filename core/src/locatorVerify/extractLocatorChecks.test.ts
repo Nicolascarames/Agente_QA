@@ -527,4 +527,93 @@ def veo_validacion(login_page, mensaje):
       { method: "get_validation_message", argument: "" },
     ]);
   });
+
+  it("rejects a parsers.re step-def whose regex is invalid in JavaScript, without throwing", () => {
+    // (?P=name) is Python's backreference syntax — our rewrite only handles
+    // the (?P<name>...) opening syntax, so this is left untouched and fails
+    // to compile as a JS RegExp.
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.re(r'veo el color "(?P<color>[^"]*)" repetido (?P=color)'))
+def veo_el_color(login_page, color):
+    expect(login_page.get_color_message(color)).to_be_visible()
+`;
+    const pageObject = `class LoginPage:
+    def get_color_message(self, color):
+        return self.page.get_by_text(color)
+`;
+    const feature = `Feature: Colores
+  Scenario: repetido
+    Then veo el color "rojo" repetido rojo
+`;
+    const generatedFiles = [
+      { path: "tests/test_login.py", content: stepDefs },
+      { path: "pages/login_page.py", content: pageObject },
+    ];
+
+    expect(() => extractLocatorChecks(feature, generatedFiles)).not.toThrow();
+
+    const result = extractLocatorChecks(feature, generatedFiles);
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toContain("veo el color");
+  });
+
+  it("rejects a parsers.re step-def with a bare capturing group alongside a named one, instead of returning a misaligned argument", () => {
+    // (rojo|azul) is a bare capturing group an LLM might write instead of the
+    // non-capturing (?:rojo|azul). If the group count weren't checked, the
+    // named group "mensaje" would wrongly capture match[1] ("rojo") instead
+    // of match[2] (the real message) — a plausible-looking but wrong check.
+    const stepDefs = `from pytest_bdd import parsers, then
+
+@then(parsers.re(r'el color es (rojo|azul) y el mensaje es "(?P<mensaje>[^"]*)"'))
+def veo_color_y_mensaje(login_page, mensaje):
+    expect(login_page.get_message(mensaje)).to_be_visible()
+`;
+    const pageObject = `class LoginPage:
+    def get_message(self, mensaje):
+        return self.page.get_by_text(mensaje)
+`;
+    const feature = `Feature: Colores
+  Scenario: color y mensaje
+    Then el color es rojo y el mensaje es "Operación completada"
+`;
+    const result = extractLocatorChecks(feature, [
+      { path: "tests/test_login.py", content: stepDefs },
+      { path: "pages/login_page.py", content: pageObject },
+    ]);
+    expect(result.checks).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]).toContain("el color es");
+  });
+
+  it("extracts two named groups from a parsers.re step in the correct order", () => {
+    const stepDefs = `from pytest_bdd import parsers, given
+
+@given(parsers.re(r'inicio sesión con usuario "(?P<usuario>[^"]*)" y contraseña "(?P<contraseña>[^"]*)"'))
+def inicio_sesion(login_page, usuario, contraseña):
+    login_page.get_usuario_label(usuario)
+    login_page.get_contraseña_label(contraseña)
+`;
+    const pageObject = `class LoginPage:
+    def get_usuario_label(self, usuario):
+        return self.page.get_by_text(usuario)
+
+    def get_contraseña_label(self, contraseña):
+        return self.page.get_by_text(contraseña)
+`;
+    const feature = `Feature: Login
+  Scenario: doble
+    Given inicio sesión con usuario "ana" y contraseña "1234"
+`;
+    const result = extractLocatorChecks(feature, [
+      { path: "tests/test_login.py", content: stepDefs },
+      { path: "pages/login_page.py", content: pageObject },
+    ]);
+    expect(result.checks).toEqual([
+      { method: "get_usuario_label", argument: "ana" },
+      { method: "get_contraseña_label", argument: "1234" },
+    ]);
+    expect(result.skipped).toEqual([]);
+  });
 });

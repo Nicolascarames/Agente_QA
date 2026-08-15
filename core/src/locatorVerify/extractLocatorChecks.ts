@@ -93,7 +93,7 @@ function parseStepDefs(stepDefsSrc: string): ParsedStepDef[] {
 export function parseStepTemplate(
   template: string,
   kind: "plain" | "parse" | "re"
-): { regex: RegExp; paramNames: string[] } {
+): { regex: RegExp; paramNames: string[] } | null {
   const paramNames: string[] = [];
 
   if (kind === "re") {
@@ -105,7 +105,25 @@ export function parseStepTemplate(
       paramNames.push(name);
       return "(";
     });
-    return { regex: new RegExp(`^${pattern}$`, "u"), paramNames };
+    // The template comes from an LLM and may use Python-only regex syntax
+    // that isn't valid under JS's `u`-flag grammar (inline flags, \A/\Z
+    // anchors, (?P=name) backreferences) — reject rather than throw.
+    let regex: RegExp;
+    let groupCount: number;
+    try {
+      regex = new RegExp(`^${pattern}$`, "u");
+      // Count ALL capturing groups, not just the ones rewritten above from
+      // (?P<name>...) — a bare group the LLM wrote for grouping (e.g.
+      // `(rojo|azul)` instead of the non-capturing `(?:rojo|azul)`) would
+      // otherwise shift every subsequent match[i+1] out of alignment with
+      // paramNames, producing a plausible-looking but WRONG argument instead
+      // of a visible skip.
+      groupCount = (new RegExp(`${pattern}|`, "u").exec("") as RegExpExecArray).length - 1;
+    } catch {
+      return null;
+    }
+    if (groupCount > paramNames.length) return null;
+    return { regex, paramNames };
   }
 
   let pattern = template.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -180,16 +198,31 @@ export function extractLocatorChecks(featureText: string, files: GeneratedFile[]
   const steps = parseFeatureSteps(featureText);
   const dynamicStepDefs = parseStepDefs(stepDefsFile.content).filter((d) => d.kind !== "plain");
 
+  // Compile each dynamic step-def's template exactly once, up front, rather
+  // than re-parsing it per feature step: this is both cheaper and gives a
+  // single place to reject a malformed template with one visible skip
+  // message, instead of one attempted (and discarded) parse per step.
+  const compiledStepDefs: { def: ParsedStepDef; regex: RegExp; paramNames: string[] }[] = [];
+  for (const def of dynamicStepDefs) {
+    const parsed = parseStepTemplate(def.template, def.kind);
+    if (!parsed) {
+      skipped.push(
+        `Definición de paso "${def.template}": no se pudo usar como expresión regular (parsers.re) — puede tener sintaxis no válida en JavaScript, o más grupos de captura que parámetros con nombre (usa (?:...) para agrupar sin capturar). No se puede verificar automáticamente.`
+      );
+      continue;
+    }
+    compiledStepDefs.push({ def, regex: parsed.regex, paramNames: parsed.paramNames });
+  }
+
   for (const step of steps) {
     let matchedDef: ParsedStepDef | null = null;
     let params: Record<string, string> = {};
 
-    for (const def of dynamicStepDefs) {
-      const { regex, paramNames } = parseStepTemplate(def.template, def.kind);
-      const match = step.text.match(regex);
+    for (const compiled of compiledStepDefs) {
+      const match = step.text.match(compiled.regex);
       if (match) {
-        matchedDef = def;
-        paramNames.forEach((name, i) => (params[name] = match[i + 1]));
+        matchedDef = compiled.def;
+        compiled.paramNames.forEach((name, i) => (params[name] = match[i + 1]));
         break;
       }
     }
