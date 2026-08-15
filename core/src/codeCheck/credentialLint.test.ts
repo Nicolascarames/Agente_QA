@@ -38,4 +38,22 @@ describe("checkCredentialSubstitution", () => {
     ]);
     expect(result.ok).toBe(true);
   });
+
+  it("accepts env-read that appears BEFORE an unrelated comparison in a different method", () => {
+    // The anti-pattern is reading env AS A CONSEQUENCE of the comparison,
+    // so env-read comes AFTER (or on the same line). If env-read comes BEFORE,
+    // it's a separate concern — e.g., initialization in __init__, comparison in select_role().
+    const result = checkCredentialSubstitution([
+      {
+        path: "pages/login_page.py",
+        content:
+          'self.base_url = os.environ["AGENTE_QA_APP_URL"]\n' +
+          "pass\n" +
+          "pass\n" +
+          'if role == "admin":\n' +
+          '    self.page.get_by_role("option", name="Admin").click()\n',
+      },
+    ]);
+    expect(result.ok).toBe(true);
+  });
 });

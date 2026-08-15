@@ -29,7 +29,7 @@ export function checkCredentialSubstitution(files: CodeFile[]): CodeCheckResult 
     lines.forEach((line, index) => {
       if (isComment(line) || !LITERAL_COMPARISON.test(line)) return;
 
-      for (let offset = -WINDOW; offset <= WINDOW; offset++) {
+      for (let offset = 0; offset <= WINDOW; offset++) {
         const otherIndex = index + offset;
         if (otherIndex < 0 || otherIndex >= lines.length) continue;
         const otherLine = lines[otherIndex];
