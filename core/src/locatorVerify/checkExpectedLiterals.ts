@@ -19,7 +19,8 @@ export function candidateTexts(screens: ScreenEvidence[]): string[] {
   for (const screen of screens) {
     for (const line of screen.ariaSnapshot.split("\n")) {
       for (const quoted of line.matchAll(/"([^"]+)"/g)) found.push(quoted[1]);
-      const text = line.match(/^- text:\s*(.+)$/);
+      const trimmed = line.trim();
+      const text = trimmed.match(/^- text:\s*(.+)$/);
       if (text) found.push(text[1].trim());
     }
   }

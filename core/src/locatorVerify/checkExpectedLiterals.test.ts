@@ -111,4 +111,53 @@ describe("checkExpectedLiterals", () => {
     // Should NOT extract the literal "text:" as a candidate
     expect(candidates).not.toContain("text:");
   });
+
+  it("extracts indented text nodes from realistic nested snapshots", () => {
+    const nestedSnapshots: ScreenEvidence[] = [
+      {
+        stepText: "home page with nested content",
+        url: "https://app.test/",
+        ariaSnapshot: `- main:
+  - heading "Welcome to BabIA" [level=1]
+  - text: Registra el sueño de tu bebé y sigue su evolución.
+  - button "Continuar"
+- footer:
+  - text: Copyright 2024`,
+      },
+    ];
+
+    const candidates = candidateTexts(nestedSnapshots);
+
+    // Should extract indented text nodes
+    expect(candidates).toContain("Registra el sueño de tu bebé y sigue su evolución.");
+    expect(candidates).toContain("Copyright 2024");
+    // Should extract quoted accessible names
+    expect(candidates).toContain("Welcome to BabIA");
+    expect(candidates).toContain("Continuar");
+  });
+
+  it("does not emit garbled candidates from indented listitem with text: label", () => {
+    const indentedWithLabel: ScreenEvidence[] = [
+      {
+        stepText: "screen with indented listitem containing Alt text label",
+        url: "https://app.test/",
+        ariaSnapshot: `- main:
+  - listitem "Alt text: photo of a cat"
+  - text: Image metadata loaded.`,
+      },
+    ];
+
+    const candidates = candidateTexts(indentedWithLabel);
+
+    // Should extract the quoted name correctly
+    expect(candidates).toContain("Alt text: photo of a cat");
+    // Should extract the text node correctly
+    expect(candidates).toContain("Image metadata loaded.");
+    // Should NOT extract garbled fragment with trailing quote
+    expect(candidates).not.toContain('photo of a cat"');
+    // Should NOT match "text:" anywhere in the listitem line
+    candidates.forEach((c) => {
+      expect(c).not.toMatch(/^photo of a cat/);
+    });
+  });
 });
