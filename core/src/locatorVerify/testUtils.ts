@@ -5,7 +5,7 @@ import type { ExplorationCredentials } from "../siteExplorer/siteExplorer.js";
 export interface FakeLocatorVerifierCall {
   files: GeneratedFile[];
   checks: LocatorCheck[];
-  baseUrl: string;
+  urls: string[];
   credentials: ExplorationCredentials | undefined;
 }
 
@@ -20,10 +20,10 @@ export class FakeLocatorVerifier implements LocatorVerifier {
   async verify(
     files: GeneratedFile[],
     checks: LocatorCheck[],
-    baseUrl: string,
+    urls: string[],
     credentials: ExplorationCredentials | undefined
   ): Promise<LocatorVerificationResult> {
-    this.receivedCalls.push({ files, checks, baseUrl, credentials });
+    this.receivedCalls.push({ files, checks, urls, credentials });
     const next = this.results.shift();
     if (next === undefined) {
       throw new Error("FakeLocatorVerifier: no hay más resultados programados");

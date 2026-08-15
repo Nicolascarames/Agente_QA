@@ -84,12 +84,12 @@ export function withLocatorVerifierSpinner(verifier: LocatorVerifier): LocatorVe
     async verify(
       files: GeneratedFile[],
       checks: LocatorCheck[],
-      baseUrl: string,
+      urls: string[],
       credentials: ExplorationCredentials | undefined
     ): Promise<LocatorVerificationResult> {
       const spinner = ora(`Verificando ${checks.length} locator(s) contra la aplicación real...`).start();
       try {
-        const result = await verifier.verify(files, checks, baseUrl, credentials);
+        const result = await verifier.verify(files, checks, urls, credentials);
         if (result.ok) {
           spinner.succeed("Locators verificados sin ambigüedad.");
         } else {

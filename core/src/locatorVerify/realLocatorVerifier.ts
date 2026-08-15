@@ -68,12 +68,12 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
     async verify(
       files: GeneratedFile[],
       checks: LocatorCheck[],
-      baseUrl: string,
+      urls: string[],
       credentials: ExplorationCredentials | undefined
     ): Promise<LocatorVerificationResult> {
       const env: NodeJS.ProcessEnv = {
         ...process.env,
-        AGENTE_QA_APP_URL: baseUrl,
+        AGENTE_QA_APP_URL: urls[0] ?? "",
         ...(credentials
           ? { AGENTE_QA_TEST_USERNAME: credentials.username, AGENTE_QA_TEST_PASSWORD: credentials.password }
           : {}),
@@ -110,7 +110,7 @@ export function createRealLocatorVerifier(options?: { pythonCommand?: string }):
           await fs.writeFile(target, file.content, "utf-8");
         }
 
-        const script = buildVerificationScript(files, checks, baseUrl);
+        const script = buildVerificationScript(files, checks, urls);
         const scriptPath = path.join(tmpDir, "_verify_locators.py");
         await fs.writeFile(scriptPath, script, "utf-8");
 

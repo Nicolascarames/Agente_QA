@@ -21,7 +21,7 @@ const hasPytestStack = hasPython && pytestStackAvailable("python");
 describe("realLocatorVerifier missing tool handling", () => {
   it("throws MissingLocatorVerifierToolError when the python command doesn't exist", async () => {
     const verifier = createRealLocatorVerifier({ pythonCommand: "agente-qa-definitely-missing-python" });
-    await expect(verifier.verify([], [], "https://example.com", undefined)).rejects.toThrow(
+    await expect(verifier.verify([], [], ["https://example.com"], undefined)).rejects.toThrow(
       MissingLocatorVerifierToolError
     );
   });
@@ -29,7 +29,7 @@ describe("realLocatorVerifier missing tool handling", () => {
   it("throws MissingLocatorVerifierToolError when pytest/pytest-bdd/pytest-playwright/pytest-html aren't importable", async () => {
     if (!hasPython || hasPytestStack) return; // can't reproduce "modules missing" without an interpreter that actually lacks them
     const verifier = createRealLocatorVerifier({ pythonCommand: "python" });
-    await expect(verifier.verify([], [], "https://example.com", undefined)).rejects.toThrow(
+    await expect(verifier.verify([], [], ["https://example.com"], undefined)).rejects.toThrow(
       MissingLocatorVerifierToolError
     );
   });
@@ -84,7 +84,7 @@ describe.skipIf(!hasPytestStack)(
       const result = await realLocatorVerifier.verify(
         generatedFiles(),
         [{ method: "get_button", argument: "Log in" }],
-        baseUrl,
+        [baseUrl],
         undefined
       );
 
@@ -108,7 +108,7 @@ describe.skipIf(!hasPytestStack)(
       const result = await realLocatorVerifier.verify(
         generatedFiles(),
         [{ method: "get_button", argument: "Log in" }],
-        baseUrl,
+        [baseUrl],
         undefined
       );
 
@@ -116,7 +116,7 @@ describe.skipIf(!hasPytestStack)(
     }, 20000);
 
     it("returns ok:true immediately without launching a browser when there are no checks to verify", async () => {
-      const result = await realLocatorVerifier.verify(generatedFiles(), [], "https://example.com", undefined);
+      const result = await realLocatorVerifier.verify(generatedFiles(), [], ["https://example.com"], undefined);
       expect(result).toEqual({ ok: true });
     });
 
@@ -136,7 +136,7 @@ describe.skipIf(!hasPytestStack)(
       const result = await realLocatorVerifier.verify(
         generatedFiles(),
         [{ method: "get_button", argument: "Log in" }],
-        baseUrl,
+        [baseUrl],
         undefined
       );
 
@@ -169,7 +169,7 @@ describe.skipIf(!hasPytestStack)(
       ];
 
       await expect(
-        realLocatorVerifier.verify(files, [{ method: "get_button", argument: "Log in" }], baseUrl, undefined)
+        realLocatorVerifier.verify(files, [{ method: "get_button", argument: "Log in" }], [baseUrl], undefined)
       ).rejects.toThrow(MissingLocatorVerifierToolError);
     }, 20000);
 
@@ -211,7 +211,7 @@ class LoginPage:
       const result = await realLocatorVerifier.verify(
         files,
         [{ method: "get_button", argument: "Log in" }],
-        baseUrl,
+        [baseUrl],
         undefined
       );
 

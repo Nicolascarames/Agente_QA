@@ -1,7 +1,7 @@
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
 import type { LocatorCheck } from "./locatorVerifier.js";
 
-export function buildVerificationScript(files: GeneratedFile[], checks: LocatorCheck[], baseUrl: string): string {
+export function buildVerificationScript(files: GeneratedFile[], checks: LocatorCheck[], urls: string[]): string {
   const pageObjectFile = files.find((f) => f.path.startsWith("pages/"));
   const pageObjectPath = pageObjectFile ? pageObjectFile.path : "";
 
@@ -11,7 +11,7 @@ import json
 
 from playwright.sync_api import sync_playwright
 
-BASE_URL = ${JSON.stringify(baseUrl)}
+URLS = ${JSON.stringify(urls, null, 2)}
 CHECKS = ${JSON.stringify(checks, null, 2)}
 PAGE_OBJECT_PATH = ${JSON.stringify(pageObjectPath)}
 
@@ -30,10 +30,14 @@ def load_page_object_classes(module_path):
 
 
 def main():
+    results = [
+        {"method": check["method"], "argument": check["argument"], "count": 0, "matches": []}
+        for check in CHECKS
+    ]
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto(BASE_URL, wait_until="networkidle")
 
         classes = load_page_object_classes(PAGE_OBJECT_PATH)
         instances = []
@@ -43,43 +47,50 @@ def main():
             except Exception:
                 pass
 
-        for check in CHECKS:
-            method_name = check["method"]
-            argument = check["argument"]
-            target = None
-            for instance in instances:
-                if hasattr(instance, method_name):
-                    target = getattr(instance, method_name)
-                    break
-            if target is None:
-                print(json.dumps({
-                    "method": method_name,
-                    "argument": argument,
-                    "error": f"no se encontro el metodo {method_name} en ningun Page Object generado",
-                }))
-                continue
-
+        for url in URLS:
+            # networkidle as a goto condition hangs for the full 30s default on
+            # apps with a persistent connection (websockets, chat widgets,
+            # analytics). Load first, then give the hydration a short window.
+            page.goto(url, wait_until="load")
             try:
-                locator = target(argument)
-                count = locator.count()
-                entry = {"method": method_name, "argument": argument, "count": count}
-                if count != 1:
-                    matches = []
-                    for element in locator.all()[:5]:
-                        try:
-                            matches.append(element.evaluate("el => el.outerHTML")[:200])
-                        except Exception:
-                            matches.append("<no se pudo leer outerHTML>")
-                    entry["matches"] = matches
-                print(json.dumps(entry))
-            except Exception as e:
-                print(json.dumps({
-                    "method": method_name,
-                    "argument": argument,
-                    "error": f"error al verificar el locator: {e}",
-                }))
+                page.wait_for_load_state("networkidle", timeout=3000)
+            except Exception:
+                pass
+
+            for index, check in enumerate(CHECKS):
+                method_name = check["method"]
+                argument = check["argument"]
+                target = None
+                for instance in instances:
+                    if hasattr(instance, method_name):
+                        target = getattr(instance, method_name)
+                        break
+                if target is None:
+                    results[index]["error"] = (
+                        f"no se encontro el metodo {method_name} en ningun Page Object generado"
+                    )
+                    continue
+
+                try:
+                    locator = target(argument)
+                    count = locator.count()
+                    if count > results[index]["count"]:
+                        results[index]["count"] = count
+                        matches = []
+                        if count != 1:
+                            for element in locator.all()[:5]:
+                                try:
+                                    matches.append(element.evaluate("el => el.outerHTML")[:200])
+                                except Exception:
+                                    matches.append("<no se pudo leer outerHTML>")
+                        results[index]["matches"] = matches
+                except Exception as e:
+                    results[index]["error"] = f"error al verificar el locator: {e}"
 
         browser.close()
+
+    for entry in results:
+        print(json.dumps(entry))
 
 
 if __name__ == "__main__":

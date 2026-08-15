@@ -16,7 +16,7 @@ export interface LocatorVerifier {
   verify(
     files: GeneratedFile[],
     checks: LocatorCheck[],
-    baseUrl: string,
+    urls: string[],
     credentials: ExplorationCredentials | undefined
   ): Promise<LocatorVerificationResult>;
 }

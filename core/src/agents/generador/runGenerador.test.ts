@@ -692,7 +692,7 @@ class LoginPage:
     // Should use the FIRST captured screen's URL (the initial page state,
     // matching the harness's own scope), not the second/post-action screen
     // and not the raw baseUrl.
-    expect(verifier.receivedCalls[0].baseUrl).toBe("https://example.com/login");
+    expect(verifier.receivedCalls[0].urls).toEqual(["https://example.com/login"]);
   });
 
   it("falls back to the raw baseUrl for verification when the explorer returned no screens", async () => {
@@ -739,7 +739,7 @@ class LoginPage:
       callbacks: cb,
     });
 
-    expect(verifier.receivedCalls[0].baseUrl).toBe("https://example.com");
+    expect(verifier.receivedCalls[0].urls).toEqual(["https://example.com"]);
   });
 
   it("retries when the verifier rejects a locator, feeding its error back as feedback", async () => {

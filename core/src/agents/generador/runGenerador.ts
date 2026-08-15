@@ -111,7 +111,7 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     if (checks.length === 0) break;
 
     callbacks.onVerificationStep(`Verificando ${checks.length} locator(s) contra la aplicación real...`);
-    const verification = await verifier.verify(files, checks, verificationUrl, credentials);
+    const verification = await verifier.verify(files, checks, [verificationUrl], credentials);
     if (verification.warnings) callbacks.onVerificationStep(verification.warnings);
     if (verification.ok) break;
 
