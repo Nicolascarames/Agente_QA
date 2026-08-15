@@ -15,7 +15,7 @@ describe("buildVerificationScript", () => {
       ["https://example.com"]
     );
 
-    expect(script).toContain('"https://example.com"');
+    expect(script).toContain('URLS = [\n  "https://example.com"\n]');
     expect(script).toContain('"method": "get_button"');
     expect(script).toContain('"argument": "Log In"');
     expect(script).toContain('PAGE_OBJECT_PATH = "pages/login_page.py"');
