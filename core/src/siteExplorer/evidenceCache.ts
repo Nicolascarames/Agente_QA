@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ScreenEvidence } from "./siteExplorer.js";
@@ -86,6 +86,13 @@ export async function writeCachedEvidence(
 
   const payload: CacheFile = { capturedAt: now.toISOString(), screens };
   const filePath = cacheFilePath(projectRoot, key);
-  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), { encoding: "utf-8", mode: 0o600 });
-  await fs.chmod(filePath, 0o600);
+  // Write to a temp file in the same directory, then rename into place. rename()
+  // is atomic on the same filesystem, so a process killed mid-write can never
+  // leave a torn/partial JSON file at filePath for a later readCachedEvidence
+  // call to trip over — without this, a corrupted entry throws a TypeError out
+  // of the literal pre-check and crashes both the intake and generador commands.
+  const tmpPath = path.join(dirPath, `.exploration-${key}.${randomUUID()}.tmp`);
+  await fs.writeFile(tmpPath, JSON.stringify(payload, null, 2), { encoding: "utf-8", mode: 0o600 });
+  await fs.chmod(tmpPath, 0o600);
+  await fs.rename(tmpPath, filePath);
 }

@@ -75,6 +75,16 @@ describe("evidence cache round-trip", () => {
     expect(await fs.readFile(path.join(dir, ".gitignore"), "utf-8")).toBe("*\n");
   });
 
+  it("leaves no stray temp file behind after an atomic write (write-then-rename, not a direct write)", async () => {
+    await writeCachedEvidence(tmpProject, testKey, screens);
+    const dir = path.join(tmpProject, ".agente-qa", "cache");
+    const entries = await fs.readdir(dir);
+    // Only the final JSON file and the .gitignore — no leftover ".tmp" file
+    // from the temp-file-then-rename write, which is what makes a write atomic
+    // (a process killed mid-write can never leave a torn file at the real path).
+    expect(entries.sort()).toEqual([".gitignore", `exploration-${testKey}.json`]);
+  });
+
   it("returns null on a corrupted cache file instead of throwing", async () => {
     const dir = path.join(tmpProject, ".agente-qa", "cache");
     await fs.mkdir(dir, { recursive: true });
