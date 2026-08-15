@@ -110,6 +110,26 @@ describe("generateGherkin", () => {
     expect(llm.lastPrompt()).toContain("No se pudo capturar evidencia");
   });
 
+  it("scopes the language section to step wording only, and places the evidence rule after it so it's the last word the model reads", async () => {
+    const llm = new FakeLLMProvider(["Feature: Login\n  Scenario: x\n    Given y\n"]);
+    await generateGherkin("quiero probar el login", llm, null, "es", [
+      { stepText: "pantalla en /login", url: "https://app.test/login", ariaSnapshot: '- heading "Iniciar sesión"' },
+    ]);
+    const prompt = llm.lastPrompt();
+
+    // appLanguage no longer claims to govern quoted expected text.
+    expect(prompt).toContain("Esto rige SOLO cómo redactas la prosa de los pasos");
+    expect(prompt).toContain("NO uses esto como fuente de qué texto esperar entre comillas");
+
+    // The evidence rule comes AFTER the language section, so it's the more
+    // recent (and therefore binding) instruction when both discuss quoted text.
+    const languageIndex = prompt.indexOf("Esto rige SOLO cómo redactas la prosa de los pasos");
+    const evidenceIndex = prompt.indexOf("REGLA OBLIGATORIA sobre los textos esperados");
+    expect(languageIndex).toBeGreaterThan(-1);
+    expect(evidenceIndex).toBeGreaterThan(-1);
+    expect(languageIndex).toBeLessThan(evidenceIndex);
+  });
+
   it("tells the model to write a credential-free step for valid logins, and keep invalid credentials literal", async () => {
     const llm = new FakeLLMProvider(["Feature: Login\n  Scenario: x\n    Given y\n"]);
     await generateGherkin("quiero probar el login", llm, null, "es", []);

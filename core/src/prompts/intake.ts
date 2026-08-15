@@ -51,7 +51,7 @@ ${matchedPattern.gherkinTemplate}
     : "No hay ningún patrón conocido aplicable: escribe el plan desde cero.";
 
   const languageLabel = appLanguage === "en" ? "inglés" : "español";
-  const languageSection = `La interfaz real de la aplicación bajo test está en ${languageLabel}. Los textos visibles que menciones o esperes (botones, mensajes, etiquetas, validaciones) deben asumirse en ese idioma — no los traduzcas al castellano aunque el resto de esta conversación esté en castellano.`;
+  const languageSection = `La interfaz real de la aplicación bajo test está en ${languageLabel}. Esto rige SOLO cómo redactas la prosa de los pasos (nombres de acciones, elementos, descripciones sin comillas) — no los traduzcas al castellano aunque el resto de esta conversación esté en castellano. NO uses esto como fuente de qué texto esperar entre comillas: la aplicación puede ser bilingüe (por ejemplo, login en un idioma y panel interno en otro) y un único valor global no puede acertar siempre. Para cualquier texto entre comillas, la única fuente de verdad es la evidencia real de abajo.`;
 
   const evidenceSection =
     evidence.length > 0
@@ -72,9 +72,9 @@ ${text}
 
 ${patternSection}
 
-${evidenceSection}
-
 ${languageSection}
+
+${evidenceSection}
 
 Para los escenarios que inician sesión con una cuenta válida, NO escribas el correo ni la contraseña como texto literal: escribe un paso sin datos, por ejemplo "Cuando introduzco las credenciales de la cuenta de prueba". El código generado leerá esas credenciales de la configuración del proyecto. Las credenciales inválidas (para probar el error de login) sí se escriben literales: no son secretos y forman parte del escenario.
 
