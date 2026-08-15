@@ -89,6 +89,37 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
       if (result.ok) throw new Error("unreachable");
       expect(result.error).toContain("AGENTE_QA_TEST_USERNAME");
     });
+
+    it.skipIf(!chromiumAvailable)(
+      "captures a failed-login screen when the pattern declares a negative probe",
+      async () => {
+        const pattern: Pattern = {
+          name: "login",
+          description: "login",
+          gherkinTemplate: "Feature: Login\n",
+          pageObjectTemplate: "",
+          navigationHints: {
+            routeCandidates: ["/login"],
+            requiresLogin: true,
+            negativeProbe: { kind: "invalid-credentials" },
+          },
+        };
+        const explorer = createRealSiteExplorer(new FakeLLMProvider([]));
+        const result = await explorer.explore(
+          baseInput({ baseUrl: app.url, matchedPattern: pattern, credentials: FIXTURE_CREDENTIALS })
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        const probe = result.screens.find((s) => s.stepText.includes("credenciales incorrectas"));
+        expect(probe).toBeDefined();
+        expect(probe?.ariaSnapshot).toContain("Credenciales inválidas");
+        // the real login still happened afterwards
+        expect(result.screens.some((s) => s.stepText.includes("tras iniciar sesión"))).toBe(true);
+        // the probe never leaks the real password
+        expect(probe?.ariaSnapshot).not.toContain(FIXTURE_CREDENTIALS.password);
+      }
+    );
   });
 
   describe("spa app (login only reachable at the root — the exact bug this feature fixes)", () => {

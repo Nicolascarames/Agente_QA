@@ -166,6 +166,36 @@ async function performRealLogin(
   return captureEvidence(page, "tras iniciar sesión con las credenciales de test", credentials);
 }
 
+// A deliberately wrong password, fixed and never derived from the real one, so
+// the probe can never accidentally submit a valid credential. Only ever used
+// once per exploration: some apps lock accounts after N failed attempts, which
+// is why the probe is opt-in per pattern instead of global.
+const INVALID_PROBE_PASSWORD = "agente-qa-invalid-password";
+
+async function performNegativeLoginProbe(
+  page: Page,
+  credentials: ExplorationCredentials
+): Promise<ScreenEvidence | null> {
+  const emailField = page.getByLabel(LOGIN_FIELD_LABEL).first();
+  const passwordField = page.getByLabel(PASSWORD_FIELD_LABEL).first();
+  const submitButton = page.getByRole("button", { name: SUBMIT_BUTTON_NAME }).first();
+
+  if ((await emailField.count()) === 0 || (await passwordField.count()) === 0) {
+    return null;
+  }
+
+  await emailField.fill(credentials.username);
+  await passwordField.fill(INVALID_PROBE_PASSWORD);
+  await submitButton.click();
+  await page.waitForLoadState("networkidle").catch(() => {});
+
+  return captureEvidence(
+    page,
+    "tras un intento de inicio de sesión con credenciales incorrectas",
+    credentials
+  );
+}
+
 async function exploreByHints(
   page: Page,
   input: ExplorationInput,
@@ -207,6 +237,14 @@ async function exploreByHints(
           error: `La pantalla de login en ${candidate} no pertenece al origen configurado en AGENTE_QA_APP_URL (posible redirección a un proveedor externo de login); no se van a escribir credenciales de test fuera de ese origen.`,
         };
       }
+      if (hints.negativeProbe) {
+        onStep("Provocando un error de credenciales para capturar el mensaje real...");
+        const probe = await performNegativeLoginProbe(page, input.credentials);
+        if (probe) screens.push(probe);
+        // back to a clean login screen before the real attempt
+        await page.goto(url).catch(() => {});
+      }
+
       const postLogin = await performRealLogin(page, input.credentials);
       if (!postLogin) {
         onStep(`No se encontraron campos de login en ${candidate} para iniciar sesión de verdad.`);
