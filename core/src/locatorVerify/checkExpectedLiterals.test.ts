@@ -28,14 +28,29 @@ describe("checkExpectedLiterals", () => {
     expect(checkExpectedLiterals([{ method: "get_button", argument: "Log In" }], screens)).toEqual([]);
   });
 
-  it("reports a literal missing from every screen, with the closest real text", () => {
+  it("reports a cross-language literal with null closest, lists actual texts in message", () => {
     const missing = checkExpectedLiterals(
       [{ method: "get_heading", argument: "Dream and Growth" }],
       screens
     );
     expect(missing).toHaveLength(1);
     expect(missing[0].argument).toBe("Dream and Growth");
-    expect(missing[0].closest).not.toBeNull();
+    expect(missing[0].closest).toBeNull();
+
+    const candidates = ["Welcome back", "Log in", "Authentication failed. Please try again.", "Sueño y crecimiento"];
+    const message = formatMissingLiterals(missing, candidates);
+    expect(message).toContain("Dream and Growth");
+    expect(message).toContain("Sueño y crecimiento");
+  });
+
+  it("finds a close match when expected text is a near-miss (e.g., Log In Now vs Log in)", () => {
+    const missing = checkExpectedLiterals(
+      [{ method: "get_button", argument: "Log In Now" }],
+      screens
+    );
+    expect(missing).toHaveLength(1);
+    expect(missing[0].argument).toBe("Log In Now");
+    expect(missing[0].closest).toBe("Log in");
   });
 
   it("returns nothing when there is no evidence to compare against", () => {

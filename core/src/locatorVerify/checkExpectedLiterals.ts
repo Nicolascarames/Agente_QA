@@ -74,18 +74,31 @@ export function checkExpectedLiterals(
         closest = candidate;
       }
     }
-    missing.push({ method: check.method, argument: check.argument, closest: best >= 0.06 ? closest : null });
+    missing.push({ method: check.method, argument: check.argument, closest: best >= 0.2 ? closest : null });
   }
 
   return missing;
 }
 
-export function formatMissingLiterals(missing: MissingLiteral[]): string {
+export function formatMissingLiterals(missing: MissingLiteral[], candidates: string[] = []): string {
   return missing
     .map((item) => {
-      const suggestion = item.closest
-        ? ` El texto real más parecido en la aplicación es "${item.closest}": usa ese, o reescribe el paso sin literal.`
-        : " No hay ningún texto parecido en la aplicación: reescribe el paso sin literal.";
+      let suggestion: string;
+      if (item.closest) {
+        suggestion = ` El texto real más parecido en la aplicación es "${item.closest}": usa ese, o reescribe el paso sin literal.`;
+      } else if (candidates.length > 0) {
+        const seen = new Set<string>();
+        const unique = candidates.filter((c) => {
+          if (seen.has(c)) return false;
+          seen.add(c);
+          return true;
+        });
+        const capped = unique.slice(0, 8);
+        const listed = capped.map((c) => `"${c}"`).join(", ");
+        suggestion = ` La aplicación muestra estos textos en las pantallas verificadas: ${listed}. Reescribe el paso sin literal o ajusta el texto esperado.`;
+      } else {
+        suggestion = " No hay ningún texto capturado en la aplicación: reescribe el paso sin literal.";
+      }
       return `El archivo .feature espera el texto "${item.argument}" (locator ${item.method}), que no aparece en ninguna de las pantallas verificadas de la aplicación real.${suggestion}`;
     })
     .join("\n\n");
