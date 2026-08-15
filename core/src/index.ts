@@ -48,7 +48,7 @@ export { checkAmbiguity } from "./agents/intake/ambiguityChecker.js";
 export { generateGherkin } from "./agents/intake/gherkinGenerator.js";
 export { writeFeatureFile } from "./agents/intake/writeFeatureFile.js";
 export { runIntake } from "./agents/intake/runIntake.js";
-export type { IntakeCallbacks } from "./agents/intake/runIntake.js";
+export type { IntakeCallbacks, RunIntakeOptions } from "./agents/intake/runIntake.js";
 
 export { parseFeatureHeader } from "./agents/generador/parseFeatureHeader.js";
 export { generateCode } from "./agents/generador/codeGenerator.js";

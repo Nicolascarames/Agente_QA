@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { FakeLLMProvider } from "../../llm/testUtils.js";
+import { FakeSiteExplorer } from "../../siteExplorer/testUtils.js";
+import { evidenceCacheKey, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
 import { runIntake, type IntakeCallbacks } from "./runIntake.js";
 import type { Pattern } from "../../schemas/pattern.js";
 
@@ -15,9 +17,16 @@ const loginPattern: Pattern = {
 
 describe("runIntake", () => {
   let tmpProject: string;
+  let callbacks: IntakeCallbacks;
 
   beforeEach(async () => {
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-intake-"));
+    callbacks = {
+      askUser: vi.fn(),
+      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
+      confirmOverwrite: vi.fn().mockResolvedValue(true),
+      onExplorationStep: vi.fn(),
+    };
   });
 
   afterEach(async () => {
@@ -30,22 +39,20 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
     ]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
 
-    const callbacks: IntakeCallbacks = {
-      askUser: vi.fn(),
-      presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      confirmOverwrite: vi.fn().mockResolvedValue(true),
-    };
-
-    const { plan, filePath } = await runIntake(
-      "quiero probar el login",
+    const { plan, filePath } = await runIntake({
+      initialText: "quiero probar el login",
       llm,
-      [loginPattern],
-      tmpProject,
-      "tests",
-      "es",
-      callbacks
-    );
+      patterns: [loginPattern],
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "es",
+      routes: {},
+      callbacks,
+    });
 
     expect(plan.fileName).toBe("login.feature");
     expect(plan.matchedPatternName).toBe("login");
@@ -64,25 +71,26 @@ describe("runIntake", () => {
       "Feature: Caso custom\n  Scenario: x\n    Given a\n",
       "Feature: Caso custom v2\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
     ]);
+    const explorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
 
-    const callbacks: IntakeCallbacks = {
-      askUser: vi.fn().mockResolvedValue("Chrome"),
-      presentForApproval: vi
-        .fn()
-        .mockResolvedValueOnce({ approved: false, feedback: "añade el resultado esperado" })
-        .mockResolvedValueOnce({ approved: true }),
-      confirmOverwrite: vi.fn().mockResolvedValue(true),
-    };
+    callbacks.askUser = vi.fn().mockResolvedValue("Chrome");
+    callbacks.presentForApproval = vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false, feedback: "añade el resultado esperado" })
+      .mockResolvedValueOnce({ approved: true });
 
-    const { plan, filePath } = await runIntake(
-      "quiero probar algo",
+    const { plan, filePath } = await runIntake({
+      initialText: "quiero probar algo",
       llm,
-      [],
-      tmpProject,
-      "tests",
-      "es",
-      callbacks
-    );
+      patterns: [],
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "es",
+      routes: {},
+      callbacks,
+    });
 
     expect(callbacks.askUser).toHaveBeenCalledWith("¿Qué navegador?");
     expect(plan.featureText).toContain("Caso custom v2");
@@ -109,20 +117,25 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
     ]);
+    const firstRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const firstRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
+      onExplorationStep: vi.fn(),
     };
-    const { plan: firstPlan, filePath } = await runIntake(
-      "quiero probar el login",
-      firstRunLlm,
-      [loginPattern],
-      tmpProject,
-      "tests",
-      "es",
-      firstRunCallbacks
-    );
+    const { plan: firstPlan, filePath } = await runIntake({
+      initialText: "quiero probar el login",
+      llm: firstRunLlm,
+      patterns: [loginPattern],
+      explorer: firstRunExplorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "es",
+      routes: {},
+      callbacks: firstRunCallbacks,
+    });
     expect(firstRunCallbacks.confirmOverwrite).not.toHaveBeenCalled();
     const originalContent = await fs.readFile(filePath, "utf-8");
     expect(originalContent).toContain(firstPlan.featureText);
@@ -134,22 +147,27 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: y\n    Given a2\n    When b2\n    Then c2\n",
     ]);
+    const rejectRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const confirmOverwriteReject = vi.fn().mockResolvedValue(false);
     const rejectRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
       confirmOverwrite: confirmOverwriteReject,
+      onExplorationStep: vi.fn(),
     };
     await expect(
-      runIntake(
-        "quiero probar el login otra vez",
-        rejectRunLlm,
-        [loginPattern],
-        tmpProject,
-        "tests",
-        "es",
-        rejectRunCallbacks
-      )
+      runIntake({
+        initialText: "quiero probar el login otra vez",
+        llm: rejectRunLlm,
+        patterns: [loginPattern],
+        explorer: rejectRunExplorer,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://app.test/",
+        appLanguage: "es",
+        routes: {},
+        callbacks: rejectRunCallbacks,
+      })
     ).rejects.toThrow(/Cancelado/);
     expect(confirmOverwriteReject).toHaveBeenCalledWith(filePath);
     expect(await fs.readFile(filePath, "utf-8")).toBe(originalContent);
@@ -160,21 +178,119 @@ describe("runIntake", () => {
       '{"matchedPatternName": "login"}',
       "Feature: Login\n  Scenario: z\n    Given a3\n    When b3\n    Then c3\n",
     ]);
+    const acceptRunExplorer = new FakeSiteExplorer([{ ok: true, screens: [] }]);
     const acceptRunCallbacks: IntakeCallbacks = {
       askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
       confirmOverwrite: vi.fn().mockResolvedValue(true),
+      onExplorationStep: vi.fn(),
     };
-    const { plan: thirdPlan } = await runIntake(
-      "quiero probar el login de nuevo",
-      acceptRunLlm,
-      [loginPattern],
-      tmpProject,
-      "tests",
-      "es",
-      acceptRunCallbacks
-    );
+    const { plan: thirdPlan } = await runIntake({
+      initialText: "quiero probar el login de nuevo",
+      llm: acceptRunLlm,
+      patterns: [loginPattern],
+      explorer: acceptRunExplorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "es",
+      routes: {},
+      callbacks: acceptRunCallbacks,
+    });
     expect(thirdPlan.featureText).not.toBe(originalContent);
     expect(await fs.readFile(filePath, "utf-8")).toContain(thirdPlan.featureText);
+  });
+
+  it("explores the app and feeds the evidence into the Gherkin prompt", async () => {
+    // patterns: [] makes matchPattern short-circuit with zero LLM calls (see
+    // the "ambiguous + no match" test above), so only 2 real calls happen:
+    // ambiguity check and Gherkin generation — no matchedPatternName response.
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const explorer = new FakeSiteExplorer([
+      {
+        ok: true,
+        screens: [
+          { stepText: "pantalla en /", url: "https://app.test/", ariaSnapshot: '- heading "Welcome back"' },
+        ],
+      },
+    ]);
+    const steps: string[] = [];
+
+    await runIntake({
+      initialText: "probar el login",
+      llm,
+      patterns: [],
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "en",
+      routes: {},
+      callbacks: { ...callbacks, onExplorationStep: (m) => steps.push(m) },
+    });
+
+    expect(llm.lastPrompt()).toContain("Welcome back");
+  });
+
+  it("continues without evidence when the exploration fails, and says so", async () => {
+    // patterns: [] makes matchPattern short-circuit with zero LLM calls (see
+    // the "ambiguous + no match" test above), so only 2 real calls happen:
+    // ambiguity check and Gherkin generation — no matchedPatternName response.
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const explorer = new FakeSiteExplorer([{ ok: false, error: "la app no responde" }]);
+    const steps: string[] = [];
+
+    await runIntake({
+      initialText: "probar el login",
+      llm,
+      patterns: [],
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "en",
+      routes: {},
+      callbacks: { ...callbacks, onExplorationStep: (m) => steps.push(m) },
+    });
+
+    expect(steps.join("\n")).toContain("la app no responde");
+    expect(llm.lastPrompt()).toContain("No se pudo capturar evidencia");
+  });
+
+  it("reuses cached evidence instead of exploring again", async () => {
+    await writeCachedEvidence(
+      tmpProject,
+      evidenceCacheKey({ appUrl: "https://app.test/", patternName: null, routes: {} }),
+      [{ stepText: "cacheada", url: "https://app.test/", ariaSnapshot: '- heading "Desde caché"' }]
+    );
+    // patterns: [] makes matchPattern short-circuit with zero LLM calls (see
+    // the "ambiguous + no match" test above), so only 2 real calls happen:
+    // ambiguity check and Gherkin generation — no matchedPatternName response.
+    const llm = new FakeLLMProvider([
+      JSON.stringify({ ambiguous: false, questions: [] }),
+      "Feature: Login\n  Scenario: x\n    Given y\n",
+    ]);
+    const explorer = new FakeSiteExplorer([]); // would throw if explored
+
+    await runIntake({
+      initialText: "probar el login",
+      llm,
+      patterns: [],
+      explorer,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://app.test/",
+      appLanguage: "en",
+      routes: {},
+      callbacks: { ...callbacks, onExplorationStep: () => {} },
+    });
+
+    expect(llm.lastPrompt()).toContain("Desde caché");
   });
 });
