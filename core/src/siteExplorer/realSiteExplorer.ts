@@ -205,6 +205,15 @@ async function exploreByHints(
   const hints = input.matchedPattern?.navigationHints;
   if (!hints) return null;
 
+  // Guards performNegativeLoginProbe to at most one ACTUAL submission per
+  // explore() call, no matter how many route candidates the loop below walks.
+  // Set only when the probe genuinely fills+clicks (i.e. performNegativeLoginProbe
+  // returns non-null) — never for a no-op call that bailed out because a
+  // candidate had no login fields, since that submits nothing and carries none
+  // of the lockout risk this guard exists for. Declared outside the loop so it
+  // survives across candidates instead of resetting per iteration.
+  let negativeProbeFired = false;
+
   for (const candidate of hints.routeCandidates) {
     const url = new URL(candidate, input.baseUrl).toString();
     triedRoutes.push(url);
@@ -237,10 +246,13 @@ async function exploreByHints(
           error: `La pantalla de login en ${candidate} no pertenece al origen configurado en AGENTE_QA_APP_URL (posible redirección a un proveedor externo de login); no se van a escribir credenciales de test fuera de ese origen.`,
         };
       }
-      if (hints.negativeProbe) {
+      if (hints.negativeProbe && !negativeProbeFired) {
         onStep("Provocando un error de credenciales para capturar el mensaje real...");
         const probe = await performNegativeLoginProbe(page, input.credentials);
-        if (probe) screens.push(probe);
+        if (probe) {
+          screens.push(probe);
+          negativeProbeFired = true;
+        }
         // back to a clean login screen before the real attempt
         await page.goto(url).catch(() => {});
       }

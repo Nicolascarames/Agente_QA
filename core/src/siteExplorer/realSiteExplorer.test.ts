@@ -1,3 +1,5 @@
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium } from "playwright";
 import { createRealSiteExplorer, MissingExplorerToolError } from "./realSiteExplorer.js";
@@ -50,6 +52,77 @@ const loginPattern: Pattern = {
   pageObjectTemplate: "",
   navigationHints: { routeCandidates: ["/login", "/signin"], requiresLogin: true },
 };
+
+interface GuardTestServer {
+  url: string;
+  close(): Promise<void>;
+}
+
+function guardFixtureLoginFieldsHtml(): string {
+  return `<!doctype html>
+<html>
+<body>
+  <form id="login-form">
+    <label for="email">Correo electrónico</label>
+    <input id="email" name="email" type="text" />
+    <label for="password">Contraseña</label>
+    <input id="password" name="password" type="password" />
+    <button type="submit">Iniciar sesión</button>
+  </form>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+    });
+  </script>
+</body>
+</html>`;
+}
+
+const GUARD_FIXTURE_LOCKED_OUT_PAGE = `<!doctype html><html><body><h1>Demasiados intentos</h1></body></html>`;
+
+/**
+ * A minimal, local-only, STATEFUL HTTP server used ONLY by the negative-probe
+ * guard test below — deliberately not added as a mode to testFixtureApp.ts.
+ * Every existing FixtureMode there serves static, stateless HTML, so a route
+ * that has login fields on its first load still has them after a same-URL
+ * reload; that means performRealLogin (called right after the probe's own
+ * reload of the same candidate) can never fail to find fields on a candidate
+ * the probe already fired on, so exploreByHints's candidate loop never
+ * actually needs to `continue` past one — no existing mode can reproduce the
+ * scenario the guard defends against. This server exists purely to construct
+ * that one stateful edge case: "/login-a" has real login fields only on its
+ * FIRST request (so the probe genuinely fires there) and lacks them from the
+ * second request onward (so performRealLogin can't find them there and the
+ * loop moves on to "/login-b", which always has fields). Without the guard,
+ * the probe would fire again on "/login-b"; the test asserts it doesn't.
+ */
+function startNegativeProbeGuardFixture(): Promise<GuardTestServer> {
+  let loginARequestCount = 0;
+  const server = http.createServer((req, res) => {
+    const url = (req.url ?? "/").split("?")[0];
+    const send = (status: number, body: string): void => {
+      res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(body);
+    };
+    if (url === "/login-a") {
+      loginARequestCount += 1;
+      return send(200, loginARequestCount === 1 ? guardFixtureLoginFieldsHtml() : GUARD_FIXTURE_LOCKED_OUT_PAGE);
+    }
+    if (url === "/login-b") {
+      return send(200, guardFixtureLoginFieldsHtml());
+    }
+    send(404, "<!doctype html><html><body><h1>404</h1></body></html>");
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        close: () => new Promise((res) => server.close(() => res())),
+      });
+    });
+  });
+}
 
 describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright Chromium installed)", () => {
   describe("conventional app (real routes match the known pattern)", () => {
@@ -118,6 +191,85 @@ describe.skipIf(!chromiumAvailable)("createRealSiteExplorer (requires Playwright
         expect(result.screens.some((s) => s.stepText.includes("tras iniciar sesión"))).toBe(true);
         // the probe never leaks the real password
         expect(probe?.ariaSnapshot).not.toContain(FIXTURE_CREDENTIALS.password);
+      }
+    );
+
+    it.skipIf(!chromiumAvailable)(
+      "skips the probe on a usable-but-fields-less candidate without losing the chance to probe the later real login candidate, and never returns more than one probe screen",
+      async () => {
+        const pattern: Pattern = {
+          name: "login",
+          description: "login",
+          gherkinTemplate: "Feature: Login\n",
+          pageObjectTemplate: "",
+          navigationHints: {
+            // "/dashboard" is usable (it renders a button) but has no login
+            // fields, so performRealLogin finds nothing there and the loop
+            // continues to "/login" — the real login candidate.
+            routeCandidates: ["/dashboard", "/login"],
+            requiresLogin: true,
+            negativeProbe: { kind: "invalid-credentials" },
+          },
+        };
+        const explorer = createRealSiteExplorer(new FakeLLMProvider([]));
+        const result = await explorer.explore(
+          baseInput({ baseUrl: app.url, matchedPattern: pattern, credentials: FIXTURE_CREDENTIALS })
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // the loop really did skip /dashboard and land on /login
+        expect(result.screens[0].url).toContain("/login");
+        const probeScreens = result.screens.filter((s) => s.stepText.includes("credenciales incorrectas"));
+        expect(probeScreens.length).toBeLessThanOrEqual(1);
+        // and the probe still fired on /login, since /dashboard's no-op never consumed it
+        expect(probeScreens).toHaveLength(1);
+      }
+    );
+  });
+
+  describe("negative probe guard (the probe fires at most once per explore() call)", () => {
+    let guardServer: GuardTestServer;
+    beforeAll(async () => {
+      guardServer = await startNegativeProbeGuardFixture();
+    });
+    afterAll(async () => {
+      await guardServer.close();
+    });
+
+    it.skipIf(!chromiumAvailable)(
+      "never re-fires the negative probe on a second route candidate after the loop continues past one where fields vanished after the probe's reload",
+      async () => {
+        const pattern: Pattern = {
+          name: "login",
+          description: "login",
+          gherkinTemplate: "Feature: Login\n",
+          pageObjectTemplate: "",
+          navigationHints: {
+            routeCandidates: ["/login-a", "/login-b"],
+            requiresLogin: true,
+            negativeProbe: { kind: "invalid-credentials" },
+          },
+        };
+        const explorer = createRealSiteExplorer(new FakeLLMProvider([]));
+        const steps: string[] = [];
+
+        const result = await explorer.explore(
+          baseInput({ baseUrl: guardServer.url, matchedPattern: pattern, credentials: FIXTURE_CREDENTIALS }),
+          (message) => steps.push(message)
+        );
+
+        expect(result.ok).toBe(true);
+        // Confirms the loop genuinely continued past /login-a: its fields were
+        // there for the probe's first pass but gone by the time performRealLogin
+        // looked (the fixture serves the locked-out page from the 2nd request on).
+        expect(steps.some((s) => s.includes("No se encontraron campos de login en /login-a"))).toBe(true);
+        // The probe step itself — which only ever runs against a candidate that
+        // genuinely has fields at the time it's checked, so each occurrence here
+        // corresponds to a real fill+click, not a no-op — must appear at most
+        // once across the whole exploration, never once per candidate.
+        const probeSteps = steps.filter((s) => s.includes("Provocando un error de credenciales"));
+        expect(probeSteps).toHaveLength(1);
       }
     );
   });
