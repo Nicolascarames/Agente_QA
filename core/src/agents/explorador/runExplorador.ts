@@ -32,6 +32,8 @@ export interface ExploradorResult {
   map: AppMap;
   mapPath: string;
   writtenPaths: string[];
+  /** Page Objects that already existed on disk and whose overwrite the user declined. */
+  skippedPaths: string[];
 }
 
 export async function runExplorador(options: RunExploradorOptions): Promise<ExploradorResult> {
@@ -62,11 +64,16 @@ export async function runExplorador(options: RunExploradorOptions): Promise<Expl
   emit({ agent: "explorador", status: "ok", depth: 1, message: `Mapa guardado en ${mapPath}` });
 
   const writtenPaths: string[] = [];
+  const skippedPaths: string[] = [];
   for (const screen of safe.screens) {
     const emitted = emitPageObject(screen);
     const target = path.join(projectRoot, testsDir, emitted.path);
     const exists = await fs.access(target).then(() => true, () => false);
-    if (exists && !(await callbacks.confirmOverwrite(target))) continue;
+    if (exists && !(await callbacks.confirmOverwrite(target))) {
+      skippedPaths.push(target);
+      emit({ agent: "explorador", status: "warn", depth: 1, message: `Se omite ${target}: ya existe y no se ha confirmado sobrescribirlo` });
+      continue;
+    }
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, emitted.content, "utf-8");
     writtenPaths.push(target);
@@ -78,5 +85,5 @@ export async function runExplorador(options: RunExploradorOptions): Promise<Expl
     durationMs: safe.stats.durationMs,
   });
 
-  return { map: safe, mapPath, writtenPaths };
+  return { map: safe, mapPath, writtenPaths, skippedPaths };
 }

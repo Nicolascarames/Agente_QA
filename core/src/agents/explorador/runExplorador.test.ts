@@ -92,4 +92,23 @@ describe("runExplorador", () => {
     await runExplorador(options({ emit: (event) => messages.push(event.message) }));
     expect(messages.some((m) => /1 pantalla/.test(m))).toBe(true);
   });
+
+  it("leaves a declined Page Object untouched, reports it as skipped, and still saves the map", async () => {
+    const target = path.join(projectRoot, "tests", "pages", "login_page.py");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, "# hand-edited, do not overwrite\n", "utf-8");
+
+    const events: string[] = [];
+    const result = await runExplorador(options({
+      callbacks: { ...options().callbacks, confirmOverwrite: async () => false },
+      emit: (event) => events.push(`${event.status}:${event.message}`),
+    }));
+
+    const content = await fs.readFile(target, "utf-8");
+    expect(content).toBe("# hand-edited, do not overwrite\n");
+    expect(result.skippedPaths).toContain(target);
+    expect(result.writtenPaths).not.toContain(target);
+    expect(events.some((e) => e.startsWith("warn:") && e.includes(target))).toBe(true);
+    await expect(loadAppMap(projectRoot)).resolves.not.toBeNull();
+  });
 });
