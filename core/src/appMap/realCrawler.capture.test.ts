@@ -439,6 +439,30 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     });
   });
 
+  it("records the semantic attributes of a control", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: [] });
+    // The fixture's login button is disambiguated by region (region:main, see
+    // "disambiguates a duplicated button by scoping it to a region" above), so
+    // its accessible name + kind — the same pair that test uses — is what
+    // reliably picks it out, not a substring of its `python`.
+    const submit = screen.locators.find((l) => l.accessibleName === "Log in" && l.kind === "button");
+    expect(submit?.attributes?.type).toBe("submit");
+    await page.close();
+  });
+
+  it("never records class or style, whatever the element carries", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: [] });
+    for (const locator of screen.locators) {
+      expect(Object.keys(locator.attributes ?? {})).not.toContain("class");
+      expect(Object.keys(locator.attributes ?? {})).not.toContain("style");
+    }
+    await page.close();
+  });
+
   it("warns through the event channel for every candidate it discards as ambiguous", async () => {
     const page = await (await browser!.newContext()).newPage();
     const events: AgentEvent[] = [];

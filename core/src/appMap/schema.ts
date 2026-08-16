@@ -15,6 +15,12 @@ export const LocatorEntrySchema = z.object({
   disambiguatedBy: z.string().optional(),
   /** Set when the locator only exists in a non-default state of the screen. */
   stateId: z.string().optional(),
+  /**
+   * Semantic attributes only: what the element IS, never how it looks.
+   * A class is rewritten by any restyle without a behavioural change, and
+   * under utility CSS it is not even unique.
+   */
+  attributes: z.record(z.string(), z.string()).optional(),
   verifiedAt: z.string(),
 });
 

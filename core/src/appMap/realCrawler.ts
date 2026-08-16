@@ -175,6 +175,30 @@ async function attribute(handle: Locator, name: string): Promise<string> {
   return (await handle.getAttribute(name, { timeout: SHORT_READ_TIMEOUT_MS }).catch(() => null)) ?? "";
 }
 
+/**
+ * Attributes allowed to say what an element IS, never how it looks: a class is
+ * rewritten by any restyle without a single behavioural change, and under
+ * utility CSS it is not even unique, so a locator built on one fails for
+ * reasons that have nothing to do with the application. `class` and `style`
+ * must never appear here.
+ */
+const SEMANTIC_ATTRIBUTES = ["type", "name", "id", "role", "data-testid"] as const;
+
+/**
+ * Every semantic attribute the element carries, read through the same bounded
+ * `attribute()` helper every other read in this file uses — a second,
+ * unbounded way to read an attribute is exactly what once cost a measured 30s
+ * per field.
+ */
+async function semanticAttributes(handle: Locator): Promise<Record<string, string> | undefined> {
+  const found: Record<string, string> = {};
+  for (const name of SEMANTIC_ATTRIBUTES) {
+    const value = (await attribute(handle, name)).trim();
+    if (value.length > 0) found[name] = value;
+  }
+  return Object.keys(found).length > 0 ? found : undefined;
+}
+
 /** Where a field's name came from. It decides which matcher may be emitted for it. */
 type NameSource = "label" | "aria" | "labelledby" | "placeholder";
 
@@ -536,6 +560,8 @@ async function attributeNarrowings(page: Page, form: LocatorForm): Promise<strin
 interface Resolution {
   python: string;
   disambiguatedBy?: string;
+  /** The very locator that was validated at count 1, reused to read its semantic attributes. */
+  handle: Locator;
 }
 
 /**
@@ -549,10 +575,12 @@ interface Resolution {
 async function attributeResolutions(page: Page, form: LocatorForm): Promise<Resolution[]> {
   const resolutions: Resolution[] = [];
   for (const selector of await attributeNarrowings(page, form)) {
-    if ((await form.build(page).and(page.locator(selector)).count().catch(() => 0)) !== 1) continue;
+    const handle = form.build(page).and(page.locator(selector));
+    if ((await handle.count().catch(() => 0)) !== 1) continue;
     resolutions.push({
       python: `${form.python("page.")}.and_(page.locator(${pythonLiteral(selector)}))`,
       disambiguatedBy: `${ATTRIBUTE_PREFIX}${selector}`,
+      handle,
     });
   }
   return resolutions;
@@ -587,8 +615,9 @@ async function resolveCandidate(
   let reportedCount = -1;
 
   for (const form of candidate.forms) {
-    const plainCount = await form.build(page).count().catch(() => 0);
-    if (plainCount === 1) return { resolutions: [{ python: form.python("page.") }] };
+    const plainHandle = form.build(page);
+    const plainCount = await plainHandle.count().catch(() => 0);
+    if (plainCount === 1) return { resolutions: [{ python: form.python("page."), handle: plainHandle }] };
     if (reportedCount < 0) {
       reportedCount = plainCount;
       reportedPython = form.python("page.");
@@ -598,8 +627,11 @@ async function resolveCandidate(
     if (plainCount === 0) continue;
 
     for (const scope of scopes) {
-      if ((await form.build(scope.locator).count().catch(() => 0)) !== 1) continue;
-      return { resolutions: [{ python: `${scope.pythonPrefix}${form.python("")}`, disambiguatedBy: scope.id }] };
+      const scopedHandle = form.build(scope.locator);
+      if ((await scopedHandle.count().catch(() => 0)) !== 1) continue;
+      return {
+        resolutions: [{ python: `${scope.pythonPrefix}${form.python("")}`, disambiguatedBy: scope.id, handle: scopedHandle }],
+      };
     }
 
     // Last resort before discarding: an attribute of the elements themselves.
@@ -675,6 +707,15 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
     for (const resolution of resolved.resolutions) {
       const name = uniqueName(`${prefix}${pythonIdentifier(cleanName)}${suffix}`, taken);
       taken.add(name);
+      const rawAttributes = await semanticAttributes(resolution.handle);
+      // Every string that reaches a Screen passes through the capture's
+      // redaction, attribute values included: a credential leaked into a
+      // `value` or `name` attribute must not survive into the map either.
+      const attributes = rawAttributes
+        ? Object.fromEntries(
+            Object.entries(rawAttributes).map(([key, value]) => [key, redactText(value, context.secrets)])
+          )
+        : undefined;
       locators.push({
         name,
         kind: candidate.kind,
@@ -682,6 +723,7 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
         python: redactText(resolution.python, context.secrets),
         count: 1,
         ...(resolution.disambiguatedBy ? { disambiguatedBy: resolution.disambiguatedBy } : {}),
+        ...(attributes ? { attributes } : {}),
         verifiedAt,
       });
     }
