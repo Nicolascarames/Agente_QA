@@ -48,6 +48,16 @@ describe("checkFeatureLiterals", () => {
     expect(checkFeatureLiterals(text, map).missing).toEqual([]);
   });
 
+  it("reports screenTagFound: false when the feature carries no @screen: tag at all", () => {
+    const text = `Feature: X\n\n  Scenario: S\n    Then I see "Anything"\n`;
+    expect(checkFeatureLiterals(text, map).screenTagFound).toBe(false);
+  });
+
+  it("reports screenTagFound: true once at least one scenario carries the tag", () => {
+    const text = feature('    Then I see "Welcome back"\n');
+    expect(checkFeatureLiterals(text, map).screenTagFound).toBe(true);
+  });
+
   it("accepts a fill step whose data value is not in the map — the value is test data, not app copy", () => {
     const text = feature('    When I fill "Email" with "nope@example.com"\n');
     expect(checkFeatureLiterals(text, map).missing).toEqual([]);

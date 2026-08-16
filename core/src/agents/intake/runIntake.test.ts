@@ -55,6 +55,14 @@ const grounded = gherkinResponse(
   'Feature: Log in\n\n  @screen:login\n  Scenario: Invalid credentials show an error\n    Then I see "Authentication failed. Please try again."\n'
 );
 
+// No @screen: tag anywhere — checkFeatureLiterals would silently report `missing: []`
+// for this, so it must be caught by the screenTagFound gate instead.
+const untagged = gherkinResponse(
+  'Feature: Log in\n\n  Scenario: Invalid credentials show an error\n    Then I see "Invalid email or password"\n'
+);
+
+const ambiguityResolved = () => JSON.stringify({ ambiguous: false, questions: [] });
+
 describe("runIntake", () => {
   let projectRoot: string;
   let callbacks: IntakeCallbacks;
@@ -203,5 +211,88 @@ describe("runIntake", () => {
     const regenerationMessages = llm.receivedCalls[1];
     const regenerationPrompt = regenerationMessages[regenerationMessages.length - 1].content;
     expect(regenerationPrompt).toContain("añade el resultado esperado");
+  });
+
+  it("regenerates instead of writing a plan whose feature carries no @screen: tag", async () => {
+    await saveAppMap(projectRoot, mapWithScenario);
+    const llm = new FakeLLMProvider([untagged, grounded]);
+    const presented: string[] = [];
+
+    const { filePath } = await runIntake({
+      initialText: "probar login", llm, projectRoot, testsDir: "tests", emit: () => {},
+      callbacks: { ...callbacks, presentForApproval: async (plan) => { presented.push(plan.featureText); return { approved: true }; } },
+    });
+
+    expect(presented).toHaveLength(1);
+    expect(presented[0]).toContain("@screen:login");
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).not.toContain("Invalid email or password");
+  });
+
+  it("throws an actionable message naming the required @screen: tag when grounding attempts run out untagged", async () => {
+    await saveAppMap(projectRoot, mapWithScenario);
+    const llm = new FakeLLMProvider([untagged, untagged, untagged]);
+
+    await expect(runIntake({
+      initialText: "probar login", llm, projectRoot, testsDir: "tests", callbacks, emit: () => {},
+    })).rejects.toThrow(/@screen:login/);
+  });
+
+  it("grounds a plan regenerated from user feedback before writing it — an ungrounded rewrite never reaches disk", async () => {
+    await saveAppMap(projectRoot, mapWithScenario);
+    const llm = new FakeLLMProvider([validPlanJson, invented, grounded]);
+    const presentForApproval = vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false, feedback: "añade el mensaje de error" })
+      .mockResolvedValueOnce({ approved: true });
+
+    const { filePath } = await runIntake({
+      initialText: "probar login", llm, projectRoot, testsDir: "tests",
+      callbacks: { ...callbacks, presentForApproval }, emit: () => {},
+    });
+
+    const written = await fs.readFile(filePath, "utf-8");
+    expect(written).not.toContain("Invalid email or password");
+    expect(written).toContain("Authentication failed. Please try again.");
+    expect(presentForApproval).toHaveBeenCalledTimes(2);
+  });
+
+  it("warns which screen a freeform request is grounded against when no map scenario was chosen", async () => {
+    await saveAppMap(projectRoot, baseMap); // no scenarios: chooseScenario is never invoked
+    const llm = new FakeLLMProvider([ambiguityResolved(), validPlanJson]);
+    const events: AgentEvent[] = [];
+
+    await runIntake({
+      initialText: "probar login", llm, projectRoot, testsDir: "tests", callbacks,
+      emit: (event) => events.push(event),
+    });
+
+    expect(
+      events.some((e) => e.agent === "intake" && e.status === "warn" && e.message.includes(loginScreen.name))
+    ).toBe(true);
+  });
+
+  it("throws an actionable error naming 'agente-qa map' when the map has no screens", async () => {
+    await saveAppMap(projectRoot, { ...baseMap, screens: [] });
+
+    await expect(runIntake({
+      initialText: "probar algo", llm: new FakeLLMProvider([]), projectRoot, testsDir: "tests", callbacks, emit: () => {},
+    })).rejects.toThrow(/agente-qa map/);
+  });
+
+  it("asks for the request text when the user declines the map's suggestions and typed nothing", async () => {
+    await saveAppMap(projectRoot, mapWithScenario);
+    const askUser = vi.fn().mockResolvedValue("probar login con credenciales inválidas");
+    const llm = new FakeLLMProvider([ambiguityResolved(), validPlanJson]);
+
+    await runIntake({
+      initialText: "", llm, projectRoot, testsDir: "tests",
+      callbacks: { ...callbacks, askUser, chooseScenario: async () => null },
+      emit: () => {},
+    });
+
+    expect(askUser).toHaveBeenCalled();
+    const ambiguityPrompt = llm.receivedCalls[0][llm.receivedCalls[0].length - 1].content;
+    expect(ambiguityPrompt).toContain("probar login con credenciales inválidas");
   });
 });

@@ -9,6 +9,13 @@ export interface MissingLiteral {
 export interface FeatureLiteralCheck {
   missing: MissingLiteral[];
   candidates: string[];
+  /**
+   * False when the featureText carries no `@screen:` tag anywhere. Without a
+   * tag `currentScreen` never leaves `null`, so every literal check below is
+   * skipped and `missing` comes back empty regardless of what the feature
+   * actually quotes — that emptiness must not be read as "grounded".
+   */
+  screenTagFound: boolean;
 }
 
 const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
@@ -30,6 +37,7 @@ export function checkFeatureLiterals(featureText: string, map: AppMap): FeatureL
   const missing: MissingLiteral[] = [];
   const candidates = new Set<string>();
   let currentScreen: string | null = null;
+  let screenTagFound = false;
 
   for (const rawLine of featureText.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -37,6 +45,7 @@ export function checkFeatureLiterals(featureText: string, map: AppMap): FeatureL
     const tag = line.match(SCREEN_TAG);
     if (tag) {
       currentScreen = tag[1];
+      screenTagFound = true;
       for (const literal of screenLiterals(map, currentScreen)) candidates.add(literal);
       continue;
     }
@@ -64,5 +73,5 @@ export function checkFeatureLiterals(featureText: string, map: AppMap): FeatureL
     }
   }
 
-  return { missing, candidates: Array.from(candidates) };
+  return { missing, candidates: Array.from(candidates), screenTagFound };
 }

@@ -1,8 +1,9 @@
 import type { LLMProvider } from "../../llm/provider.js";
 import type { GherkinPlan } from "../../schemas/gherkinPlan.js";
-import type { ScenarioCandidate } from "../../appMap/schema.js";
+import type { AppMap, ScenarioCandidate } from "../../appMap/schema.js";
 import type { EmitEvent } from "../../events/agentEvent.js";
 import { loadAppMap } from "../../appMap/mapStore.js";
+import { findScreen } from "../../appMap/mapQuery.js";
 import { checkAmbiguity } from "./ambiguityChecker.js";
 import { generateGherkin } from "./gherkinGenerator.js";
 import { checkFeatureLiterals } from "./checkFeatureLiterals.js";
@@ -26,6 +27,63 @@ export interface RunIntakeOptions {
 
 const MAX_GROUNDING_ATTEMPTS = 3;
 
+/**
+ * Generates a plan and keeps regenerating it until it is grounded in the map:
+ * every scenario carries a resolvable `@screen:` tag AND every quoted literal
+ * exists in the map. Used both after the initial generation and after every
+ * feedback regeneration in the approval loop below, so no path to disk can
+ * skip the check — that gap was the exact defect this task exists to close.
+ */
+async function generateGroundedPlan(
+  text: string,
+  llm: LLMProvider,
+  map: AppMap,
+  screenId: string,
+  emit: EmitEvent
+): Promise<{ plan: GherkinPlan; text: string }> {
+  let plan = await generateGherkin(text, llm, map, screenId);
+
+  for (let attempt = 1; attempt <= MAX_GROUNDING_ATTEMPTS; attempt++) {
+    const { missing, candidates, screenTagFound } = checkFeatureLiterals(plan.featureText, map);
+    if (screenTagFound && missing.length === 0) break;
+
+    const isLastAttempt = attempt === MAX_GROUNDING_ATTEMPTS;
+
+    if (!screenTagFound) {
+      emit({
+        agent: "intake", status: "warn", depth: 1,
+        message: `El plan no incluye la etiqueta @screen:${screenId} en ningún escenario, regenerando`,
+      });
+      if (isLastAttempt) {
+        throw new Error(
+          `El plan generado no incluye la etiqueta @screen:${screenId} en ningún escenario, y no se corrigió tras ${MAX_GROUNDING_ATTEMPTS} intentos. Revísalo manualmente antes de continuar.`
+        );
+      }
+      text = `${text}\n\nEl plan anterior no incluía la etiqueta @screen:${screenId}. Cada escenario debe llevarla justo antes de sus pasos. Añádela y genera el plan completo de nuevo.`;
+    } else {
+      emit({
+        agent: "intake", status: "warn", depth: 1,
+        message: `${missing.length} texto(s) no existen en la aplicación, regenerando`,
+        detail: missing.map((m) => `"${m.literal}"`).join(", "),
+      });
+      if (isLastAttempt) {
+        throw new Error(
+          `El plan sigue esperando textos que no existen en la aplicación: ${missing
+            .map((m) => `"${m.literal}"`)
+            .join(", ")}.\nTextos reales de esa pantalla: ${candidates.slice(0, 20).join(" · ")}`
+        );
+      }
+      text = `${text}\n\nEstos textos NO existen en la aplicación y no debes usarlos: ${missing
+        .map((m) => `"${m.literal}"`)
+        .join(", ")}`;
+    }
+
+    plan = await generateGherkin(text, llm, map, screenId);
+  }
+
+  return { plan, text };
+}
+
 export async function runIntake(options: RunIntakeOptions): Promise<{ plan: GherkinPlan; filePath: string }> {
   const { llm, projectRoot, testsDir, callbacks, emit } = options;
 
@@ -36,8 +94,14 @@ export async function runIntake(options: RunIntakeOptions): Promise<{ plan: Gher
     );
   }
 
+  if (map.screens.length === 0) {
+    throw new Error(
+      'El mapa de la aplicación no tiene pantallas. Ejecuta "agente-qa map" para explorar la aplicación antes de crear un plan de pruebas.'
+    );
+  }
+
   let text = options.initialText;
-  let screenId = map.screens[0]?.id ?? "";
+  let screenId = map.screens[0].id;
   let usingMapScenario = false;
 
   if (map.scenarios.length > 0) {
@@ -50,11 +114,26 @@ export async function runIntake(options: RunIntakeOptions): Promise<{ plan: Gher
   }
 
   // A scenario picked from the map's own candidates is already well-specified —
-  // Explorador produced it as a concrete title. The ambiguity check exists to
-  // clarify freeform text the user typed, so it only runs for that: no map
-  // scenario was chosen, whether because the map has none or the user declined
-  // them to type their own request.
+  // Explorador produced it as a concrete title. Everything below only runs when
+  // no map scenario was chosen, whether because the map has none or the user
+  // declined them to type their own request.
   if (!usingMapScenario) {
+    // The CLI lets the user leave the request empty to see the map's scenario
+    // suggestions; if they decline those too, `text` is still empty here and
+    // generation must not proceed on nothing.
+    if (text.trim().length === 0) {
+      text = await callbacks.askUser("¿Qué quieres probar? Describe la funcionalidad o el flujo.");
+    }
+
+    // Real screen selection is out of scope here: a freeform request always
+    // grounds on the map's first screen. Surface that choice so the user can
+    // see it rather than have it happen silently.
+    const screenName = findScreen(map, screenId)?.name ?? screenId;
+    emit({
+      agent: "intake", status: "warn", depth: 1,
+      message: `No se eligió un escenario del mapa: el plan se generará sobre la pantalla "${screenName}".`,
+    });
+
     const ambiguity = await checkAmbiguity(text, llm);
     if (ambiguity.ambiguous) {
       const answers: string[] = [];
@@ -65,35 +144,15 @@ export async function runIntake(options: RunIntakeOptions): Promise<{ plan: Gher
     }
   }
 
-  let plan = await generateGherkin(text, llm, map, screenId);
-
-  for (let attempt = 1; attempt <= MAX_GROUNDING_ATTEMPTS; attempt++) {
-    const { missing, candidates } = checkFeatureLiterals(plan.featureText, map);
-    if (missing.length === 0) break;
-    emit({
-      agent: "intake", status: "warn", depth: 1,
-      message: `${missing.length} texto(s) no existen en la aplicación, regenerando`,
-      detail: missing.map((m) => `"${m.literal}"`).join(", "),
-    });
-    if (attempt === MAX_GROUNDING_ATTEMPTS) {
-      throw new Error(
-        `El plan sigue esperando textos que no existen en la aplicación: ${missing
-          .map((m) => `"${m.literal}"`)
-          .join(", ")}.\nTextos reales de esa pantalla: ${candidates.slice(0, 20).join(" · ")}`
-      );
-    }
-    text = `${text}\n\nEstos textos NO existen en la aplicación y no debes usarlos: ${missing
-      .map((m) => `"${m.literal}"`)
-      .join(", ")}`;
-    plan = await generateGherkin(text, llm, map, screenId);
-  }
+  let plan: GherkinPlan;
+  ({ plan, text } = await generateGroundedPlan(text, llm, map, screenId, emit));
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const decision = await callbacks.presentForApproval(plan);
     if (decision.approved) break;
     text = `${text}\n\nPlan anterior:\n"""\n${plan.featureText}\n"""\n\nCambios solicitados:\n${decision.feedback ?? ""}`;
-    plan = await generateGherkin(text, llm, map, screenId);
+    ({ plan, text } = await generateGroundedPlan(text, llm, map, screenId, emit));
   }
 
   const alreadyExists = await featureFileExists(projectRoot, testsDir, plan.fileName);
