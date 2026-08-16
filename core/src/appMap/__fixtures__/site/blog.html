@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Fixture · Blog post</title></head>
+  <!-- Served for EVERY /blog/<slug>: the fixture's sibling-URL case. Two posts
+       differ only in the last segment and render the identical structure, so
+       the crawler must collapse them into a single /blog/:id screen instead of
+       one screen (and one committed Page Object) per post. -->
+  <body><main><h1>Blog post</h1>
+  <div><span>Every post shares this layout.</span></div></main></body>
+</html>

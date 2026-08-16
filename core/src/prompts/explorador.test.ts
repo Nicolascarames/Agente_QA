@@ -75,11 +75,15 @@ describe("scenarioCandidatesPrompt", () => {
     expect(scenarioCandidatesPrompt(withMap)).not.toContain("usuario@empresa.com");
   });
 
-  it("resolves a transition's toScreenId (a route template) to the destination screen's real id", () => {
+  // `toScreenId` holds the destination screen's real id, resolved by the
+  // crawler after the walk. This prompt used to compensate for a crawler that
+  // wrote a route template there; that workaround is gone, so a template
+  // leaking into the field would now show up here as an id no screen has.
+  it("prints the destination screen id the crawler recorded", () => {
     const withMap: AppMap = {
       ...map,
       screens: [
-        { ...map.screens[0], transitions: [{ locator: "dashboard_link", action: "click", toScreenId: "/user/:id", urlChanged: true }] },
+        { ...map.screens[0], transitions: [{ locator: "dashboard_link", action: "click", toScreenId: "user_id", urlChanged: true }] },
         { ...map.screens[0], id: "user_id", name: "User", urlTemplate: "/user/:id" },
       ],
     };
@@ -88,13 +92,18 @@ describe("scenarioCandidatesPrompt", () => {
     expect(prompt).not.toContain("dashboard_link -> /user/:id");
   });
 
-  it("marks a transition target that resolves to no known screen instead of printing the raw route template", () => {
+  it("marks a transition that left the application as external", () => {
     const withMap: AppMap = {
       ...map,
       screens: [
-        { ...map.screens[0], transitions: [{ locator: "ghost_link", action: "click", toScreenId: "/nowhere", urlChanged: true }] },
+        {
+          ...map.screens[0],
+          transitions: [
+            { locator: "docs_link", action: "click", toScreenId: null, urlChanged: true, externalUrl: "https://docs.example.test/" },
+          ],
+        },
       ],
     };
-    expect(scenarioCandidatesPrompt(withMap)).toContain("ghost_link -> (sin resolver: /nowhere)");
+    expect(scenarioCandidatesPrompt(withMap)).toContain("docs_link -> (externo)");
   });
 });

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <!-- Deliberately linked from nowhere: this page is only ever opened directly
+       by the write-action tests, so it costs nothing in the full-crawl suites.
+       Two forms on one screen is the case where "every input on the screen"
+       makes approving the newsletter submit fill and post the real password,
+       and makes a newsletter submit look like a login. The subscribe control is
+       an <input type="submit">, whose accessible name lives in `value` and
+       which therefore never became a write action at all. -->
+  <head><meta charset="utf-8" /><title>Fixture · Two forms</title></head>
+  <body>
+    <main>
+      <h1>Two forms</h1>
+      <form id="signin">
+        <label for="signin-email">Account email</label>
+        <input id="signin-email" name="email" type="email" />
+        <label for="signin-password">Password</label>
+        <input id="signin-password" name="password" type="password" />
+        <button type="submit">Sign in</button>
+      </form>
+      <form id="newsletter">
+        <label for="newsletter-email">Newsletter email</label>
+        <input id="newsletter-email" name="newsletter" type="email" />
+        <input type="submit" value="Subscribe" />
+      </form>
+    </main>
+  </body>
+</html>

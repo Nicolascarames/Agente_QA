@@ -10,6 +10,14 @@
            the name unscoped and takes `.first()` lands here instead of on
            the element `resolveCandidate` actually validated and recorded. -->
       <a href="/reset.html">Help</a>
+      <!-- Same LABEL as the form's password field below, so `get_by_label`
+           matches twice page-wide and `resolveCandidate` has to scope the real
+           one to region:main. The write pass must reuse that same region when
+           it fills: re-resolving the label unscoped violates strict mode, the
+           failure gets swallowed, the field stays empty and the "valid" submit
+           never authenticates — a bug that looks like the application's. -->
+      <label for="quick-password">Password</label>
+      <input id="quick-password" name="quick-password" type="password" />
     </header>
     <main>
       <h1>Welcome back</h1>

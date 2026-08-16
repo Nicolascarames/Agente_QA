@@ -126,6 +126,94 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     expect(login?.probeValues).not.toContain(credentials.password);
   }, 20000);
 
+  // The password field is disambiguated to region:main by the header decoy
+  // sharing its label. Filling it by re-resolving the label unscoped matches
+  // twice, violates strict mode, gets swallowed, and leaves the field empty —
+  // so the "valid" submit never authenticates. `authenticated` above already
+  // proves the fill worked; this proves the crawler does not claim to have
+  // typed a value it could not type.
+  it("only records a probe value once the field really took it", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits, credentials,
+      callbacks: {
+        confirmContinueOnLoop: async () => false,
+        approveWriteActions: async (actions) => actions.map((a) => ({ screenId: a.screenId, locator: a.action.locator })),
+      },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const login = result.map.screens.find((s) => s.urlTemplate === "/");
+    expect(login?.probeValues).toContain("agente-qa-invalid-password");
+  }, 20000);
+
+  // The crawl proceeds authenticated: nothing on the public surface links to
+  // /dashboard.html, so it can only enter the map through a real login.
+  it("maps the area behind the login and marks those screens as private", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits, credentials,
+      callbacks: {
+        confirmContinueOnLoop: async () => false,
+        approveWriteActions: async () => [],
+      },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const dashboard = result.map.screens.find((s) => s.urlTemplate === "/dashboard.html");
+    expect(dashboard).toBeDefined();
+    expect(dashboard!.requiresAuth).toBe(true);
+    expect(result.map.authenticated).toBe(true);
+  }, 20000);
+
+  it("leaves the map unauthenticated and public when there are no credentials", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits,
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.map.authenticated).toBe(false);
+    expect(result.map.screens.some((s) => s.urlTemplate === "/dashboard.html")).toBe(false);
+    expect(result.map.screens.every((s) => s.requiresAuth === false)).toBe(true);
+  }, 20000);
+
+  // Clicking it would kill the session the authenticated pass depends on.
+  it("never follows the log out control while walking", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits, credentials,
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const dashboard = result.map.screens.find((s) => s.urlTemplate === "/dashboard.html");
+    const logOut = dashboard?.locators.find((l) => l.accessibleName === "Log out");
+    expect(logOut).toBeDefined();
+    expect(dashboard!.transitions.some((t) => t.locator === logOut!.name)).toBe(false);
+  }, 20000);
+
+  // The event channel is a third consumer of the same data the two redaction
+  // nets protect, and it reaches the terminal and CI logs. A form submitting
+  // by GET puts the credentials straight into `page.url()`, which several
+  // messages interpolate. Any string configured as a credential must come out
+  // redacted, wherever in a message it appears.
+  it("never lets a configured credential out through the event channel", async () => {
+    const messages: string[] = [];
+    await createRealCrawler().crawl({
+      baseUrl: site.url, limits,
+      credentials: { username: "list.html", password: "s3cr3t-pass" },
+      callbacks: {
+        confirmContinueOnLoop: async () => false,
+        approveWriteActions: async (actions) => actions.map((a) => ({ screenId: a.screenId, locator: a.action.locator })),
+      },
+      emit: (event) => messages.push(`${event.message}|${event.detail ?? ""}`),
+    });
+    expect(messages.length).toBeGreaterThan(0);
+    expect(messages.some((m) => m.includes("[REDACTED]"))).toBe(true);
+    for (const message of messages) {
+      expect(message).not.toContain("list.html");
+      expect(message).not.toContain("s3cr3t-pass");
+    }
+  }, 20000);
+
   // Review finding: the write pass's own `page.goto` (reloading the screen
   // before each submit attempt) had no try/catch and sat inside the
   // `try { ... } finally { browser.close() }` region with no enclosing

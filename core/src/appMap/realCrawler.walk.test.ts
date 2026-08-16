@@ -68,14 +68,25 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     expect(result.map.screens.filter((s) => s.urlTemplate.startsWith("/loop-")).length).toBeLessThan(3);
   }, 20000);
 
-  it("skips routes matched by excludeRoutes", async () => {
-    const result = await createRealCrawler().crawl({
-      baseUrl: site.url, limits: { ...limits, excludeRoutes: ["/reset.html"] },
-      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
-      emit: () => {},
-    });
-    if (!result.ok) throw new Error(result.error);
-    expect(result.map.screens.some((s) => s.urlTemplate === "/reset.html")).toBe(false);
+  // An excluded route is an admin area or an endpoint with side effects on
+  // load: discarding its capture after requesting it fails the whole promise
+  // of the setting. A dedicated server instance keeps the recorded requests to
+  // this one crawl.
+  it("skips routes matched by excludeRoutes without ever requesting them", async () => {
+    const dedicated = await startFixtureSite();
+    try {
+      const result = await createRealCrawler().crawl({
+        baseUrl: dedicated.url, limits: { ...limits, excludeRoutes: ["/reset.html"] },
+        callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens.some((s) => s.urlTemplate === "/reset.html")).toBe(false);
+      expect(dedicated.requestedPaths).not.toContain("/reset.html");
+      expect(dedicated.requestedPaths).toContain("/list.html");
+    } finally {
+      await dedicated.close();
+    }
   }, 20000);
 
   it("marks the map incomplete when a safety limit stops the crawl", async () => {
@@ -129,7 +140,60 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     const help = login?.locators.find((l) => l.accessibleName === "Help");
     expect(help?.disambiguatedBy).toBe("region:main");
     const transition = login?.transitions.find((t) => t.locator === help?.name);
-    expect(transition?.toScreenId).toBe("/list.html");
+    const list = result.map.screens.find((s) => s.urlTemplate === "/list.html");
+    expect(list).toBeDefined();
+    expect(transition?.toScreenId).toBe(list!.id);
+  }, 20000);
+
+  // `toScreenId` is read against `screen.id` by every consumer. It used to
+  // hold the route template, which matches no screen id at all, and exactly
+  // one consumer compensated for it.
+  it("records every transition target as a screen id, never as a route template", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits,
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const ids = new Set(result.map.screens.map((s) => s.id));
+    const targets = result.map.screens.flatMap((s) => s.transitions.map((t) => t.toScreenId));
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      if (target === null) continue;
+      expect(ids.has(target)).toBe(true);
+    }
+  }, 20000);
+
+  // `appUrl` is validated as a URL but never normalised, so a base URL with no
+  // trailing slash is legal config. String concatenation turned it into
+  // "https://example.comlogin"; deciding "external" by string prefix let
+  // "https://example.com.evil.test/panel" pass as internal.
+  it("works the same when the base URL carries no trailing slash", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url.replace(/\/$/, ""), limits,
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const templates = result.map.screens.map((s) => s.urlTemplate);
+    expect(templates).toContain("/");
+    expect(templates).toContain("/list.html");
+  }, 20000);
+
+  // Third templating rule of the spec: two sibling URLs differing in exactly
+  // one segment are one screen with different data. Without it a blog or a
+  // catalogue becomes one screen — and one committed Page Object — per item.
+  it("collapses two sibling routes that render the same screen", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits,
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const templates = result.map.screens.map((s) => s.urlTemplate);
+    expect(templates).toContain("/blog/:id");
+    expect(templates).not.toContain("/blog/first-post");
+    expect(templates).not.toContain("/blog/second-post");
   }, 20000);
 
   // Review finding: /order-history.html and /order/history.html both

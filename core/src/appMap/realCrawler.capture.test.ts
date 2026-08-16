@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser } from "playwright";
 import { startFixtureSite } from "./__fixtures__/server.js";
-import { captureScreen, pythonLiteral } from "./realCrawler.js";
+import { captureScreen, collectWriteActions, pythonLiteral } from "./realCrawler.js";
+import type { AgentEvent } from "../events/agentEvent.js";
 
 describe("pythonLiteral", () => {
   // Carried from the Task 6 review: pageObjectEmitter interpolates
@@ -107,7 +108,9 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     const context = await browser!.newContext();
     const page = await context.newPage();
     await page.goto(site.url);
-    await page.getByRole("textbox", { name: "Password" }).fill("s3cr3t-pass");
+    // Scoped to <main>: the header carries a decoy sharing the same label, the
+    // very ambiguity `resolveCandidate` resolves by region at capture time.
+    await page.getByRole("main").getByRole("textbox", { name: "Password" }).fill("s3cr3t-pass");
     const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: ["s3cr3t-pass"] });
     expect(JSON.stringify(screen)).not.toContain("s3cr3t-pass");
     await page.close();
@@ -136,5 +139,81 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
       expect(seen.has(key)).toBe(false);
       seen.add(key);
     }
+  });
+
+  // The `count: 1` guarantee is measured with `exact: true`. Playwright
+  // defaults `exact` to false, so Python emitted without it is a DIFFERENT,
+  // looser matcher: `get_by_text("Email")` also matches "Email address", and
+  // the recorded single match becomes a strict-mode violation in pytest
+  // against an application that never changed. Every emitted locator must
+  // carry it, or the map stops describing what it validated.
+  it("emits the same exact matching it validated with, in every locator", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: [] });
+    expect(screen.locators.length).toBeGreaterThan(0);
+    for (const locator of screen.locators) expect(locator.python).toContain("exact=True");
+    await page.close();
+  });
+
+  it("collects visible text living in a span or a div, not only in a paragraph", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url.replace(/\/$/, "") + "/blog/first-post");
+    const screen = await captureScreen(page, { screenId: "blog", baseUrl: site.url, secrets: [] });
+    expect(screen.texts).toContain("Every post shares this layout.");
+    await page.close();
+  });
+
+  it("warns through the event channel for every candidate it discards as ambiguous", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    const events: AgentEvent[] = [];
+    await page.goto(site.url);
+    const screen = await captureScreen(page, {
+      screenId: "login", baseUrl: site.url, secrets: [], emit: (event) => events.push(event),
+    });
+    expect(screen.ambiguous.length).toBeGreaterThan(0);
+    expect(events.filter((e) => e.status === "warn")).toHaveLength(screen.ambiguous.length);
+    await page.close();
+  });
+
+});
+
+describe.skipIf(!process.env.CI && !chromium.executablePath())("collectWriteActions", () => {
+  it("keeps each submit's form fields to its own form, never the whole screen", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url.replace(/\/$/, "") + "/two-forms.html");
+    const screen = await captureScreen(page, { screenId: "two_forms", baseUrl: site.url, secrets: [] });
+    const actions = await collectWriteActions(page, screen, []);
+
+    const subscribe = actions.find((a) => a.label === "Subscribe");
+    const signIn = actions.find((a) => a.label === "Sign in");
+    expect(signIn).toBeDefined();
+    expect(subscribe).toBeDefined();
+
+    const nameOf = (locatorName: string) => screen.locators.find((l) => l.name === locatorName)?.accessibleName;
+    expect(subscribe!.formFields.map(nameOf)).toEqual(["Newsletter email"]);
+    expect(signIn!.formFields.map(nameOf).sort()).toEqual(["Account email", "Password"]);
+    await page.close();
+  });
+
+  // `<input type="submit">` has no innerText, so its label fell back to
+  // "Enviar", the lookup by accessible name failed, and it could never be
+  // registered as a write action at all. Its accessible name is its `value`.
+  it("registers an input[type=submit] as a write action, named by its value", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url.replace(/\/$/, "") + "/two-forms.html");
+    const screen = await captureScreen(page, { screenId: "two_forms", baseUrl: site.url, secrets: [] });
+    const actions = await collectWriteActions(page, screen, []);
+    expect(actions.map((a) => a.label)).toContain("Subscribe");
+    await page.close();
+  });
+
+  it("redacts a secret out of a write action's label", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: ["Log in"] });
+    const actions = await collectWriteActions(page, screen, ["Log in"]);
+    expect(JSON.stringify(actions)).not.toContain("Log in");
+    await page.close();
   });
 });

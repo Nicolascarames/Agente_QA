@@ -1,4 +1,4 @@
-import type { AppMap, Screen, Transition } from "../appMap/schema.js";
+import type { AppMap } from "../appMap/schema.js";
 
 /**
  * A text is tainted if it contains ANY probe value the crawler itself typed
@@ -17,20 +17,6 @@ function isTainted(text: string, probeValues: string[]): boolean {
   return probeValues.some((probe) => probe.length > 0 && text.includes(probe));
 }
 
-/**
- * `t.toScreenId` is set by the crawler to a route TEMPLATE (e.g. `/user/:id`),
- * never to a screen id — each screen's real `id` is a separately slugged,
- * deduplicated identifier (e.g. `user_id`). Printing the template directly
- * shows the model a value that matches no screen id in this same prompt, and
- * a candidate that copies it into `screenId` silently fails to resolve later.
- * Resolve it here, by looking up the destination screen by its `urlTemplate`.
- */
-function resolveTransitionTarget(transition: Transition, screens: Screen[]): string {
-  if (transition.toScreenId === null) return "(externo)";
-  const destination = screens.find((screen) => screen.urlTemplate === transition.toScreenId);
-  return destination ? destination.id : `(sin resolver: ${transition.toScreenId})`;
-}
-
 export function scenarioCandidatesPrompt(map: AppMap): string {
   const screens = map.screens
     .map((screen) => {
@@ -42,7 +28,10 @@ export function scenarioCandidatesPrompt(map: AppMap): string {
         .filter((name): name is string => name !== undefined && !isTainted(name, probeValues));
       const transitions = screen.transitions
         .filter((t) => !isTainted(t.locator, probeValues))
-        .map((t) => `      ${t.locator} -> ${resolveTransitionTarget(t, map.screens)}`)
+        // `toScreenId` already holds the destination screen's real id: the
+        // crawler resolves it once, after the walk. Null means the click left
+        // the application (or led nowhere the map knows).
+        .map((t) => `      ${t.locator} -> ${t.toScreenId ?? "(externo)"}`)
         .join("\n");
       return [
         `  - id: ${screen.id}  (ruta ${screen.urlTemplate})`,
