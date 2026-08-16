@@ -68,16 +68,31 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
     }
   }
 
-  // A password input does NOT expose the `textbox` role in ARIA, so the loop
-  // above never sees it. Without this block no login screen would get a
-  // fill_password method and the whole point of the map would be missed.
-  // These are addressed by label, which is what Playwright offers for a
-  // labelled field of any type.
+  // A password input is not guaranteed to expose the `textbox` role in ARIA
+  // (this varies by engine/Playwright version — empirically, this build DOES
+  // surface a labelled one via the role loop above, contradicting the
+  // assumption this block was originally written under; see task-12-report.md).
+  // This pass stays anyway: it is what covers a Playwright/browser build that
+  // follows the ARIA spec literally and hides the role, and any other
+  // labelled field that fails to expose a role for some other reason.
+  // Without it, on such a build, no login screen would get a fill_password
+  // method and the whole point of the map would be missed. These are
+  // addressed by label, which is what Playwright offers for a labelled field
+  // of any type.
+  //
+  // Dedup against the role loop by accessible name: if the role loop above
+  // already produced an "input" candidate with this name, the role-based
+  // locator wins and this pass must not add a second, redundant one for the
+  // same field (same failure mode `mergeScreenState` guards against one
+  // layer down — see Task 5 — except here the duplicate would otherwise be
+  // created earlier, inside a single capture).
+  const inputNamesFromRoleLoop = new Set(candidates.filter((c) => c.kind === "input").map((c) => c.accessibleName));
+
   for (const handle of await page.locator('input[type="password"]').all()) {
     const id = await handle.getAttribute("id");
     const label = id ? (await page.locator(`label[for="${id}"]`).innerText().catch(() => "")) : "";
     const name = (label || (await handle.getAttribute("aria-label")) || (await handle.getAttribute("placeholder")) || "").trim();
-    if (name.length === 0) continue;
+    if (name.length === 0 || inputNamesFromRoleLoop.has(name)) continue;
     candidates.push({
       kind: "input",
       role: null,

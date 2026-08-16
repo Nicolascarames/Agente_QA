@@ -112,4 +112,29 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     expect(JSON.stringify(screen)).not.toContain("s3cr3t-pass");
     await page.close();
   });
+
+  // A password input is not guaranteed to expose the `textbox` ARIA role
+  // across every engine/Playwright version. Whichever path finds it — the
+  // generic role loop or the dedicated password/label pass — it must be
+  // recorded exactly once, never twice under two different locator
+  // strategies for the same underlying field.
+  it("captures exactly one locator for the password field, never two", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: [] });
+    const passwordLocators = screen.locators.filter((l) => l.accessibleName === "Password");
+    expect(passwordLocators).toHaveLength(1);
+  });
+
+  it("never records two locators with the same accessible name and kind", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: [] });
+    const seen = new Set<string>();
+    for (const locator of screen.locators) {
+      const key = `${locator.kind}:${locator.accessibleName}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+    }
+  });
 });
