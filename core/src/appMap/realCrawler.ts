@@ -399,6 +399,54 @@ function cssValue(value: string): string {
 }
 
 /**
+ * Attributes allowed to separate two elements no container can, most
+ * intentional first. Each one says what the element IS: a `data-testid` is a
+ * contract written for tests, a `name` is the key the form submits the value
+ * under, a `type` is the control's own behaviour. That is precisely what makes
+ * them admissible where position is not — if one of them disappears the test
+ * SHOULD break, whereas `.first()`/`.nth()` survives any reordering of the
+ * interface without ever failing, which is the worst way to fail.
+ *
+ * A class is deliberately absent: it describes how the element LOOKS, a restyle
+ * rewrites it without changing anything the user can do, and under utility CSS
+ * it is not even unique. So is any positional pseudo-class, for the same reason.
+ */
+const NARROWING_ATTRIBUTES = ["data-testid", "name", "type"];
+
+/**
+ * Values that identify nothing durable: a content hash or a CSS-module suffix,
+ * a framework-issued id (React's `useId` renders `:r3:`, different on the next
+ * render), a bare counter, a name that is really an index. Narrowing by one of
+ * these READS as semantic and BEHAVES like position — it breaks on the next
+ * deploy without the interface having changed at all.
+ *
+ * Rejecting one is always the safe direction: the candidate simply falls
+ * through to `ambiguous`, which is this crawler's honest answer, instead of
+ * entering the map as a locator that will rot.
+ */
+const GENERATED_VALUE_PATTERNS = [
+  /[0-9a-f]{8,}/i,
+  /^:[a-z0-9]+:$/i,
+  /^\d+$/,
+  /^[a-z]+[_-]?\d{3,}$/i,
+];
+
+/** Above this, a value is a payload rather than a name. */
+const MAX_NARROWING_VALUE_LENGTH = 40;
+
+/**
+ * What `disambiguatedBy` prefixes an attribute condition with, alongside the
+ * `region:` and `selector:` a scope uses. Everything after it is the CSS
+ * condition itself, so `narrowedBy` rebuilds exactly what was validated.
+ */
+const ATTRIBUTE_PREFIX = "attribute:";
+
+function isStableAttributeValue(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_NARROWING_VALUE_LENGTH) return false;
+  return !GENERATED_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+/**
  * Every scope that resolves to exactly one element on this screen, in the order
  * they are tried: the ARIA landmarks first — a named region is the most
  * meaningful container an application can declare — then the CSS ones, from the
@@ -447,24 +495,100 @@ async function singleMatchScopes(page: Page): Promise<Scope[]> {
 }
 
 /**
+ * One CSS attribute condition per element this form matches — the most
+ * intentional attribute that singles that element out from its twins, or
+ * nothing when no allowed attribute does.
+ *
+ * Read in ONE `evaluateAll` round trip, from the DOM the form already matched,
+ * so the elements compared are exactly the ones that made the candidate
+ * ambiguous. Uniqueness is judged WITHIN that matched set, which is the only
+ * set that matters: `type='submit'` is shared by every form on a big screen and
+ * still separates these two siblings perfectly.
+ *
+ * At most one condition per element, first attribute in `NARROWING_ATTRIBUTES`
+ * order wins. Without that, an element carrying both a `data-testid` and a
+ * `type` would come back twice, be recorded under two names, and the map would
+ * claim the screen has two of a control it has one of.
+ */
+async function attributeNarrowings(page: Page, form: LocatorForm): Promise<string[]> {
+  const rows = await form
+    .build(page)
+    .evaluateAll(
+      (elements, names: string[]) => elements.map((element) => names.map((name) => element.getAttribute(name) ?? "")),
+      NARROWING_ATTRIBUTES
+    )
+    .catch(() => [] as string[][]);
+
+  const byElement = new Map<number, string>();
+  NARROWING_ATTRIBUTES.forEach((name, column) => {
+    const values = rows.map((row) => row[column] ?? "");
+    values.forEach((value, element) => {
+      if (byElement.has(element) || !isStableAttributeValue(value)) return;
+      if (values.filter((other) => other === value).length !== 1) return;
+      byElement.set(element, `[${name}='${cssValue(value)}']`);
+    });
+  });
+
+  return rows.map((_row, element) => byElement.get(element)).filter((selector): selector is string => selector !== undefined);
+}
+
+/** One validated way of addressing an element, plus what narrowed it, if anything. */
+interface Resolution {
+  python: string;
+  disambiguatedBy?: string;
+}
+
+/**
+ * The same candidate, split into one resolution per element an ATTRIBUTE can
+ * separate. Each is validated live at exactly one match, like every other
+ * candidate, and on the very expression that ships: `and()` here, `and_()`
+ * there, the same two matchers composed the same way. Validating a stricter (or
+ * merely different) expression than the one emitted is how this project already
+ * shipped a Critical once.
+ */
+async function attributeResolutions(page: Page, form: LocatorForm): Promise<Resolution[]> {
+  const resolutions: Resolution[] = [];
+  for (const selector of await attributeNarrowings(page, form)) {
+    if ((await form.build(page).and(page.locator(selector)).count().catch(() => 0)) !== 1) continue;
+    resolutions.push({
+      python: `${form.python("page.")}.and_(page.locator(${pythonLiteral(selector)}))`,
+      disambiguatedBy: `${ATTRIBUTE_PREFIX}${selector}`,
+    });
+  }
+  return resolutions;
+}
+
+/**
  * A candidate that matches more than one element is NOT discarded on the spot:
  * it is first scoped to the nearest meaningful container. The reference app has
  * "Log in" twice (header and form), so a rule that dropped every duplicate
- * would leave the screen's main element out of the map. Position (.first,
- * .nth()) is never used to disambiguate: it survives any reordering of the
- * interface without failing, which is the worst way to fail.
+ * would leave the screen's main element out of the map.
+ *
+ * When no container separates them, an attribute of the elements themselves is
+ * tried before giving up. Measured on the real target application, the tab that
+ * switches panel and the submit that actually logs in are SIBLINGS inside the
+ * same unnamed `<form>` — `form > div > button[type=button]` and
+ * `form > button[type=submit]` — sharing every ancestor there is. No scope can
+ * ever split those, so the login button was absent from the map, the app
+ * yielded zero write actions, and the one flow this tool exists to automate
+ * could not be tested at all. `type` separates them, and an attribute is the
+ * opposite kind of thing from position: it describes what the element IS, and
+ * if it disappears the test SHOULD break.
+ *
+ * Position (.first, .last, .nth()) is never used, at any stage: it survives any
+ * reordering of the interface without failing, which is the worst way to fail.
  */
 async function resolveCandidate(
   page: Page,
   candidate: Candidate,
   scopes: Scope[]
-): Promise<{ python: string; disambiguatedBy?: string } | { ambiguous: AmbiguousCandidate }> {
+): Promise<{ resolutions: Resolution[] } | { ambiguous: AmbiguousCandidate }> {
   let reportedPython = candidate.forms[0].python("page.");
   let reportedCount = -1;
 
   for (const form of candidate.forms) {
     const plainCount = await form.build(page).count().catch(() => 0);
-    if (plainCount === 1) return { python: form.python("page.") };
+    if (plainCount === 1) return { resolutions: [{ python: form.python("page.") }] };
     if (reportedCount < 0) {
       reportedCount = plainCount;
       reportedPython = form.python("page.");
@@ -475,8 +599,16 @@ async function resolveCandidate(
 
     for (const scope of scopes) {
       if ((await form.build(scope.locator).count().catch(() => 0)) !== 1) continue;
-      return { python: `${scope.pythonPrefix}${form.python("")}`, disambiguatedBy: scope.id };
+      return { resolutions: [{ python: `${scope.pythonPrefix}${form.python("")}`, disambiguatedBy: scope.id }] };
     }
+
+    // Last resort before discarding: an attribute of the elements themselves.
+    // Every element it separates is recorded — a tab and a submit sharing a
+    // name are two real controls, and keeping only one of them would leave the
+    // map lying about the screen.
+    const narrowed = await attributeResolutions(page, form);
+    if (narrowed.length > 0) return { resolutions: narrowed };
+
     // A form that matched several elements is the more informative report: it
     // says the element IS there and could not be pinned down, which is a
     // different problem from a matcher that never reached it.
@@ -535,17 +667,24 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
     }
     const prefix = candidate.kind === "text" ? "text_" : "";
     const suffix = candidate.kind === "input" ? "_input" : candidate.kind === "button" ? "_button" : "";
-    const name = uniqueName(`${prefix}${pythonIdentifier(cleanName)}${suffix}`, taken);
-    taken.add(name);
-    locators.push({
-      name,
-      kind: candidate.kind,
-      accessibleName: cleanName,
-      python: redactText(resolved.python, context.secrets),
-      count: 1,
-      ...(resolved.disambiguatedBy ? { disambiguatedBy: resolved.disambiguatedBy } : {}),
-      verifiedAt,
-    });
+    // Usually one. Several when an attribute separated twins that share an
+    // accessible name, in which case they also share the identifier the name
+    // normalises to — and `uniqueName` is exactly the helper that already
+    // settles that, so the second becomes `log_in_button_2` rather than
+    // overwriting the first.
+    for (const resolution of resolved.resolutions) {
+      const name = uniqueName(`${prefix}${pythonIdentifier(cleanName)}${suffix}`, taken);
+      taken.add(name);
+      locators.push({
+        name,
+        kind: candidate.kind,
+        accessibleName: cleanName,
+        python: redactText(resolution.python, context.secrets),
+        count: 1,
+        ...(resolution.disambiguatedBy ? { disambiguatedBy: resolution.disambiguatedBy } : {}),
+        verifiedAt,
+      });
+    }
   }
 
   const urlTemplate = toUrlTemplate(page.url(), context.baseUrl);
@@ -625,15 +764,45 @@ function isExternalUrl(url: string, baseUrl: string): boolean {
  * newsletter submit fill the password field with the real credential and post
  * it, and would make every submit on that screen look like a login.
  */
+/**
+ * Which of the recorded entries for this label is the SUBMIT one.
+ *
+ * While a duplicated name could only ever produce one entry, the first match
+ * was necessarily the right one. Attribute narrowing changed that: a tab and a
+ * submit sharing a name are now both in the map, in DOM order, so taking the
+ * first would hang the write action on the tab — it would fill the form and
+ * then click the control that only switches panel, and the login would never be
+ * exercised. Decided by asking the page, not by reading `disambiguatedBy`: the
+ * question is "does this recorded locator address a submit?", and the recorded
+ * locator itself is what answers it.
+ */
+async function submitEntry(page: Page, screen: Screen, label: string): Promise<LocatorEntry | undefined> {
+  const candidates = screen.locators.filter((l) => l.accessibleName === label && l.kind === "button");
+  if (candidates.length <= 1) return candidates[0];
+  for (const candidate of candidates) {
+    const target = narrowedBy(
+      page,
+      scopedBy(page, candidate).getByRole("button", { name: label, exact: true }),
+      candidate
+    );
+    const isSubmit = await target.and(page.locator(SUBMIT_SELECTOR)).count().catch(() => 0);
+    if (isSubmit === 1) return candidate;
+  }
+  return candidates[0];
+}
+
+/** Every control that submits a form, used both to find them and to recognise one. */
+const SUBMIT_SELECTOR = "form button[type=submit], form input[type=submit]";
+
 export async function collectWriteActions(page: Page, screen: Screen, secrets: string[]): Promise<WriteAction[]> {
   const actions: WriteAction[] = [];
-  for (const submit of await page.locator("form button[type=submit], form input[type=submit]").all()) {
+  for (const submit of await page.locator(SUBMIT_SELECTOR).all()) {
     // `<input type="submit">` has no innerText at all: without the `value`
     // fallback its label was always "Enviar", the lookup by accessible name
     // below always failed, and such a button could never become a write action.
     const rawLabel = await controlName(submit, { useValue: true });
     const label = redactText(rawLabel.length > 0 ? rawLabel : "Enviar", secrets);
-    const locator = screen.locators.find((l) => l.accessibleName === label && l.kind === "button");
+    const locator = await submitEntry(page, screen, label);
     if (!locator) continue;
 
     const form = await formOf(page, submit);
@@ -684,6 +853,11 @@ function valueFor(fieldName: string, data: "valid" | "invalid", credentials?: Cr
  * from what it recorded — an ARIA landmark or a CSS scope, the same two kinds
  * `singleMatchScopes` offers. Anything the crawler interacts with goes through
  * here, so it acts on exactly the element the emitted Python addresses.
+ *
+ * An attribute narrowing is NOT a container — it is a condition on the element
+ * itself — so it falls through to the page here and is applied by `narrowedBy`
+ * on the built locator instead. The two are complementary, never alternatives:
+ * every interaction site applies both.
  */
 function scopedBy(page: Page, entry: { disambiguatedBy?: string } | undefined): Locator | Page {
   const value = entry?.disambiguatedBy;
@@ -691,6 +865,20 @@ function scopedBy(page: Page, entry: { disambiguatedBy?: string } | undefined): 
   if (value.startsWith("region:")) return page.getByRole(value.slice("region:".length) as never);
   if (value.startsWith("selector:")) return page.locator(value.slice("selector:".length));
   return page;
+}
+
+/**
+ * The attribute condition `resolveCandidate` validated this locator with, if
+ * there was one, re-applied to a freshly built locator. `and()` here mirrors
+ * the `and_()` the emitted Python carries, so the crawler goes on interacting
+ * with the same single element the Page Object will address — without it, a tab
+ * and a submit sharing a name are two matches again and the interaction is
+ * skipped as ambiguous.
+ */
+function narrowedBy(page: Page, target: Locator, entry: { disambiguatedBy?: string } | undefined): Locator {
+  const value = entry?.disambiguatedBy;
+  if (value === undefined || !value.startsWith(ATTRIBUTE_PREFIX)) return target;
+  return target.and(page.locator(value.slice(ATTRIBUTE_PREFIX.length)));
 }
 
 /**
@@ -707,7 +895,8 @@ function scopedBy(page: Page, entry: { disambiguatedBy?: string } | undefined): 
  */
 async function fieldTarget(
   scope: Locator | Page,
-  name: string
+  name: string,
+  narrow: (target: Locator) => Locator = (target) => target
 ): Promise<{ target: Locator | null; matches: number }> {
   let worst = 0;
   for (const form of [
@@ -715,8 +904,11 @@ async function fieldTarget(
     scope.getByLabel(name, { exact: true }),
     scope.getByPlaceholder(name, { exact: true }),
   ]) {
-    const matches = await form.count().catch(() => 0);
-    if (matches === 1) return { target: form, matches: 1 };
+    // Narrowed BEFORE counting, or a field recorded through an attribute
+    // condition counts its twin too and the fill is skipped as ambiguous.
+    const candidate = narrow(form);
+    const matches = await candidate.count().catch(() => 0);
+    if (matches === 1) return { target: candidate, matches: 1 };
     worst = Math.max(worst, matches);
   }
   return { target: null, matches: worst };
@@ -752,7 +944,9 @@ async function fillFormFields(
     const field = screen.locators.find((l) => l.name === fieldName);
     if (field?.accessibleName === undefined) continue;
     const value = valueFor(field.accessibleName, data, credentials);
-    const { target, matches } = await fieldTarget(scopedBy(page, field), field.accessibleName);
+    const { target, matches } = await fieldTarget(scopedBy(page, field), field.accessibleName, (candidate) =>
+      narrowedBy(page, candidate, field)
+    );
     if (target === null) {
       emit({
         agent: "explorador", status: "warn", depth: 1,
@@ -782,7 +976,11 @@ async function fillFormFields(
  */
 async function clickWriteAction(page: Page, screen: Screen, action: WriteAction, emit: EmitEvent): Promise<boolean> {
   const submitLocator = screen.locators.find((l) => l.name === action.locator);
-  const target = scopedBy(page, submitLocator).getByRole("button", { name: action.label, exact: true });
+  const target = narrowedBy(
+    page,
+    scopedBy(page, submitLocator).getByRole("button", { name: action.label, exact: true }),
+    submitLocator
+  );
   const matches = await target.count().catch(() => 0);
   if (matches !== 1) {
     // Still ambiguous even scoped (or the scope disappeared since capture):
@@ -1246,11 +1444,30 @@ export function createRealCrawler(): Crawler {
           // grow one per click.
           const knownSignatures = new Set<string>([screen.signature]);
 
+          // Which of the screen's same-named twins each entry is. Until
+          // attribute narrowing, a duplicated accessible name produced at most
+          // one entry, so index 0 identified it. Now a tab and a submit sharing
+          // a name are both recorded, and a key built from the name alone would
+          // read the second as already clicked and never explore where it goes.
+          // Derived from the screen's own locator list, so every element that
+          // has no twin keeps index 0 and behaves exactly as before.
+          const twinIndex = new Map<string, number>();
+          const seenNames = new Map<string, number>();
+          for (const entry of screen.locators) {
+            const identity = `${entry.kind}|${entry.accessibleName ?? entry.name}`;
+            const index = seenNames.get(identity) ?? 0;
+            seenNames.set(identity, index + 1);
+            twinIndex.set(entry.name, index);
+          }
+
           // First pass: navigation only. Submits are recorded, never clicked.
           for (const locator of screen.locators.filter((l) => l.kind === "link" || l.kind === "button")) {
             if (screen.writeActions.some((action) => action.locator === locator.name)) continue;
             const key = elementKey({
-              screenId: screen.id, role: locator.kind, accessibleName: locator.accessibleName ?? locator.name, index: 0,
+              screenId: screen.id,
+              role: locator.kind,
+              accessibleName: locator.accessibleName ?? locator.name,
+              index: twinIndex.get(locator.name) ?? 0,
             });
             if (clickedElements.has(key)) continue;
             clickedElements.add(key);
@@ -1291,7 +1508,11 @@ export function createRealCrawler(): Crawler {
             // leads to, while the generated Python (built from the scoped
             // locator) claims to reach somewhere the map does not.
             const role = locator.kind === "link" ? "link" : "button";
-            const target = scopedBy(page, locator).getByRole(role as never, { name, exact: true });
+            const target = narrowedBy(
+              page,
+              scopedBy(page, locator).getByRole(role as never, { name, exact: true }),
+              locator
+            );
 
             const matches = await target.count().catch(() => 0);
             if (matches !== 1) {

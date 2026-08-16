@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <!-- Deliberately linked from nowhere: opened directly by the capture tests.
+
+       This is the shape of the REAL target application, reduced. Its "Log in"
+       and "Sign up" each match twice, and no scope on earth separates the two
+       copies, because they are siblings inside the same single unnamed <form>:
+
+           form > div > button[type=button]   <- a tab that switches panel
+           form > button[type=submit]         <- the real submit
+
+       They share every ancestor there is. There is no landmark here on
+       purpose, and the form carries no accessible name, so `getByRole("form")`
+       sees nothing and `page.locator("form")` — the CSS scope that saved the
+       unnamed-form fixture — matches the ONE form both buttons live in and
+       narrows nothing. The consequence, measured against the real app, was
+       that the login button was absent from the map, the application yielded
+       zero write actions, and the flow this tool exists to automate could not
+       be tested at all.
+
+       What separates them is an attribute of the element itself. That is a
+       semantic fact — it says what the element IS, and if it disappears the
+       test SHOULD break — which is exactly the opposite of `.first()`/`.nth()`,
+       and why attribute narrowing is allowed here where position never is. -->
+  <head><meta charset="utf-8" /><title>Fixture · Attribute siblings</title></head>
+  <body>
+    <form>
+      <div>
+        <button type="button">Log in</button>
+        <button type="button">Sign up</button>
+      </div>
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" />
+
+      <!-- Two fields sharing a label, separable only by the key each submits
+           under. `name` is the second attribute the narrowing is allowed to
+           use, and this is the case that exercises it. -->
+      <label for="billing-code">Code</label>
+      <input id="billing-code" name="billing-code" type="text" />
+      <label for="shipping-code">Code</label>
+      <input id="shipping-code" name="shipping-code" type="text" />
+
+      <!-- Same name, same type, separable only by the test id the application
+           put there for exactly this purpose. `data-testid` is tried FIRST,
+           ahead of `type`, because it is the most intentional of the three. -->
+      <button type="button" data-testid="more-orders">More</button>
+      <button type="button" data-testid="more-invoices">More</button>
+
+      <!-- Irreducible on purpose, and the case for the generated-value rule:
+           identical `type`, no `name`, and the only attribute that differs
+           carries a build-time hash. A hash READS as semantic and BEHAVES like
+           position — it changes on the next deploy without the interface having
+           changed — so it is refused, and this pair must end up in `ambiguous`
+           rather than guessed at. Drop the hash rule and these two get
+           "separated" by a value that will not survive a release. -->
+      <button type="button" data-testid="help-a1b2c3d4e5f6">Help</button>
+      <button type="button" data-testid="help-9f8e7d6c5b4a">Help</button>
+
+      <button type="submit">Log in</button>
+    </form>
+  </body>
+</html>

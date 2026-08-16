@@ -132,6 +132,136 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     await page.close();
   });
 
+  // The blocker measured on the real target application: "Log in" and "Sign up"
+  // each match twice and NO scope separates them, because the tab that switches
+  // panel and the submit that logs in are siblings inside the same single
+  // unnamed <form> — `form > div > button[type=button]` and
+  // `form > button[type=submit]` — sharing every ancestor. The login button was
+  // therefore absent from the map, the app yielded zero write actions, and the
+  // one flow this tool exists to automate could not be tested at all.
+  describe("attribute narrowing, when no scope can separate two siblings", () => {
+    const siblingsScreen = async () => {
+      const page = await (await browser!.newContext()).newPage();
+      await page.goto(site.url.replace(/\/$/, "") + "/attribute-siblings.html");
+      const screen = await captureScreen(page, { screenId: "attribute_siblings", baseUrl: site.url, secrets: [] });
+      return { page, screen };
+    };
+
+    it("really has no scope that separates the two controls", async () => {
+      const { page } = await siblingsScreen();
+      // Ground truth first, or the test below could pass for the wrong reason.
+      expect(await page.getByRole("form").count()).toBe(0);
+      expect(await page.locator("form").count()).toBe(1);
+      expect(await page.getByRole("button", { name: "Log in", exact: true }).count()).toBe(2);
+      expect(await page.locator("form").getByRole("button", { name: "Log in", exact: true }).count()).toBe(2);
+      await page.close();
+    });
+
+    it("records BOTH controls, the tab and the submit, instead of discarding the pair", async () => {
+      const { page, screen } = await siblingsScreen();
+      const logIn = screen.locators.filter((l) => l.accessibleName === "Log in" && l.kind === "button");
+      expect(logIn).toHaveLength(2);
+      expect(logIn.map((l) => l.disambiguatedBy)).toEqual(["attribute:[type='button']", "attribute:[type='submit']"]);
+      // Same accessible name, so the same identifier — `uniqueName` is what
+      // keeps the second from overwriting the first.
+      expect(logIn.map((l) => l.name)).toEqual(["log_in_button", "log_in_button_2"]);
+      await page.close();
+    });
+
+    it("emits the composed expression it validated, in Python", async () => {
+      const { page, screen } = await siblingsScreen();
+      const submit = screen.locators.find((l) => l.disambiguatedBy === "attribute:[type='submit']");
+      expect(submit).toBeDefined();
+      expect(submit!.python).toBe(
+        'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'submit\']"))'
+      );
+      await page.close();
+    });
+
+    // The equivalence this project already broke once: what gets validated must
+    // be the very expression that ships. Rebuilt here from `disambiguatedBy`
+    // alone and counted live, for every locator on the screen.
+    it("resolves every recorded locator to exactly one element, live", async () => {
+      const { page, screen } = await siblingsScreen();
+      expect(screen.locators.length).toBeGreaterThan(0);
+      for (const locator of screen.locators) {
+        expect(locator.count).toBe(1);
+        const narrowing = locator.disambiguatedBy?.startsWith("attribute:") === true
+          ? locator.disambiguatedBy.slice("attribute:".length)
+          : null;
+        if (narrowing === null) continue;
+        const role = locator.kind === "button" ? "button" : "textbox";
+        const rebuilt = page
+          .getByRole(role, { name: locator.accessibleName!, exact: true })
+          .and(page.locator(narrowing));
+        expect(await rebuilt.count()).toBe(1);
+      }
+      await page.close();
+    });
+
+    it("never disambiguates by position", async () => {
+      const { page, screen } = await siblingsScreen();
+      for (const locator of screen.locators) {
+        expect(locator.python).not.toMatch(/\.(first|last|nth\()/);
+        expect(locator.disambiguatedBy ?? "").not.toMatch(/first|last|nth|:nth-|:first-|:last-/);
+      }
+      await page.close();
+    });
+
+    // The whole point of the change: with the pair discarded, this list was
+    // empty and the login could not be exercised at all. It must now hang on
+    // the SUBMIT, never on the tab — filling the form and then clicking the
+    // control that only switches panel would never log anything in.
+    it("picks up the submit, not the tab, as the screen's write action", async () => {
+      const { page, screen } = await siblingsScreen();
+      const actions = await collectWriteActions(page, screen, []);
+      expect(actions).toHaveLength(1);
+      const chosen = screen.locators.find((l) => l.name === actions[0].locator);
+      expect(chosen?.disambiguatedBy).toBe("attribute:[type='submit']");
+      expect(actions[0].formFields).toContain(
+        screen.locators.find((l) => l.kind === "input" && l.accessibleName === "Email")!.name
+      );
+      await page.close();
+    });
+
+    it("separates two fields that share a label by the name each submits under", async () => {
+      const { page, screen } = await siblingsScreen();
+      const codes = screen.locators.filter((l) => l.accessibleName === "Code" && l.kind === "input");
+      expect(codes).toHaveLength(2);
+      expect(codes.map((l) => l.disambiguatedBy)).toEqual([
+        "attribute:[name='billing-code']",
+        "attribute:[name='shipping-code']",
+      ]);
+      await page.close();
+    });
+
+    // `data-testid` is tried ahead of `type`: it is the most intentional of the
+    // three, and here it is the only one that separates the pair at all.
+    it("separates two identical buttons by their test id", async () => {
+      const { page, screen } = await siblingsScreen();
+      const more = screen.locators.filter((l) => l.accessibleName === "More" && l.kind === "button");
+      expect(more).toHaveLength(2);
+      expect(more.map((l) => l.disambiguatedBy)).toEqual([
+        "attribute:[data-testid='more-orders']",
+        "attribute:[data-testid='more-invoices']",
+      ]);
+      await page.close();
+    });
+
+    // A hash READS as semantic and BEHAVES like position: it changes on the
+    // next deploy without the interface having changed. Refusing it leaves the
+    // pair irreducible, which is this crawler's honest answer.
+    it("discards a pair no allowed attribute separates instead of guessing at it", async () => {
+      const { page, screen } = await siblingsScreen();
+      expect(screen.locators.some((l) => l.accessibleName === "Help")).toBe(false);
+      const discarded = screen.ambiguous.find((c) => c.candidate.includes("Help"));
+      expect(discarded).toBeDefined();
+      expect(discarded!.count).toBe(2);
+      expect(JSON.stringify(screen.locators)).not.toContain("a1b2c3d4e5f6");
+      await page.close();
+    });
+  });
+
   it("records an irreducibly duplicated text as ambiguous instead of guessing", async () => {
     const page = await (await browser!.newContext()).newPage();
     await page.goto(site.url);
