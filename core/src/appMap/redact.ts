@@ -25,6 +25,9 @@ export function redactText(text: string, secrets: string[]): string {
  * the schema grows, which a hand-written per-field walk cannot promise.
  */
 export function redactMap(map: AppMap, secrets: string[]): AppMap {
-  const redacted = redactText(JSON.stringify(map), secrets);
+  const escapedVariants = secrets
+    .filter((s) => s.trim().length > 0)
+    .map((s) => JSON.stringify(s).slice(1, -1));
+  const redacted = redactText(JSON.stringify(map), [...secrets, ...escapedVariants]);
   return AppMapSchema.parse(JSON.parse(redacted));
 }

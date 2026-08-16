@@ -47,4 +47,32 @@ describe("redactMap", () => {
     const serialised = JSON.stringify(redactMap(mapWithSecret, secrets));
     for (const secret of secrets) expect(serialised).not.toContain(secret);
   });
+
+  it("leaves no trace of a secret containing a double quote", () => {
+    const secret = 'p@ss"word1';
+    const map: AppMap = {
+      ...mapWithSecret,
+      screens: [{ ...mapWithSecret.screens[0], texts: ["Email", secret] }],
+    };
+    const serialised = JSON.stringify(redactMap(map, [secret]));
+    // The raw secret (with a literal ") can never appear byte-for-byte inside
+    // valid JSON output regardless of redaction, so that check alone would be
+    // a no-op here. The actual leak vector is the JSON-escaped form
+    // (p@ss\"word1) surviving in the file, so that is what must be absent.
+    expect(serialised).not.toContain(secret);
+    expect(serialised).not.toContain(JSON.stringify(secret).slice(1, -1));
+  });
+
+  it("leaves no trace of a secret containing a backslash", () => {
+    const secret = "pa\\ss";
+    const map: AppMap = {
+      ...mapWithSecret,
+      screens: [{ ...mapWithSecret.screens[0], texts: ["Email", secret] }],
+    };
+    const serialised = JSON.stringify(redactMap(map, [secret]));
+    // Same reasoning: the escaped form (pa\\ss, doubled backslash) is what
+    // actually ends up in the serialised JSON and is what must be redacted.
+    expect(serialised).not.toContain(secret);
+    expect(serialised).not.toContain(JSON.stringify(secret).slice(1, -1));
+  });
 });
