@@ -7,6 +7,12 @@
        screen instead of one screen (and one committed Page Object) per post. -->
   <body><main><h1>Blog post</h1>
   <div><span>Every post shares this layout.</span></div>
+  <!-- Ordinary copy, over the 300-character locator cap. It has no business
+       being a locator, but it must still reach screen.texts: that is what the
+       follow-up plan checks expected literals against, so a paragraph that
+       vanishes here becomes a literal the plan rejects as invented, about text
+       the application really shows. -->
+  <p>Comments on this blog are moderated before they appear, which usually takes about one working day, and occasionally longer over a weekend or a public holiday. Please do not post the same comment twice while you wait for it to show up, because duplicates are removed automatically and the second copy is the one that gets deleted.</p>
   <!-- A write action on a TEMPLATED screen. /blog/:id has no single URL to
        request: rebuilding one from the template makes the crawler ask the
        server for a literal "/blog/:id", the same defect already fixed in the

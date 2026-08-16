@@ -35,8 +35,26 @@ const LOGOUT_NAME = /log\s*-?\s*out|logout|sign\s*-?\s*out|cerrar\s+sesi[oó]n|d
  */
 const LOGOUT_PATH = /(^|\/)(log-?out|sign-?out|cerrar-sesi[oó]n|desconectar)(\/|$)/i;
 
-/** A single text node long enough to be a paragraph is copy, not a locator target. */
+/**
+ * A single text node long enough to be a paragraph is copy, not a locator
+ * target: `get_by_text` on 400 characters of prose is a brittle assertion
+ * nobody wants in a Page Object.
+ *
+ * This is a cap on LOCATOR CANDIDACY only, never on capture. It used to gate
+ * the `<p>` pass as well, so a paragraph over 300 characters vanished from
+ * `screen.texts` altogether — and `texts` is exactly what the follow-up plan
+ * validates expected literals against, so ordinary copy (a terms-and-
+ * conditions line, an empty-state explanation, a long error message) silently
+ * became a literal the plan would reject as invented.
+ */
 const MAX_TEXT_CANDIDATE_LENGTH = 300;
+
+/**
+ * The ceiling on what enters `texts` at all. Far above ordinary copy, and
+ * present only so a pathological node — a minified blob in a stray `<div>` —
+ * cannot dump kilobytes into every map.
+ */
+const MAX_TEXT_CAPTURE_LENGTH = 5_000;
 
 /**
  * Reading an attribute or the text of an element the crawler ALREADY holds a
@@ -63,6 +81,8 @@ interface Candidate {
   accessibleName: string;
   build: (scope: Locator | Page) => Locator;
   python: (scopePrefix: string) => string;
+  /** Copy too long to be worth a locator: recorded in `texts`, never validated. */
+  textOnly?: boolean;
 }
 
 /**
@@ -137,7 +157,7 @@ async function fieldNames(page: Page, handle: Locator): Promise<string[]> {
  * skipped because the role pass above already names them.
  */
 async function leafTexts(page: Page): Promise<string[]> {
-  return page.evaluate((maxLength: number) => {
+  return page.evaluate((maxCaptureLength: number) => {
     const skip = new Set([
       "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TITLE", "IFRAME", "SVG", "PATH",
       "A", "BUTTON", "INPUT", "SELECT", "TEXTAREA", "OPTION", "LABEL",
@@ -148,7 +168,7 @@ async function leafTexts(page: Page): Promise<string[]> {
       if (skip.has(element.tagName)) continue;
       if (element.children.length > 0) continue;
       const text = (element.textContent ?? "").trim();
-      if (text.length === 0 || text.length > maxLength) continue;
+      if (text.length === 0 || text.length > maxCaptureLength) continue;
       const candidate = element as HTMLElement & { checkVisibility?: () => boolean };
       const visible =
         typeof candidate.checkVisibility === "function"
@@ -158,7 +178,7 @@ async function leafTexts(page: Page): Promise<string[]> {
       found.push(text);
     }
     return found;
-  }, MAX_TEXT_CANDIDATE_LENGTH);
+  }, MAX_TEXT_CAPTURE_LENGTH);
 }
 
 async function collectCandidates(page: Page): Promise<Candidate[]> {
@@ -223,7 +243,7 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
   const paragraphs = await page.getByRole("paragraph").allInnerTexts();
   for (const text of [...paragraphs, ...(await leafTexts(page))]) {
     const trimmed = text.trim();
-    if (trimmed.length === 0 || trimmed.length > MAX_TEXT_CANDIDATE_LENGTH || seenTexts.has(trimmed)) continue;
+    if (trimmed.length === 0 || trimmed.length > MAX_TEXT_CAPTURE_LENGTH || seenTexts.has(trimmed)) continue;
     seenTexts.add(trimmed);
     candidates.push({
       kind: "text",
@@ -231,6 +251,10 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
       accessibleName: trimmed,
       build: (scope) => scope.getByText(trimmed, { exact: true }),
       python: (prefix) => `${prefix}get_by_text(${pythonLiteral(trimmed)}, exact=True)`,
+      // Over the cap it is copy, not a target: it still belongs in `texts`,
+      // which is what expected literals are checked against, but validating a
+      // locator for it would put 400 characters of prose in a Page Object.
+      textOnly: trimmed.length > MAX_TEXT_CANDIDATE_LENGTH,
     });
   }
 
@@ -295,6 +319,9 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
   for (const candidate of await collectCandidates(page)) {
     const cleanName = redactText(candidate.accessibleName, context.secrets);
     if (!texts.includes(cleanName)) texts.push(cleanName);
+    // Captured, deliberately not validated: it is copy, and it is already in
+    // `texts` above, which is the only thing this pass owed it.
+    if (candidate.textOnly === true) continue;
 
     const resolved = await resolveCandidate(page, candidate);
     if ("ambiguous" in resolved) {

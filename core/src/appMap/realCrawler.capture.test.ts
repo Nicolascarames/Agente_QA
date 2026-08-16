@@ -156,6 +156,22 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     await page.close();
   });
 
+  // The 300-character cap is about LOCATOR candidacy — prose makes a brittle
+  // get_by_text — but it also gated the <p> pass, so any paragraph over it
+  // disappeared from `texts` entirely. `texts` is what the follow-up plan
+  // validates expected literals against, so ordinary copy became a literal the
+  // plan would reject as invented, about text the application really shows.
+  it("keeps a paragraph longer than the locator cap in texts, without making it a locator", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url.replace(/\/$/, "") + "/blog/first-post");
+    const screen = await captureScreen(page, { screenId: "blog", baseUrl: site.url, secrets: [] });
+    const long = screen.texts.find((t) => t.startsWith("Comments on this blog are moderated"));
+    expect(long).toBeDefined();
+    expect(long!.length).toBeGreaterThan(300);
+    expect(screen.locators.some((l) => l.accessibleName === long)).toBe(false);
+    await page.close();
+  });
+
   it("collects visible text living in a span or a div, not only in a paragraph", async () => {
     const page = await (await browser!.newContext()).newPage();
     await page.goto(site.url.replace(/\/$/, "") + "/blog/first-post");
