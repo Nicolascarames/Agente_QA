@@ -199,6 +199,80 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     await page.close();
   }, 90_000);
 
+  // The crawler used to RECONSTRUCT a field's accessible name from attributes
+  // — `aria-label`, then `innerText`, then `<label for=…>`, then the
+  // placeholder — and then emit `get_by_label` whatever the name came from.
+  // On a real client-rendered login that produced
+  // `get_by_label("ex. alex.s@babia.io")`, which matches nothing, so both the
+  // email and the password field validated at 0 and left the map: no inputs,
+  // no form fields, no write actions, no login, no private area.
+  describe("field naming", () => {
+    const fieldsScreen = async () => {
+      const page = await (await browser!.newContext()).newPage();
+      await page.goto(site.url.replace(/\/$/, "") + "/fields.html");
+      const screen = await captureScreen(page, { screenId: "fields", baseUrl: site.url, secrets: [] });
+      return { page, screen };
+    };
+    const input = (screen: Awaited<ReturnType<typeof fieldsScreen>>["screen"], name: string) =>
+      screen.locators.find((l) => l.kind === "input" && l.accessibleName === name);
+
+    it("names a field from its `for`-associated label, never from its placeholder", async () => {
+      const { page, screen } = await fieldsScreen();
+      const email = input(screen, "Email");
+      expect(email).toBeDefined();
+      expect(email!.python).not.toContain("get_by_placeholder");
+      await page.close();
+    });
+
+    // `element.labels` is what an attribute read cannot replace: a wrapping
+    // <label> carries no `for` and the input needs no `id`, so the old chain
+    // saw no label at all and named the field after its placeholder.
+    it("names a field from its WRAPPING label, which carries no `for` at all", async () => {
+      const { page, screen } = await fieldsScreen();
+      expect(input(screen, "Password")).toBeDefined();
+      expect(screen.locators.some((l) => l.accessibleName === "At least 8 characters")).toBe(false);
+      expect(input(screen, "Password")!.python).not.toContain("get_by_placeholder");
+      await page.close();
+    });
+
+    // The precise bug: a placeholder-derived name emitted as `get_by_label`
+    // matches nothing, so the field never reached the map.
+    it("keeps a placeholder-only field and never emits get_by_label for it", async () => {
+      const { page, screen } = await fieldsScreen();
+      const nickname = input(screen, "How should we call you?");
+      expect(nickname).toBeDefined();
+      expect(nickname!.python).not.toContain("get_by_label");
+      await page.close();
+    });
+
+    // Every other field on the fixture resolves by role, which is preferred
+    // because it is the most stable. `<input type="date">` is the measured case
+    // where the role exposes no accessible name, so the placeholder matcher is
+    // the one that has to ship.
+    it("emits get_by_placeholder when the name came from the placeholder and no role resolves it", async () => {
+      const { page, screen } = await fieldsScreen();
+      expect(input(screen, "dd/mm/yyyy")?.python).toBe('page.get_by_placeholder("dd/mm/yyyy", exact=True)');
+      await page.close();
+    });
+
+    it("resolves a name that lives in another element through aria-labelledby", async () => {
+      const { page, screen } = await fieldsScreen();
+      expect(input(screen, "Referred by")).toBeDefined();
+      await page.close();
+    });
+
+    // The end of the chain the defect broke: inputs → form fields → write
+    // actions. A screen whose fields never made it into the map offers a submit
+    // with nothing to fill, which is how a login became unautomatable.
+    it("gives the form's submit every field of that form, so the write action has something to fill", async () => {
+      const { page, screen } = await fieldsScreen();
+      const save = (await collectWriteActions(page, screen, [])).find((a) => a.label === "Save");
+      expect(save).toBeDefined();
+      expect(save!.formFields).toHaveLength(5);
+      await page.close();
+    });
+  });
+
   it("warns through the event channel for every candidate it discards as ambiguous", async () => {
     const page = await (await browser!.newContext()).newPage();
     const events: AgentEvent[] = [];

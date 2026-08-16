@@ -75,12 +75,26 @@ interface CaptureContext {
   emit?: EmitEvent;
 }
 
-interface Candidate {
-  kind: LocatorEntry["kind"];
-  role: string | null;
-  accessibleName: string;
+/**
+ * One way of addressing an element: the Playwright locator that gets validated
+ * live, and the Python that ships, built from the very same matcher.
+ */
+interface LocatorForm {
   build: (scope: Locator | Page) => Locator;
   python: (scopePrefix: string) => string;
+}
+
+interface Candidate {
+  kind: LocatorEntry["kind"];
+  accessibleName: string;
+  /**
+   * Every way this element may be addressed, most stable first. The FIRST form
+   * that validates to exactly one element is the one recorded — which is what
+   * keeps the emitted matcher tied to the source the name came from: a field
+   * named after its placeholder carries a `get_by_placeholder` form and never
+   * a `get_by_label` one, because `get_by_label` does not match placeholders.
+   */
+  forms: LocatorForm[];
   /** Copy too long to be worth a locator: recorded in `texts`, never validated. */
   textOnly?: boolean;
 }
@@ -98,6 +112,34 @@ interface Candidate {
  */
 function exactRolePython(role: string, name: string): (prefix: string) => string {
   return (prefix) => `${prefix}get_by_role(${pythonLiteral(role)}, name=${pythonLiteral(name)}, exact=True)`;
+}
+
+function roleForm(role: string, name: string): LocatorForm {
+  return {
+    build: (scope) => scope.getByRole(role as never, { name, exact: true }),
+    python: exactRolePython(role, name),
+  };
+}
+
+function labelForm(name: string): LocatorForm {
+  return {
+    build: (scope) => scope.getByLabel(name, { exact: true }),
+    python: (prefix) => `${prefix}get_by_label(${pythonLiteral(name)}, exact=True)`,
+  };
+}
+
+function placeholderForm(name: string): LocatorForm {
+  return {
+    build: (scope) => scope.getByPlaceholder(name, { exact: true }),
+    python: (prefix) => `${prefix}get_by_placeholder(${pythonLiteral(name)}, exact=True)`,
+  };
+}
+
+function textForm(text: string): LocatorForm {
+  return {
+    build: (scope) => scope.getByText(text, { exact: true }),
+    python: (prefix) => `${prefix}get_by_text(${pythonLiteral(text)}, exact=True)`,
+  };
 }
 
 /**
@@ -121,30 +163,108 @@ async function attribute(handle: Locator, name: string): Promise<string> {
   return (await handle.getAttribute(name, { timeout: SHORT_READ_TIMEOUT_MS }).catch(() => null)) ?? "";
 }
 
+/** Where a field's name came from. It decides which matcher may be emitted for it. */
+type NameSource = "label" | "aria" | "labelledby" | "placeholder";
+
+interface FieldNaming {
+  name: string;
+  source: NameSource;
+  /** The ARIA role the control exposes, or "" when it exposes none worth a role locator. */
+  role: string;
+  /** Every name the field could be recorded under, most specific first. */
+  names: string[];
+}
+
 /**
- * The text of the `<label for=…>` that names a field, or "" when there is none.
+ * The name a form field really answers to, ASKED OF THE DOM in one round trip
+ * instead of reconstructed from attributes, together with the source it came
+ * from.
  *
- * The `count()` gate is the whole point: `count()` answers from the current DOM
- * without waiting, while `innerText()` on a selector that matches nothing waits
- * for it to appear and only then gives up. An input with an `id` and no
- * matching label — a placeholder-only or `aria-label`-only field, the ordinary
- * case in a single-page application — therefore used to cost Playwright's full
- * default timeout EACH TIME, and this runs once per field per capture.
+ * `element.labels` is the whole reason this is an `evaluate`: it resolves a
+ * WRAPPING `<label>Email <input …></label>` — which carries no `for` and needs
+ * no `id` — exactly as it resolves a `for`-associated one. Attribute-sniffing
+ * saw neither, so on a real client-rendered login the chain fell through to the
+ * placeholder, the field was named after it, and the name that shipped was the
+ * hint text rather than the label the user reads.
+ *
+ * The source travels with the name because `get_by_label` does NOT match
+ * placeholders: naming a field from its placeholder and emitting `get_by_label`
+ * produces a locator that validates at 0 matches, and both fields of a login
+ * form vanished from the map that way — no inputs, therefore no form fields, no
+ * write actions and no login at all.
+ *
+ * One `evaluate` also removes the stall the old `label[for=…]` lookup could
+ * cost: reading the DOM inside the page never waits for an element to appear.
  */
-async function labelTextFor(page: Page, id: string): Promise<string> {
-  const escaped = id.replace(/["\\]/g, "\\$&");
-  const label = page.locator(`label[for="${escaped}"]`);
-  if ((await label.count().catch(() => 0)) !== 1) return "";
-  return await label.innerText({ timeout: SHORT_READ_TIMEOUT_MS }).catch(() => "");
+async function fieldNaming(handle: Locator): Promise<FieldNaming | null> {
+  const raw = await handle
+    .evaluate((element) => {
+      const control = element as HTMLInputElement;
+      const labels = control.labels;
+      const type = (control.getAttribute("type") ?? "text").toLowerCase();
+      return {
+        label: labels !== null && labels !== undefined && labels.length > 0 ? (labels[0].textContent ?? "") : "",
+        aria: control.getAttribute("aria-label") ?? "",
+        labelledby: (control.getAttribute("aria-labelledby") ?? "")
+          .split(/\s+/)
+          .filter((id) => id.length > 0)
+          .map((id) => document.getElementById(id)?.textContent ?? "")
+          .join(" "),
+        placeholder: control.getAttribute("placeholder") ?? "",
+        role:
+          element.tagName === "TEXTAREA"
+            ? "textbox"
+            : type === "search"
+              ? "searchbox"
+              : type === "number"
+                ? "spinbutton"
+                : ["", "text", "email", "password", "tel", "url"].includes(type)
+                  ? "textbox"
+                  : "",
+      };
+    }, undefined, { timeout: SHORT_READ_TIMEOUT_MS })
+    .catch(() => null);
+  if (raw === null) return null;
+
+  const sources: { source: NameSource; value: string }[] = (
+    [
+      ["label", raw.label],
+      ["aria", raw.aria],
+      ["labelledby", raw.labelledby],
+      ["placeholder", raw.placeholder],
+    ] as [NameSource, string][]
+  ).map(([source, value]) => ({ source, value: value.replace(/\s+/g, " ").trim() }));
+
+  const primary = sources.find((entry) => entry.value.length > 0);
+  if (primary === undefined) return null;
+  return {
+    name: primary.value,
+    source: primary.source,
+    role: raw.role,
+    names: Array.from(new Set(sources.map((entry) => entry.value).filter((value) => value.length > 0))),
+  };
 }
 
 /** Every name a form field could be recorded under, most specific first. */
-async function fieldNames(page: Page, handle: Locator): Promise<string[]> {
-  const id = await attribute(handle, "id");
-  const label = id.length > 0 ? await labelTextFor(page, id) : "";
-  const aria = await attribute(handle, "aria-label");
-  const placeholder = await attribute(handle, "placeholder");
-  return [label, aria, placeholder].map((name) => name.trim()).filter((name) => name.length > 0);
+async function fieldNames(handle: Locator): Promise<string[]> {
+  return (await fieldNaming(handle))?.names ?? [];
+}
+
+/**
+ * How a field may be addressed, most stable first.
+ *
+ * The role form leads because a role+name locator is the one that survives a
+ * refactor of the markup — but it is only ever RECORDED if it validates to
+ * exactly one element, so a field whose role exposes no accessible name (an
+ * `<input type="date">` named by its placeholder, measured against Chromium)
+ * falls through to the matcher for the source its name really came from. There
+ * is deliberately no path from a placeholder-derived name to `get_by_label`.
+ */
+function fieldForms(naming: FieldNaming): LocatorForm[] {
+  const forms: LocatorForm[] = [];
+  if (naming.role.length > 0) forms.push(roleForm(naming.role, naming.name));
+  forms.push(naming.source === "placeholder" ? placeholderForm(naming.name) : labelForm(naming.name));
+  return forms;
 }
 
 /**
@@ -197,13 +317,7 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
       const trimmed = await controlName(handle, { useValue: role === "button" });
       if (trimmed.length === 0 || names.has(trimmed)) continue;
       names.add(trimmed);
-      candidates.push({
-        kind,
-        role,
-        accessibleName: trimmed,
-        build: (scope) => scope.getByRole(role as never, { name: trimmed, exact: true }),
-        python: exactRolePython(role, trimmed),
-      });
+      candidates.push({ kind, accessibleName: trimmed, forms: [roleForm(role, trimmed)] });
     }
   }
 
@@ -214,9 +328,11 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
   // with an empty name and gets dropped there, `textbox` role or no `textbox`
   // role. Confirmed empirically against this fixture: both the email and the
   // password field match `getByRole("textbox")`, and both report
-  // `innerText: ""`. Their real name lives on a separate `<label for="...">`,
-  // which this pass reads directly. Without it, no login screen would get a
-  // fillable input at all and the whole point of the map would be missed.
+  // `innerText: ""`. This pass asks the DOM for their real name instead —
+  // wrapping label, `for`-associated label, `aria-label`, `aria-labelledby` or
+  // placeholder, in that order — and emits the matcher that fits whichever of
+  // those the name came from. Without it, no login screen would get a fillable
+  // input at all and the whole point of the map would be missed.
   //
   // Dedup against the role loop by accessible name: if the role loop above
   // already produced an "input" candidate with this name, the role-based
@@ -227,16 +343,10 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
   const inputNamesFromRoleLoop = new Set(candidates.filter((c) => c.kind === "input").map((c) => c.accessibleName));
 
   for (const handle of await page.locator(FIELD_SELECTOR).all()) {
-    const name = (await fieldNames(page, handle))[0] ?? "";
-    if (name.length === 0 || inputNamesFromRoleLoop.has(name)) continue;
-    inputNamesFromRoleLoop.add(name);
-    candidates.push({
-      kind: "input",
-      role: null,
-      accessibleName: name,
-      build: (scope) => scope.getByLabel(name, { exact: true }),
-      python: (prefix) => `${prefix}get_by_label(${pythonLiteral(name)}, exact=True)`,
-    });
+    const naming = await fieldNaming(handle);
+    if (naming === null || inputNamesFromRoleLoop.has(naming.name)) continue;
+    inputNamesFromRoleLoop.add(naming.name);
+    candidates.push({ kind: "input", accessibleName: naming.name, forms: fieldForms(naming) });
   }
 
   const seenTexts = new Set<string>();
@@ -247,10 +357,8 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
     seenTexts.add(trimmed);
     candidates.push({
       kind: "text",
-      role: null,
       accessibleName: trimmed,
-      build: (scope) => scope.getByText(trimmed, { exact: true }),
-      python: (prefix) => `${prefix}get_by_text(${pythonLiteral(trimmed)}, exact=True)`,
+      forms: [textForm(trimmed)],
       // Over the cap it is copy, not a target: it still belongs in `texts`,
       // which is what expected literals are checked against, but validating a
       // locator for it would put 400 characters of prose in a Page Object.
@@ -273,26 +381,41 @@ async function resolveCandidate(
   page: Page,
   candidate: Candidate
 ): Promise<{ python: string; disambiguatedBy?: string } | { ambiguous: AmbiguousCandidate }> {
-  const plainPython = candidate.python("page.");
-  const plainCount = await candidate.build(page).count();
-  if (plainCount === 1) return { python: plainPython };
-  if (plainCount === 0) return { ambiguous: { candidate: plainPython, count: 0, reason: "no encontrado al validar" } };
+  let reportedPython = candidate.forms[0].python("page.");
+  let reportedCount = -1;
 
-  for (const region of REGIONS) {
-    const scope = page.getByRole(region as never);
-    if ((await scope.count()) !== 1) continue;
-    if ((await candidate.build(scope).count()) !== 1) continue;
-    return {
-      python: `page.get_by_role(${pythonLiteral(region)}).${candidate.python("")}`,
-      disambiguatedBy: `region:${region}`,
-    };
+  for (const form of candidate.forms) {
+    const plainCount = await form.build(page).count().catch(() => 0);
+    if (plainCount === 1) return { python: form.python("page.") };
+    if (reportedCount < 0) {
+      reportedCount = plainCount;
+      reportedPython = form.python("page.");
+    }
+    // Nothing to scope down: this way of addressing the element does not reach
+    // it at all, so the next form gets its turn.
+    if (plainCount === 0) continue;
+
+    for (const region of REGIONS) {
+      const scope = page.getByRole(region as never);
+      if ((await scope.count()) !== 1) continue;
+      if ((await form.build(scope).count()) !== 1) continue;
+      return {
+        python: `page.get_by_role(${pythonLiteral(region)}).${form.python("")}`,
+        disambiguatedBy: `region:${region}`,
+      };
+    }
+    // A form that matched several elements is the more informative report: it
+    // says the element IS there and could not be pinned down, which is a
+    // different problem from a matcher that never reached it.
+    reportedCount = plainCount;
+    reportedPython = form.python("page.");
   }
 
   return {
     ambiguous: {
-      candidate: plainPython,
-      count: plainCount,
-      reason: "aparece varias veces y ninguna región lo deja en 1",
+      candidate: reportedPython,
+      count: Math.max(reportedCount, 0),
+      reason: reportedCount > 1 ? "aparece varias veces y ninguna región lo deja en 1" : "no encontrado al validar",
     },
   };
 }
@@ -426,7 +549,7 @@ export async function collectWriteActions(page: Page, screen: Screen, secrets: s
     const namesInForm = new Set<string>();
     if (form !== null) {
       for (const field of await form.locator(FIELD_SELECTOR).all()) {
-        for (const name of await fieldNames(page, field)) namesInForm.add(redactText(name, secrets));
+        for (const name of await fieldNames(field)) namesInForm.add(redactText(name, secrets));
       }
     }
 
@@ -475,6 +598,35 @@ function scopedBy(page: Page, region: string | null): Locator | Page {
   return region === null ? page : page.getByRole(region as never);
 }
 
+/**
+ * The field, addressed the same ways capture is allowed to address it and in
+ * the same order of preference. Re-resolving by label alone was fine while
+ * every recorded field WAS a label match; now that a field may legitimately be
+ * recorded by its role or by its placeholder, a label-only lookup answers 0 for
+ * it, the field is skipped, and the "valid" submit that follows never
+ * authenticates — the same silent-empty-field failure that made a login look
+ * like the application's fault.
+ *
+ * Returns the first form that resolves to exactly one element, or the worst
+ * count seen so the caller can say what it found instead.
+ */
+async function fieldTarget(
+  scope: Locator | Page,
+  name: string
+): Promise<{ target: Locator | null; matches: number }> {
+  let worst = 0;
+  for (const form of [
+    scope.getByRole("textbox", { name, exact: true }),
+    scope.getByLabel(name, { exact: true }),
+    scope.getByPlaceholder(name, { exact: true }),
+  ]) {
+    const matches = await form.count().catch(() => 0);
+    if (matches === 1) return { target: form, matches: 1 };
+    worst = Math.max(worst, matches);
+  }
+  return { target: null, matches: worst };
+}
+
 function hasPasswordField(screen: Screen, action: WriteAction): boolean {
   return action.formFields.some((fieldName) => {
     const field = screen.locators.find((l) => l.name === fieldName);
@@ -484,7 +636,7 @@ function hasPasswordField(screen: Screen, action: WriteAction): boolean {
 
 /**
  * Fills a form with the SAME scope every other resolver in this file uses: the
- * region `resolveCandidate` recorded at capture time. Re-resolving the label
+ * region `resolveCandidate` recorded at capture time. Re-resolving the field
  * unscoped is how a Password field disambiguated to `region:main` ends up
  * matching twice, violating strict mode, getting swallowed and leaving the
  * field empty — after which the "valid" submit never authenticates and the
@@ -505,9 +657,8 @@ async function fillFormFields(
     const field = screen.locators.find((l) => l.name === fieldName);
     if (field?.accessibleName === undefined) continue;
     const value = valueFor(field.accessibleName, data, credentials);
-    const target = scopedBy(page, regionOf(field)).getByLabel(field.accessibleName, { exact: true });
-    const matches = await target.count().catch(() => 0);
-    if (matches !== 1) {
+    const { target, matches } = await fieldTarget(scopedBy(page, regionOf(field)), field.accessibleName);
+    if (target === null) {
       emit({
         agent: "explorador", status: "warn", depth: 1,
         message: `El campo "${field.accessibleName}" ya no resuelve a un único elemento al rellenarlo (${matches} coincidencias), se omite`,

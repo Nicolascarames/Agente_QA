@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <!-- Deliberately linked from nowhere: opened directly by the capture tests,
+       so it costs the full-crawl suites nothing. Every field here is named by a
+       DIFFERENT source, which is the whole point — the name a field answers to
+       has to be ASKED OF THE DOM, and the matcher that ships has to be the one
+       that matches the source the name came from. Emitting `get_by_label` for a
+       placeholder-derived name is what left a real login screen with zero
+       inputs, zero write actions and no login at all. -->
+  <head><meta charset="utf-8" /><title>Fixture · Field naming</title></head>
+  <body>
+    <main>
+      <h1>Field naming</h1>
+      <form id="profile">
+        <!-- 1. `for`-associated label: the only case attribute-sniffing ever
+             covered. -->
+        <label for="account-email">Email</label>
+        <input id="account-email" name="email" type="email" />
+
+        <!-- 2. WRAPPING label plus a placeholder — the exact shape of the real
+             application this fixture exists for. No `for` and no `id`, so
+             attribute-sniffing finds no label, falls through to the
+             placeholder, and the field ships named after its hint text.
+             `element.labels` resolves it to "Password". -->
+        <label>Password <input name="password" type="password" placeholder="At least 8 characters" /></label>
+
+        <!-- 3. Placeholder only, no label anywhere. `get_by_label` does not
+             match placeholders, so a name taken from here and emitted as a
+             label locator validated at 0 matches and the field was discarded. -->
+        <input name="nickname" type="text" placeholder="How should we call you?" />
+
+        <!-- 4. `aria-labelledby`, which no single attribute read resolves: the
+             name lives in another element entirely. -->
+        <span id="referrer-label">Referred by</span>
+        <input name="referrer" type="text" aria-labelledby="referrer-label" />
+
+        <!-- 5. A placeholder-named field whose ROLE exposes no accessible name.
+             Measured against Chromium: `<input type="date">` is a textbox whose
+             accessible name is empty, so the preferred role form cannot resolve
+             it and the matcher that ships must be `get_by_placeholder` — the
+             emitter this fixture proves, since every other field here is
+             resolvable by role. -->
+        <input name="starts-on" type="date" placeholder="dd/mm/yyyy" />
+
+        <button type="submit">Save</button>
+      </form>
+    </main>
+  </body>
+</html>
