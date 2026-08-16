@@ -1,3 +1,4 @@
+import { pythonLiteral } from "./pythonLiteral.js";
 import type { LocatorEntry, Screen } from "./schema.js";
 
 const FILLABLE: LocatorEntry["kind"][] = ["input"];
@@ -42,23 +43,32 @@ function locatorMethods(locator: LocatorEntry): string {
  */
 export function emitPageObject(screen: Screen): { path: string; content: string } {
   const body = screen.locators.map(locatorMethods).join("\n\n");
+
+  // A route template with a variable segment (`/item/:id`) has no single URL to
+  // navigate to: a generated `goto()` would request the literal `/item/:id` and
+  // fail against a working application. The test picks the concrete URL itself.
+  const templated = screen.urlTemplate.includes(":");
+  const imports = templated ? "" : "import os\n\n";
+  const goto = templated
+    ? `    # Sin goto(): la ruta tiene segmentos variables (${screen.urlTemplate}).
+    # Navega desde el test a la URL concreta que quieras probar.`
+    : `    def goto(self) -> None:
+        base = os.environ["AGENTE_QA_APP_URL"].rstrip("/")
+        self.page.goto(base + self.URL_TEMPLATE)`;
+
   const content = `# GENERADO por agente-qa desde .agente-qa/map/map.json — NO EDITAR A MANO
 # Las correcciones manuales van en .agente-qa/map/overrides.json
 # Pantalla: ${screen.id}  ·  ruta: ${screen.urlTemplate}
-import os
-
-from playwright.sync_api import Locator, Page
+${imports}from playwright.sync_api import Locator, Page
 
 
 class ${screen.className}:
-    URL_TEMPLATE = "${screen.urlTemplate}"
+    URL_TEMPLATE = ${pythonLiteral(screen.urlTemplate)}
 
     def __init__(self, page: Page):
         self.page = page
 
-    def goto(self) -> None:
-        base = os.environ["AGENTE_QA_APP_URL"].rstrip("/")
-        self.page.goto(base + self.URL_TEMPLATE)
+${goto}
 
 ${body}
 `;

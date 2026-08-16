@@ -52,6 +52,24 @@ describe("emitPageObject", () => {
   });
 
   it("emits goto() from the route template", () => {
-    expect(emitPageObject(screen).content).toContain('URL_TEMPLATE = "/"');
+    const { content } = emitPageObject(screen);
+    expect(content).toContain('URL_TEMPLATE = "/"');
+    expect(content).toContain("def goto(self) -> None:");
+    expect(content).toContain("import os");
+  });
+
+  // A templated route has no single URL: `goto()` would request the literal
+  // "/item/:id" and fail against a working application.
+  it("omits goto() for a route with a variable segment", () => {
+    const { content } = emitPageObject({ ...screen, id: "item_id", className: "ItemIdPage", urlTemplate: "/item/:id" });
+    expect(content).toContain('URL_TEMPLATE = "/item/:id"');
+    expect(content).not.toContain("def goto(");
+    expect(content).not.toContain("import os");
+    expect(content).toContain("segmentos variables");
+  });
+
+  it("escapes the route template like every other Python literal it emits", () => {
+    const { content } = emitPageObject({ ...screen, urlTemplate: '/we"ird' });
+    expect(content).toContain('URL_TEMPLATE = "/we\\"ird"');
   });
 });
