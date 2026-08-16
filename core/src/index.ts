@@ -107,3 +107,5 @@ export type {
   AppMap, Screen, LocatorEntry, ScreenState, Transition, WriteAction,
   AmbiguousCandidate, ScenarioCandidate, OverridesFile, LocatorOverride,
 } from "./appMap/schema.js";
+
+export { appMapDir, appMapPath, saveAppMap, loadAppMap } from "./appMap/mapStore.js";
