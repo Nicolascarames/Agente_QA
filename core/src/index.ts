@@ -52,6 +52,8 @@ export { generateGherkin } from "./agents/intake/gherkinGenerator.js";
 export { writeFeatureFile } from "./agents/intake/writeFeatureFile.js";
 export { runIntake } from "./agents/intake/runIntake.js";
 export type { IntakeCallbacks, RunIntakeOptions } from "./agents/intake/runIntake.js";
+export { checkFeatureLiterals } from "./agents/intake/checkFeatureLiterals.js";
+export type { MissingLiteral, FeatureLiteralCheck } from "./agents/intake/checkFeatureLiterals.js";
 
 export { parseFeatureHeader } from "./agents/generador/parseFeatureHeader.js";
 export { generateCode } from "./agents/generador/codeGenerator.js";
