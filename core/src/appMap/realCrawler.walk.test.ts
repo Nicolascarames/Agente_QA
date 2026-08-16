@@ -271,6 +271,55 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     expect(reset!.transitions.some((t) => t.locator === logOut!.name)).toBe(true);
   }, 20000);
 
+  // A click that changes the view without changing the URL is the primary
+  // target class of this tool, and the walk used to produce NOTHING for it: a
+  // transition was only recorded, and a destination only enqueued, when the URL
+  // changed. On a real client-rendered login — where "Forgot password?" leaves
+  // `page.url()` identical and swaps the panel — the crawl found exactly one
+  // screen and stopped. The design already had the right concept: a content
+  // change without a route change is a STATE of the same screen, which is what
+  // keeps "one Page Object per route" intact. Only the write pass ever produced
+  // one.
+  //
+  // /state.html is the crawl's base URL so the screen count is unambiguous.
+  describe("a click that changes the view without changing the route", () => {
+    const crawlStateFixture = () =>
+      createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/state.html", limits,
+        callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+        emit: () => {},
+      });
+
+    it("records the swapped view as a state of the same screen, leaving the screen count alone", async () => {
+      const result = await crawlStateFixture();
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens).toHaveLength(1);
+      const screen = result.map.screens[0];
+      const state = screen.states.find((s) => s.reachedBy.action === "click");
+      expect(state).toBeDefined();
+      const forgot = screen.locators.find((l) => l.accessibleName === "Forgot password?");
+      expect(state!.reachedBy.locator).toBe(forgot!.name);
+      expect(screen.texts).toContain("We will email you a reset link.");
+    }, 20000);
+
+    it("tags a locator that only exists in that state with its stateId", async () => {
+      const result = await crawlStateFixture();
+      if (!result.ok) throw new Error(result.error);
+      const screen = result.map.screens[0];
+      const sendLink = screen.locators.find((l) => l.accessibleName === "Send reset link");
+      expect(sendLink).toBeDefined();
+      expect(sendLink!.stateId).toBe(screen.states.find((s) => s.reachedBy.action === "click")!.id);
+    }, 20000);
+
+    // Two controls open the SAME panel. The second must add nothing, or a
+    // toggle would grow one state per click.
+    it("does not record a second state for a view it has already recorded", async () => {
+      const result = await crawlStateFixture();
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens[0].states).toHaveLength(1);
+    }, 20000);
+  });
+
   // Review finding: /order-history.html and /order/history.html both
   // normalize, via pythonIdentifier, to the same "order_history_html" — a
   // genuine screen-id collision that nothing before this test caught.

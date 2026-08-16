@@ -567,6 +567,23 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
   };
 }
 
+/**
+ * The screen's fingerprint as it stands right now, without paying for a full
+ * capture. Used to ask the one question a click raises on a client-rendered
+ * application — "did the view change?" — before deciding whether a capture is
+ * worth running at all, so a click that does nothing costs one aria snapshot
+ * instead of a whole screen capture.
+ *
+ * The `networkidle` wait matches the one `captureScreen` opens with, or a view
+ * still mounting would read as a different state and then as the same one a
+ * moment later. Bounded and swallowed, for the reasons documented there.
+ */
+async function currentSignature(page: Page, secrets: string[]): Promise<string | null> {
+  await page.waitForLoadState("networkidle", { timeout: 3_000 }).catch(() => undefined);
+  const snapshot = await page.locator("body").ariaSnapshot({ timeout: SHORT_READ_TIMEOUT_MS }).catch(() => "");
+  return snapshot.length > 0 ? screenSignature(redactText(snapshot, secrets)) : null;
+}
+
 /** `id`, `name` and `className` all derive from the same slug, in one place. */
 function screenIdentity(screenId: string): { id: string; name: string; className: string } {
   return {
@@ -1221,6 +1238,14 @@ export function createRealCrawler(): Crawler {
             durationMs: Date.now() - stepStart,
           });
 
+          // Every fingerprint this screen already accounts for: its base
+          // capture, plus every state recorded from it below. A click that
+          // lands on one of them added nothing, and recording it again is how
+          // two controls that open the same panel would each get their own
+          // state — and how a control that toggles a panel open and shut would
+          // grow one per click.
+          const knownSignatures = new Set<string>([screen.signature]);
+
           // First pass: navigation only. Submits are recorded, never clicked.
           for (const locator of screen.locators.filter((l) => l.kind === "link" || l.kind === "button")) {
             if (screen.writeActions.some((action) => action.locator === locator.name)) continue;
@@ -1307,10 +1332,65 @@ export function createRealCrawler(): Crawler {
             await target.click({ timeout: 5_000 }).catch(() => undefined);
             await page.waitForLoadState("domcontentloaded").catch(() => undefined);
             const after = page.url();
-            if (after === before) continue;
-
-            const targetTemplate = toUrlTemplate(after, input.baseUrl);
             const external = isExternalUrl(after, input.baseUrl);
+            const targetTemplate = external ? "" : toUrlTemplate(after, input.baseUrl);
+
+            // The route did not change, so nothing was navigated to: on a
+            // client-rendered application the click swapped the view in place.
+            // That is a STATE of this screen, never a new screen — which is
+            // exactly what keeps "one Page Object per route" intact. Until now
+            // only the write pass could produce a state, so a click-induced one
+            // fell between the two passes and the walk recorded nothing at all:
+            // measured on a real login, where "Forgot password?" leaves
+            // `page.url()` identical and replaces the panel, the whole crawl
+            // came back with a single screen.
+            if (!external && targetTemplate === template) {
+              const signature = await currentSignature(page, secrets);
+              if (signature === null || knownSignatures.has(signature)) continue;
+              knownSignatures.add(signature);
+
+              const view = await captureScreen(page, { screenId: screen.id, baseUrl: input.baseUrl, secrets });
+              const stateId = `click-${locator.name}`;
+              // Merged IN PLACE: `screens`, `concreteUrls` and `absorbedBy` all
+              // hold this exact object, and swapping in the fresh one
+              // `mergeScreenState` returns would orphan every lookup keyed on
+              // its identity. Locators that only exist here are tagged with the
+              // state id by the merge itself, as the write pass's are.
+              Object.assign(
+                screen,
+                mergeScreenState(screen, {
+                  id: stateId,
+                  reachedBy: { action: "click", locator: locator.name, data: "none" },
+                  texts: view.texts,
+                  locators: view.locators.filter((l) => !screen.locators.some((existing) => existing.python === l.python)),
+                })
+              );
+              emit({
+                agent: "explorador", status: "ok", depth: next.depth + 1,
+                message: `"${name}" cambia la vista sin cambiar de ruta: se guarda como estado de ${template}`,
+                detail: `${screen.states.at(-1)?.addsTexts.length ?? 0} textos nuevos`,
+              });
+
+              // Back to the screen's base state, so the next control is clicked
+              // from the same place the map describes instead of from whatever
+              // this state left behind.
+              try {
+                await page.goto(next.url, { waitUntil: "domcontentloaded" });
+              } catch {
+                complete = false;
+                emit({
+                  agent: "explorador", status: "warn", depth: next.depth + 1,
+                  message: `No se pudo volver a ${next.url} tras el estado "${stateId}", se deja de recorrer esta pantalla`,
+                });
+                break;
+              }
+              continue;
+            }
+
+            // Everything from here down really navigated: the route template
+            // changed, or the click left the application. A click that changed
+            // nothing at all cannot reach this point — it has the same URL,
+            // hence the same template, and the state branch above answered it.
             screen.transitions.push({
               locator: locator.name,
               action: "click",
