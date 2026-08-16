@@ -109,3 +109,5 @@ export type {
 } from "./appMap/schema.js";
 
 export { appMapDir, appMapPath, saveAppMap, loadAppMap } from "./appMap/mapStore.js";
+
+export { overridesPath, loadOverrides, saveOverride, applyOverrides } from "./appMap/overrides.js";
