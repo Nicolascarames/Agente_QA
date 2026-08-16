@@ -111,3 +111,9 @@ export type {
 export { appMapDir, appMapPath, saveAppMap, loadAppMap } from "./appMap/mapStore.js";
 
 export { overridesPath, loadOverrides, saveOverride, applyOverrides } from "./appMap/overrides.js";
+
+export type {
+  CrawlCredentials, CrawlLimits, CrawlCallbacks, CrawlInput, CrawlResult, Crawler,
+} from "./appMap/crawler.js";
+export { MissingCrawlerToolError } from "./appMap/crawler.js";
+export { FakeCrawler } from "./appMap/testUtils.js";
