@@ -2,5 +2,11 @@
 <html lang="en">
   <head><meta charset="utf-8" /><title>Fixture · Reset</title></head>
   <body><main><h1>Reset password</h1><button type="button">Send reset link</button>
-  <a href="/">Back to log in</a></main></body>
+  <a href="/">Back to log in</a>
+  <!-- A control on a PUBLIC screen that merely looks like a way out of a
+       session. The guard exists to protect a session the crawl is holding;
+       with no session there is nothing to protect, and refusing to follow this
+       dropped a real screen for nothing. Its href is an ordinary route, so
+       only the name test can reach it. -->
+  <a href="/order-history.html">Log out</a></main></body>
 </html>

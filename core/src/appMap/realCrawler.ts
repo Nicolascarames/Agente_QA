@@ -28,6 +28,13 @@ const PASSWORD_NAME = /password|contrasena|contraseña|clave/i;
  */
 const LOGOUT_NAME = /log\s*-?\s*out|logout|sign\s*-?\s*out|cerrar\s+sesi[oó]n|desconectar/i;
 
+/**
+ * The same control, recognised by where it GOES rather than by what it is
+ * called. A link labelled "Exit", "Salir" or an icon with no text at all still
+ * ends the session if it points at /logout, and the name test cannot see that.
+ */
+const LOGOUT_PATH = /(^|\/)(log-?out|sign-?out|cerrar-sesi[oó]n|desconectar)(\/|$)/i;
+
 /** A single text node long enough to be a paragraph is copy, not a locator target. */
 const MAX_TEXT_CANDIDATE_LENGTH = 300;
 
@@ -352,18 +359,17 @@ function matchesExcluded(urlTemplate: string, patterns: string[]): boolean {
   });
 }
 
-/** Resolves a route template against the app's base URL with URL semantics. */
-export function resolveScreenUrl(baseUrl: string, urlTemplate: string): string {
-  return new URL(urlTemplate, baseUrl).toString();
-}
-
 /**
  * Only the ORIGIN of `appUrl` is walked. String prefixes cannot decide this:
  * with `baseUrl = "https://example.com"` (no trailing slash, perfectly legal
  * config), `https://example.com.evil.test/panel` starts with the base URL and
  * would be crawled as if it were part of the application.
+ *
+ * Module-private on purpose: it was exported alongside a `resolveScreenUrl`
+ * that no longer exists — nothing outside this file ever imported either, and
+ * an export with no importer is a promise to callers who are not there.
  */
-export function isExternalUrl(url: string, baseUrl: string): boolean {
+function isExternalUrl(url: string, baseUrl: string): boolean {
   try {
     return new URL(url).origin !== new URL(baseUrl).origin;
   } catch {
@@ -675,16 +681,19 @@ async function runWritePass(
 
     const isLoginAction = hasPasswordField(screen, action);
 
-    // A route template with a variable segment is not addressable: rebuilding a
-    // URL from `/item/:id` makes the crawler request that literal path, the
-    // same defect already fixed in the Page Object emitter. The concrete URL
-    // the walk really captured the screen at is the answer whenever there is
-    // one; without it, a templated screen is skipped rather than guessed at.
-    const url = concreteUrls.get(screen) ?? (screen.urlTemplate.includes(":") ? null : resolveScreenUrl(input.baseUrl, screen.urlTemplate));
-    if (url === null) {
+    // The concrete URL the walk really captured this screen at — never a URL
+    // rebuilt from the route template. A template with a variable segment is
+    // not addressable: `/item/:id` is not a URL, and asking the server for that
+    // literal path is the same defect already fixed in the Page Object emitter.
+    // Rebuilding is not merely wrong for templated screens either — it was
+    // string concatenation against a base URL that may carry no trailing slash,
+    // which is how "https://example.com" + "/reset" became
+    // "https://example.comreset".
+    const url = concreteUrls.get(screen);
+    if (url === undefined) {
       emit({
         agent: "explorador", status: "warn", depth: 1,
-        message: `"${action.label}" está en ${screen.urlTemplate}, una ruta con segmentos variables sin URL concreta conocida: no se prueba`,
+        message: `No se conoce la URL concreta de ${screen.urlTemplate}, no se prueba "${action.label}"`,
       });
       continue;
     }
@@ -965,8 +974,12 @@ export function createRealCrawler(): Crawler {
             if (clickedElements.has(key)) continue;
             clickedElements.add(key);
 
+            // Only while the crawl actually holds a session. On a public crawl
+            // there is nothing to lose by following a control that happens to
+            // be called "Log out", and skipping it dropped a real screen for
+            // nothing.
             const name = locator.accessibleName ?? "";
-            if (LOGOUT_NAME.test(name)) {
+            if (authenticated && LOGOUT_NAME.test(name)) {
               emit({
                 agent: "explorador", status: "info", depth: next.depth + 1,
                 message: `No se pulsa "${name}": cerrar sesión es una acción de escritura, mataría la sesión a mitad del recorrido`,
@@ -1006,6 +1019,20 @@ export function createRealCrawler(): Crawler {
               emit({
                 agent: "explorador", status: "warn", depth: next.depth + 1,
                 message: `"${name}" ya no resuelve a un único elemento al recorrerlo (${matches} coincidencias), se omite`,
+              });
+              continue;
+            }
+
+            // Same reasoning as the name test above, applied to where the
+            // control GOES: a link labelled "Exit" or "Salir", or an icon with
+            // no text at all, ends the session just as surely as one labelled
+            // "Log out". Read from the href, so the session dies for nothing
+            // only if this misses.
+            const logoutPath = authenticated ? await logoutDestination(target, before) : null;
+            if (logoutPath !== null) {
+              emit({
+                agent: "explorador", status: "info", depth: next.depth + 1,
+                message: `No se pulsa "${name}": lleva a ${logoutPath} y cerraría la sesión a mitad del recorrido`,
               });
               continue;
             }
@@ -1095,6 +1122,18 @@ export function createRealCrawler(): Crawler {
       return { ok: true, map };
     },
   };
+}
+
+/** The logout path a control points at, or null when it points anywhere else. */
+async function logoutDestination(target: Locator, currentUrl: string): Promise<string | null> {
+  const href = (await target.getAttribute("href", { timeout: SHORT_READ_TIMEOUT_MS }).catch(() => null)) ?? "";
+  if (href.trim().length === 0) return null;
+  try {
+    const path = new URL(href, currentUrl).pathname;
+    return LOGOUT_PATH.test(path) ? path : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The excluded route template a link points at, or null when it points elsewhere. */

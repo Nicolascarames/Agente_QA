@@ -1,10 +1,29 @@
 <!doctype html>
 <html lang="en">
   <head><meta charset="utf-8" /><title>Fixture · Blog post</title></head>
-  <!-- Served for EVERY /blog/<slug>: the fixture's sibling-URL case. Two posts
-       differ only in the last segment and render the identical structure, so
-       the crawler must collapse them into a single /blog/:id screen instead of
-       one screen (and one committed Page Object) per post. -->
+  <!-- Served for EVERY /blog/<slug>: the fixture's sibling-URL case. Three
+       posts differ only in the last segment and render the identical
+       structure, so the crawler must collapse them into a single /blog/:id
+       screen instead of one screen (and one committed Page Object) per post. -->
   <body><main><h1>Blog post</h1>
-  <div><span>Every post shares this layout.</span></div></main></body>
+  <div><span>Every post shares this layout.</span></div>
+  <!-- A write action on a TEMPLATED screen. /blog/:id has no single URL to
+       request: rebuilding one from the template makes the crawler ask the
+       server for a literal "/blog/:id", the same defect already fixed in the
+       Page Object emitter. The write pass must reload the concrete URL the
+       walk really captured instead. -->
+  <form id="subscribe">
+    <label for="blog-comment">Comment</label>
+    <input id="blog-comment" name="comment" type="text" />
+    <button type="submit">Subscribe</button>
+  </form>
+  <p id="blog-thanks" hidden>Thanks for your comment.</p>
+  </main>
+  <script>
+    document.getElementById("subscribe").addEventListener("submit", (event) => {
+      event.preventDefault();
+      document.getElementById("blog-thanks").hidden = false;
+    });
+  </script>
+  </body>
 </html>

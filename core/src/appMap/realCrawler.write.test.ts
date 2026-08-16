@@ -130,12 +130,18 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     expect(login?.probeValues).not.toContain(credentials.password);
   }, 40000);
 
-  // The password field is disambiguated to region:main by the header decoy
-  // sharing its label. Filling it by re-resolving the label unscoped matches
-  // twice, violates strict mode, gets swallowed, and leaves the field empty —
-  // so the "valid" submit never authenticates. `authenticated` above already
-  // proves the fill worked; this proves the crawler does not claim to have
-  // typed a value it could not type.
+  // `probeValues` is the crawler's record of what it TYPED, and the whole map
+  // trusts it: `texts` is filtered against it, and the prompt builder treats
+  // anything containing a probe value as tainted. Asserting only that the
+  // invalid password is present passed just as well under the old
+  // push-before-fill ordering, which recorded a value the moment it decided to
+  // type it — before knowing whether the field took it.
+  //
+  // The login form carries a file input, which `fill()` refuses outright: a
+  // field that resolves to exactly one element and still cannot be written.
+  // Its value must therefore be absent — "agente-qa" on the valid pass, the
+  // empty string on the invalid one — while the values that really were typed
+  // are present. That is the ordering, and the old code violates it.
   it("only records a probe value once the field really took it", async () => {
     const result = await createRealCrawler().crawl({
       baseUrl: site.url, limits, credentials,
@@ -148,6 +154,8 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     if (!result.ok) throw new Error(result.error);
     const login = result.map.screens.find((s) => s.urlTemplate === "/");
     expect(login?.probeValues).toContain("agente-qa-invalid-password");
+    expect(login?.probeValues).not.toContain("agente-qa");
+    expect(login?.probeValues).not.toContain("");
   }, 40000);
 
   // `requiresAuth` used to be stamped from the crawl's single `authenticated`
@@ -206,6 +214,13 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
   }, 40000);
 
   // Clicking it would kill the session the authenticated pass depends on.
+  //
+  // The fixture's log out button now has a REAL handler that clears the
+  // session cookie and navigates. Without one this test passed with the guard
+  // deleted: the click did nothing, so no transition was recorded either way
+  // and the assertion could not fail. Proving the control still WOULD navigate
+  // is what makes "no transition" mean "the crawler refused", and the walk
+  // reaching /list.html afterwards is what proves the session survived.
   it("never follows the log out control while walking", async () => {
     const result = await createRealCrawler().crawl({
       baseUrl: site.url, limits, credentials,
@@ -217,6 +232,61 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     const logOut = dashboard?.locators.find((l) => l.accessibleName === "Log out");
     expect(logOut).toBeDefined();
     expect(dashboard!.transitions.some((t) => t.locator === logOut!.name)).toBe(false);
+    // The session outlived the walk: /dashboard.html is served only with the
+    // cookie, and the write pass reloads it.
+    expect(dashboard!.requiresAuth).toBe(true);
+  }, 40000);
+
+  // The same control recognised by where it GOES. The fixture's "Exit" link
+  // points at /logout and is named nothing a name test could catch, so only
+  // the resolved href gives it away. The server is dedicated so the assertion
+  // can be about the REQUEST: /logout must never be fetched at all.
+  it("never follows a control whose href is a logout route, whatever it is called", async () => {
+    const dedicated = await startFixtureSite();
+    try {
+      const result = await createRealCrawler().crawl({
+        baseUrl: dedicated.url, limits, credentials,
+        callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+      const dashboard = result.map.screens.find((s) => s.urlTemplate === "/dashboard.html");
+      const exit = dashboard?.locators.find((l) => l.accessibleName === "Exit");
+      expect(exit).toBeDefined();
+      expect(dashboard!.transitions.some((t) => t.locator === exit!.name)).toBe(false);
+      expect(dedicated.requestedPaths).not.toContain("/logout");
+    } finally {
+      await dedicated.close();
+    }
+  }, 40000);
+
+  // A route template with a variable segment is not a URL. The write pass used
+  // to rebuild one from the template, which makes the crawler ask the server
+  // for a literal "/blog/:id" — the same defect already fixed in the Page
+  // Object emitter. The assertion is on the REQUEST, not on the map: the
+  // fixture server serves blog.html for anything under /blog/, so a literal
+  // ":id" request would succeed and leave no trace anywhere else.
+  it("never requests a literal route template when submitting on a templated screen", async () => {
+    const dedicated = await startFixtureSite();
+    try {
+      const result = await createRealCrawler().crawl({
+        baseUrl: dedicated.url, limits, credentials,
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (actions) => actions.map((a) => ({ screenId: a.screenId, locator: a.action.locator })),
+        },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+      const blog = result.map.screens.find((s) => s.urlTemplate === "/blog/:id");
+      expect(blog).toBeDefined();
+      // The submit really ran on that screen...
+      expect(blog!.states.some((s) => s.reachedBy.data === "invalid")).toBe(true);
+      // ...without the literal template ever reaching the server.
+      expect(dedicated.requestedPaths.filter((p) => p.includes(":"))).toEqual([]);
+    } finally {
+      await dedicated.close();
+    }
   }, 40000);
 
   // The event channel is a third consumer of the same data the two redaction

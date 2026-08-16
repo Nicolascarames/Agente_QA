@@ -196,17 +196,39 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
   // trailing slash is legal config. String concatenation turned it into
   // "https://example.comlogin"; deciding "external" by string prefix let
   // "https://example.com.evil.test/panel" pass as internal.
+  //
+  // The write actions are APPROVED here on purpose. The only place that
+  // reloads a screen by URL is the write pass, and this test approved nothing
+  // — so the very path it exists to cover never executed and the test held
+  // against any URL construction at all. Credentials come with it, because
+  // approval alone does not reach a form behind a login.
+  //
+  // The assertion is on /blog/:id, NOT on the login screen. The login screen
+  // sits at "/", where concatenating a slash-less base URL with the template
+  // happens to produce a working URL — the fixture's root-mounted login hid
+  // the bug. "/blog/:id" is the shape that breaks: concatenation yields
+  // "http://127.0.0.1:PORTblog/:id". A state is the evidence the reload really
+  // landed, since a malformed URL fails the goto, which is warned and skipped.
   it("works the same when the base URL carries no trailing slash", async () => {
     const result = await createRealCrawler().crawl({
       baseUrl: site.url.replace(/\/$/, ""), limits,
-      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      credentials: { username: "user@example.test", password: "s3cr3t-pass" },
+      callbacks: {
+        confirmContinueOnLoop: async () => false,
+        approveWriteActions: async (actions) => actions.map((a) => ({ screenId: a.screenId, locator: a.action.locator })),
+      },
       emit: () => {},
     });
     if (!result.ok) throw new Error(result.error);
     const templates = result.map.screens.map((s) => s.urlTemplate);
     expect(templates).toContain("/");
     expect(templates).toContain("/list.html");
-  }, 20000);
+
+    const blog = result.map.screens.find((s) => s.urlTemplate === "/blog/:id");
+    expect(blog).toBeDefined();
+    expect(blog!.states.some((s) => s.reachedBy.data === "invalid")).toBe(true);
+    expect(blog!.texts).toContain("Thanks for your comment.");
+  }, 40000);
 
   // Third templating rule of the spec: two sibling URLs differing in exactly
   // one segment are one screen with different data. Without it a blog or a
@@ -230,6 +252,23 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     expect(templates).not.toContain("/blog/first-post");
     expect(templates).not.toContain("/blog/second-post");
     expect(templates).not.toContain("/blog/third-post");
+  }, 20000);
+
+  // The logout guard exists to protect a session the crawl is holding. This
+  // crawl holds none — no credentials — so a public control that merely looks
+  // like a way out is an ordinary link, and skipping it drops a real screen
+  // for nothing.
+  it("follows a control that only looks like a log out when the crawl holds no session", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits,
+      callbacks: { confirmContinueOnLoop: async () => true, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const reset = result.map.screens.find((s) => s.urlTemplate === "/reset.html");
+    const logOut = reset?.locators.find((l) => l.accessibleName === "Log out");
+    expect(logOut).toBeDefined();
+    expect(reset!.transitions.some((t) => t.locator === logOut!.name)).toBe(true);
   }, 20000);
 
   // Review finding: /order-history.html and /order/history.html both

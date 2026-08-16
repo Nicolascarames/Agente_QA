@@ -34,6 +34,14 @@
         <input id="email" name="email" type="email" />
         <label for="password">Password</label>
         <input id="password" name="password" type="password" />
+        <!-- A field that resolves perfectly and still cannot be filled:
+             locator.fill() refuses a file input outright, in 15 ms, without
+             waiting. It is the fixture's case for a fill that FAILS, which is
+             the only way to tell "records what it typed" apart from "records
+             what it meant to type" — under the old push-before-fill ordering
+             this value landed in probeValues having never been typed. -->
+        <label for="attachment">Attachment</label>
+        <input id="attachment" name="attachment" type="file" />
         <button type="submit">Log in</button>
       </form>
       <a href="/reset.html">Forgot password?</a>

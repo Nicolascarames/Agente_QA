@@ -2,5 +2,19 @@
 <html lang="en">
   <head><meta charset="utf-8" /><title>Fixture · Dashboard</title></head>
   <body><main><h1>Your studio</h1><a href="/list.html">Orders</a>
-  <button type="button">Log out</button></main></body>
+  <!-- Two ways out of the session, and the crawler must follow neither.
+       The button is caught by NAME; the link is named something innocuous on
+       purpose, so only its resolved href gives it away. -->
+  <button type="button" id="logout">Log out</button>
+  <a href="/logout">Exit</a></main>
+  <script>
+    // A REAL handler. Without one, "never follows the log out control" passed
+    // even with the guard removed: the click navigated nowhere, so no
+    // transition was recorded either way and the test could not fail.
+    document.getElementById("logout").addEventListener("click", () => {
+      document.cookie = "agente_qa_session=; path=/; max-age=0";
+      window.location.href = "/";
+    });
+  </script>
+  </body>
 </html>
