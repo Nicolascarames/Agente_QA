@@ -5,8 +5,8 @@ import { screenSignature, isSuspectedLoop } from "./signature.js";
 import { toUrlTemplate } from "./urlTemplate.js";
 import { pythonIdentifier, uniqueName } from "./naming.js";
 import { redactText } from "./redact.js";
-import { elementKey } from "./elementIdentity.js";
-import type { Crawler, CrawlInput, CrawlResult } from "./crawler.js";
+import { elementKey, mergeScreenState } from "./elementIdentity.js";
+import type { Crawler, CrawlCredentials, CrawlInput, CrawlResult } from "./crawler.js";
 import { MissingCrawlerToolError } from "./crawler.js";
 
 const REGIONS = ["main", "form", "navigation", "banner", "contentinfo", "dialog"] as const;
@@ -72,17 +72,16 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
     }
   }
 
-  // A password input is not guaranteed to expose the `textbox` role in ARIA
-  // (this varies by engine/Playwright version — empirically, this build DOES
-  // surface a labelled one via the role loop above, contradicting the
-  // assumption this block was originally written under; see task-12-report.md).
-  // This pass stays anyway: it is what covers a Playwright/browser build that
-  // follows the ARIA spec literally and hides the role, and any other
-  // labelled field that fails to expose a role for some other reason.
-  // Without it, on such a build, no login screen would get a fill_password
-  // method and the whole point of the map would be missed. These are
-  // addressed by label, which is what Playwright offers for a labelled field
-  // of any type.
+  // The role loop above names a candidate from `aria-label` or `innerText`
+  // only. An <input> never has `innerText` (it has no text content, labelled
+  // or not) and rarely carries `aria-label`, so EVERY plain form field —
+  // email, text, password alike — comes out of that loop with an empty name
+  // and gets dropped there, `textbox` role or no `textbox` role. Confirmed
+  // empirically against this fixture: both the email and the password field
+  // match `getByRole("textbox")`, and both report `innerText: ""`. Their real
+  // name lives on a separate `<label for="...">`, which this pass reads
+  // directly. Without it, no login screen would get a fillable input at all
+  // and the whole point of the map would be missed.
   //
   // Dedup against the role loop by accessible name: if the role loop above
   // already produced an "input" candidate with this name, the role-based
@@ -92,7 +91,9 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
   // created earlier, inside a single capture).
   const inputNamesFromRoleLoop = new Set(candidates.filter((c) => c.kind === "input").map((c) => c.accessibleName));
 
-  for (const handle of await page.locator('input[type="password"]').all()) {
+  for (const handle of await page.locator(
+    'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])'
+  ).all()) {
     const id = await handle.getAttribute("id");
     const label = id ? (await page.locator(`label[for="${id}"]`).innerText().catch(() => "")) : "";
     const name = (label || (await handle.getAttribute("aria-label")) || (await handle.getAttribute("placeholder")) || "").trim();
@@ -230,6 +231,100 @@ async function collectWriteActions(page: Page, screen: Screen): Promise<WriteAct
   return actions;
 }
 
+const INVALID_EMAIL = "agente-qa-probe@example.invalid";
+const INVALID_PASSWORD = "agente-qa-invalid-password";
+
+function valueFor(fieldName: string, data: "valid" | "invalid", credentials?: CrawlCredentials): string {
+  const looksLikeEmail = /email|correo|user|usuario/i.test(fieldName);
+  const looksLikePassword = /password|contrasena|contraseña|clave/i.test(fieldName);
+  if (data === "invalid") return looksLikeEmail ? INVALID_EMAIL : looksLikePassword ? INVALID_PASSWORD : "";
+  if (looksLikeEmail) return credentials?.username ?? "agente-qa@example.test";
+  if (looksLikePassword) return credentials?.password ?? "agente-qa-valid-password";
+  return "agente-qa";
+}
+
+/**
+ * Every approved write action runs TWICE, with different data, because the two
+ * outcomes are different screens and both are needed. Without the invalid
+ * variant the map would not contain the app's error messages at all — those
+ * texts do not exist until somebody submits the form wrong, and that is exactly
+ * the literal that was missing when a generated test invented
+ * get_by_role("alert").
+ *
+ * Returns true when a valid submit of an action that includes a password-like
+ * field navigated away from its screen — that is what logging in looks like
+ * from here, and `crawl` uses it to set `AppMap.authenticated`.
+ */
+async function runWritePass(
+  page: Page,
+  screens: Screen[],
+  approved: { screenId: string; locator: string }[],
+  input: CrawlInput
+): Promise<boolean> {
+  const secrets = secretsOf(input);
+  let authenticated = false;
+  for (const { screenId, locator: locatorName } of approved) {
+    const index = screens.findIndex((s) => s.id === screenId);
+    if (index < 0) continue;
+    let screen = screens[index];
+    const action = screen.writeActions.find((a) => a.locator === locatorName);
+    if (!action) continue;
+
+    const isLoginAction = action.formFields.some((fieldName) => {
+      const field = screen.locators.find((l) => l.name === fieldName);
+      return field?.accessibleName !== undefined && /password|contrasena|contraseña|clave/i.test(field.accessibleName);
+    });
+
+    for (const data of ["invalid", "valid"] as const) {
+      const probeValues: string[] = [];
+      await page.goto(input.baseUrl + screen.urlTemplate.replace(/^\//, ""), { waitUntil: "domcontentloaded" });
+
+      for (const fieldName of action.formFields) {
+        const field = screen.locators.find((l) => l.name === fieldName);
+        if (!field?.accessibleName) continue;
+        const value = valueFor(field.accessibleName, data, input.credentials);
+        probeValues.push(value);
+        // By label, not by role: a password input has no `textbox` role, and
+        // filling it by role would silently do nothing — the valid submit
+        // would never authenticate and the failure would look like the app's.
+        await page.getByLabel(field.accessibleName, { exact: true })
+          .fill(value, { timeout: 5_000 }).catch(() => undefined);
+      }
+
+      const before = page.url();
+      await page.getByRole("button", { name: action.label, exact: true }).last()
+        .click({ timeout: 5_000 }).catch(() => undefined);
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+
+      if (page.url() !== before) {
+        // A successful submit navigates: that destination is an ordinary screen
+        // and was, or will be, captured by the walk. Nothing to merge here.
+        if (data === "valid") {
+          input.emit({ agent: "explorador", status: "ok", depth: 1, message: `Envío válido de "${action.label}" → ${page.url()}` });
+          if (isLoginAction) authenticated = true;
+        }
+        continue;
+      }
+
+      const after = await captureScreen(page, { screenId: screen.id, baseUrl: input.baseUrl, secrets });
+      screen = mergeScreenState(screen, {
+        id: `${data}-submit-${action.locator}`,
+        reachedBy: { action: "submit", locator: action.locator, data },
+        texts: after.texts.filter((t) => !probeValues.includes(t)),
+        locators: after.locators.filter((l) => !screen.locators.some((existing) => existing.python === l.python)),
+      });
+      screen = { ...screen, probeValues: Array.from(new Set([...screen.probeValues, ...probeValues])) };
+      screens[index] = screen;
+      input.emit({
+        agent: "explorador", status: "ok", depth: 1,
+        message: `Envío ${data === "invalid" ? "inválido" : "válido"} de "${action.label}"`,
+        detail: `${screen.states.at(-1)?.addsTexts.length ?? 0} textos nuevos`,
+      });
+    }
+  }
+  return authenticated;
+}
+
 /**
  * The first pass walks the app breadth-first, from `baseUrl` outward, never
  * clicking the same element twice and never repeating a screen it has
@@ -264,6 +359,7 @@ export function createRealCrawler(): Crawler {
       const recentSignatures: string[] = [];
       const prunedTemplates = new Set<string>();
       let complete = true;
+      let authenticated = false;
 
       const deadline = startedAt + input.limits.maxDurationMinutes * 60_000;
       const queue: { url: string; depth: number }[] = [{ url: input.baseUrl, depth: 0 }];
@@ -342,6 +438,16 @@ export function createRealCrawler(): Crawler {
             if (!external && !visitedTemplates.has(targetTemplate)) queue.push({ url: after, depth: next.depth + 1 });
           }
         }
+
+        // Second pass: nothing is submitted without the user's approval, every
+        // run — there is deliberately no flag to bypass this. Every screen's
+        // write actions are offered up front, whether or not the walk hit any
+        // safety limit above; whatever the user did not approve simply never runs.
+        const pendingWriteActions = screens.flatMap((screen) =>
+          screen.writeActions.map((action) => ({ screenId: screen.id, action }))
+        );
+        const approvedWriteActions = await input.callbacks.approveWriteActions(pendingWriteActions);
+        authenticated = await runWritePass(page, screens, approvedWriteActions, input);
       } finally {
         await browser.close();
       }
@@ -351,7 +457,7 @@ export function createRealCrawler(): Crawler {
         appUrl: input.baseUrl,
         createdAt: new Date().toISOString(),
         complete,
-        authenticated: false,
+        authenticated,
         screens,
         scenarios: [],
         stats: {
