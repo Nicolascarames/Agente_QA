@@ -31,6 +31,17 @@ const LOGOUT_NAME = /log\s*-?\s*out|logout|sign\s*-?\s*out|cerrar\s+sesi[oó]n|d
 /** A single text node long enough to be a paragraph is copy, not a locator target. */
 const MAX_TEXT_CANDIDATE_LENGTH = 300;
 
+/**
+ * Reading an attribute or the text of an element the crawler ALREADY holds a
+ * handle for is a memory lookup, not an interaction: it either answers at once
+ * or the element is gone. Playwright's 30s default belongs to actions that wait
+ * for an application to settle, and paying it per read is what turned one
+ * missing `<label for>` into 30 006 ms of dead time — three times per screen on
+ * an ordinary single-page application, until `maxDurationMinutes` truncated the
+ * map. Every read in this file carries this bound instead.
+ */
+const SHORT_READ_TIMEOUT_MS = 2_000;
+
 interface CaptureContext {
   screenId: string;
   baseUrl: string;
@@ -72,20 +83,42 @@ function exactRolePython(role: string, name: string): (prefix: string) => string
  * name the field after whatever happens to be typed in it.
  */
 async function controlName(handle: Locator, options: { useValue: boolean }): Promise<string> {
-  const aria = ((await handle.getAttribute("aria-label").catch(() => null)) ?? "").trim();
+  const aria = (await attribute(handle, "aria-label")).trim();
   if (aria.length > 0) return aria;
-  const inner = (await handle.innerText().catch(() => "")).trim();
+  const inner = (await handle.innerText({ timeout: SHORT_READ_TIMEOUT_MS }).catch(() => "")).trim();
   if (inner.length > 0) return inner;
   if (!options.useValue) return "";
-  return ((await handle.getAttribute("value").catch(() => null)) ?? "").trim();
+  return (await attribute(handle, "value")).trim();
+}
+
+/** One bounded attribute read, used everywhere this file reads an attribute. */
+async function attribute(handle: Locator, name: string): Promise<string> {
+  return (await handle.getAttribute(name, { timeout: SHORT_READ_TIMEOUT_MS }).catch(() => null)) ?? "";
+}
+
+/**
+ * The text of the `<label for=…>` that names a field, or "" when there is none.
+ *
+ * The `count()` gate is the whole point: `count()` answers from the current DOM
+ * without waiting, while `innerText()` on a selector that matches nothing waits
+ * for it to appear and only then gives up. An input with an `id` and no
+ * matching label — a placeholder-only or `aria-label`-only field, the ordinary
+ * case in a single-page application — therefore used to cost Playwright's full
+ * default timeout EACH TIME, and this runs once per field per capture.
+ */
+async function labelTextFor(page: Page, id: string): Promise<string> {
+  const escaped = id.replace(/["\\]/g, "\\$&");
+  const label = page.locator(`label[for="${escaped}"]`);
+  if ((await label.count().catch(() => 0)) !== 1) return "";
+  return await label.innerText({ timeout: SHORT_READ_TIMEOUT_MS }).catch(() => "");
 }
 
 /** Every name a form field could be recorded under, most specific first. */
 async function fieldNames(page: Page, handle: Locator): Promise<string[]> {
-  const id = await handle.getAttribute("id").catch(() => null);
-  const label = id ? await page.locator(`label[for="${id}"]`).innerText().catch(() => "") : "";
-  const aria = (await handle.getAttribute("aria-label").catch(() => null)) ?? "";
-  const placeholder = (await handle.getAttribute("placeholder").catch(() => null)) ?? "";
+  const id = await attribute(handle, "id");
+  const label = id.length > 0 ? await labelTextFor(page, id) : "";
+  const aria = await attribute(handle, "aria-label");
+  const placeholder = await attribute(handle, "placeholder");
   return [label, aria, placeholder].map((name) => name.trim()).filter((name) => name.length > 0);
 }
 
