@@ -159,6 +159,17 @@ async function resolveCandidate(
 }
 
 export async function captureScreen(page: Page, context: CaptureContext): Promise<Screen> {
+  // `domcontentloaded` alone is not enough for a client-rendered app — the
+  // primary target of this whole feature: content mounted afterwards is not
+  // there yet when the role queries below run, producing a thin or empty
+  // screen. `networkidle` with NO timeout is a known trap in this project (see
+  // core/src/locatorVerify/buildVerificationScript.ts): it hangs up to
+  // Playwright's 30s default on any app with a websocket, a chat widget or an
+  // analytics beacon that never goes quiet, with no recognisable failure
+  // signature. A short explicit timeout, swallowed on failure, costs a chatty
+  // app a moment instead of stalling the whole crawl.
+  await page.waitForLoadState("networkidle", { timeout: 3_000 }).catch(() => undefined);
+
   const ariaSnapshot = redactText(await page.locator("body").ariaSnapshot(), context.secrets);
   const verifiedAt = new Date().toISOString();
   const locators: LocatorEntry[] = [];
@@ -351,11 +362,10 @@ export function createRealCrawler(): Crawler {
         };
       }
 
-      const context = await browser.newContext();
-      const page = await context.newPage();
       const screens: Screen[] = [];
       const visitedTemplates = new Set<string>();
       const clickedElements = new Set<string>();
+      const assignedScreenIds = new Set<string>();
       const recentSignatures: string[] = [];
       const prunedTemplates = new Set<string>();
       let complete = true;
@@ -365,6 +375,13 @@ export function createRealCrawler(): Crawler {
       const queue: { url: string; depth: number }[] = [{ url: input.baseUrl, depth: 0 }];
 
       try {
+        // `newContext`/`newPage` run inside the guarded region on purpose: the
+        // browser was already launched above, and only the `finally` below
+        // closes it. Creating the context and page before this `try` would
+        // leak a running browser process if either of those calls threw.
+        const context = await browser.newContext();
+        const page = await context.newPage();
+
         while (queue.length > 0) {
           if (screens.length >= input.limits.maxScreens || Date.now() > deadline) {
             complete = false;
@@ -376,13 +393,32 @@ export function createRealCrawler(): Crawler {
           if (next.depth > input.limits.maxDepth) { complete = false; continue; }
 
           const stepStart = Date.now();
-          await page.goto(next.url, { waitUntil: "domcontentloaded" });
+          try {
+            await page.goto(next.url, { waitUntil: "domcontentloaded" });
+          } catch {
+            // A dead link, a DNS failure or a reset connection must not
+            // reject `crawl()` — every caller relies on it resolving
+            // `{ ok: false, error }` at worst, never throwing.
+            complete = false;
+            input.emit({ agent: "explorador", status: "warn", depth: next.depth, message: `No se pudo cargar ${next.url}, se omite` });
+            continue;
+          }
           const template = toUrlTemplate(page.url(), input.baseUrl);
           if (visitedTemplates.has(template) || matchesExcluded(template, input.limits.excludeRoutes)) continue;
           if (prunedTemplates.has(template)) continue;
           visitedTemplates.add(template);
 
-          const screenId = template === "/" ? "home" : pythonIdentifier(template).replace(/^_+/, "");
+          // Two different routes can normalize to the same identifier
+          // (`/order-history` and `/order/history` both collapse to
+          // `order_history`): route it through `uniqueName`, the same helper
+          // that already keeps locator names unique within a screen, but
+          // against a set scoped to the whole crawl. Without this, one
+          // screen's Page Object would silently overwrite another's in the
+          // generated suite and a screen present in map.json would vanish
+          // from the generated tests.
+          const rawScreenId = template === "/" ? "home" : pythonIdentifier(template).replace(/^_+/, "");
+          const screenId = uniqueName(rawScreenId, assignedScreenIds);
+          assignedScreenIds.add(screenId);
           const screen = await captureScreen(page, { screenId, baseUrl: input.baseUrl, secrets: secretsOf(input) });
           recentSignatures.push(screen.signature);
 
@@ -417,11 +453,49 @@ export function createRealCrawler(): Crawler {
             if (clickedElements.has(key)) continue;
             clickedElements.add(key);
 
-            await page.goto(next.url, { waitUntil: "domcontentloaded" });
+            try {
+              await page.goto(next.url, { waitUntil: "domcontentloaded" });
+            } catch {
+              complete = false;
+              input.emit({
+                agent: "explorador", status: "warn", depth: next.depth + 1,
+                message: `No se pudo recargar ${next.url} antes de probar "${locator.accessibleName ?? locator.name}", se omite`,
+              });
+              continue;
+            }
             const before = page.url();
-            await page.getByRole(locator.kind === "link" ? "link" : "button", {
-              name: locator.accessibleName ?? "", exact: true,
-            }).first().click({ timeout: 5_000 }).catch(() => undefined);
+
+            // Reuse the SAME scope `resolveCandidate` already validated at
+            // capture time, instead of re-resolving the accessible name from
+            // scratch, unscoped, and taking `.first()`. Two controls sharing a
+            // name (a nav link and its header twin) both match page-wide, and
+            // `.first()` would click whichever comes first in DOM order — not
+            // necessarily the element the map recorded and generated the
+            // Python locator for. That could attribute a transition to the
+            // wrong destination, or miss a screen only the scoped element
+            // leads to, while the generated Python (built from the scoped
+            // locator) claims to reach somewhere the map does not.
+            const role = locator.kind === "link" ? "link" : "button";
+            const name = locator.accessibleName ?? "";
+            const region = locator.disambiguatedBy?.startsWith("region:")
+              ? locator.disambiguatedBy.slice("region:".length)
+              : null;
+            const target = region
+              ? page.getByRole(region as never).getByRole(role as never, { name, exact: true })
+              : page.getByRole(role as never, { name, exact: true });
+
+            const matches = await target.count().catch(() => 0);
+            if (matches !== 1) {
+              // Still ambiguous even scoped (or the scope disappeared since
+              // capture): guessing positionally is worse than skipping.
+              input.emit({
+                agent: "explorador", status: "warn", depth: next.depth + 1,
+                message: `"${name}" ya no resuelve a un único elemento al recorrerlo (${matches} coincidencias), se omite`,
+              });
+              continue;
+            }
+
+            await target.click({ timeout: 5_000 }).catch(() => undefined);
             await page.waitForLoadState("domcontentloaded").catch(() => undefined);
             const after = page.url();
             if (after === before) continue;

@@ -2,7 +2,15 @@
 <html lang="en">
   <head><meta charset="utf-8" /><title>Fixture · Log in</title></head>
   <body>
-    <header><button type="button">Log in</button></header>
+    <header>
+      <button type="button">Log in</button>
+      <!-- Same name as the link inside <main> below, pointing at a DIFFERENT
+           destination: the fixture's case for a region-disambiguated click.
+           DOM order puts this one first, so a click loop that re-resolves
+           the name unscoped and takes `.first()` lands here instead of on
+           the element `resolveCandidate` actually validated and recorded. -->
+      <a href="/reset.html">Help</a>
+    </header>
     <main>
       <h1>Welcome back</h1>
       <form id="login">
@@ -14,6 +22,12 @@
       </form>
       <a href="/reset.html">Forgot password?</a>
       <a href="/list.html">Orders</a>
+      <a href="/list.html">Help</a>
+      <!-- /order-history.html and /order/history.html both normalize to the
+           same pythonIdentifier ("order_history_html"): the fixture's
+           screen-id collision case. -->
+      <a href="/order-history.html">Order history (dash)</a>
+      <a href="/order/history.html">Order history (slash)</a>
       <p id="error" hidden>Authentication failed. Please try again.</p>
       <!-- Duplicate of the field label, in a <p> and outside any single region:
            no region scoping brings it down to one match, so it is the fixture's
