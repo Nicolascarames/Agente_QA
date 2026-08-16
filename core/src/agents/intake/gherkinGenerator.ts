@@ -1,36 +1,27 @@
+import { z } from "zod";
 import type { LLMProvider } from "../../llm/provider.js";
-import type { Pattern } from "../../schemas/pattern.js";
 import type { GherkinPlan } from "../../schemas/gherkinPlan.js";
-import type { ScreenEvidence } from "../../siteExplorer/siteExplorer.js";
+import type { AppMap } from "../../appMap/schema.js";
 import { gherkinGenerationPrompt } from "../../prompts/intake.js";
-import { slugify } from "../../util/slugify.js";
+import { parseJsonResponse } from "../../llm/parseJson.js";
 
-function extractFeatureTitle(featureText: string): string {
-  const match = featureText.match(/^Feature:\s*(.+)$/m);
-  return match ? match[1].trim() : "plan de pruebas";
-}
-
-function stripCodeFences(raw: string): string {
-  return raw
-    .trim()
-    .replace(/^```(?:gherkin)?\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-}
+const GherkinResponseSchema = z.object({
+  fileName: z.string().min(1),
+  featureText: z.string().min(1),
+});
 
 export async function generateGherkin(
   text: string,
   llm: LLMProvider,
-  matchedPattern: Pattern | null,
-  appLanguage: "es" | "en",
-  evidence: ScreenEvidence[]
+  map: AppMap,
+  screenId: string
 ): Promise<GherkinPlan> {
   const raw = await llm.generate([
     { role: "system", content: "Eres un analista de QA experto en especificaciones Gherkin." },
-    { role: "user", content: gherkinGenerationPrompt(text, matchedPattern, appLanguage, evidence) },
+    { role: "user", content: gherkinGenerationPrompt(text, map, screenId) },
   ]);
 
-  const featureText = stripCodeFences(raw);
+  const { fileName, featureText } = parseJsonResponse(GherkinResponseSchema, raw);
 
   if (!/^\s*(@\S+\s*)*Feature:/.test(featureText)) {
     throw new Error(
@@ -38,7 +29,5 @@ export async function generateGherkin(
     );
   }
 
-  const fileName = `${slugify(extractFeatureTitle(featureText))}.feature`;
-
-  return { fileName, featureText, matchedPatternName: matchedPattern?.name ?? null };
+  return { fileName, featureText };
 }

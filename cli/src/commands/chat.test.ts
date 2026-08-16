@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveProjectConfig, projectEnvPath, FakeLLMProvider, FakeSiteExplorer } from "@agente-qa/core";
+import {
+  saveProjectConfig, projectEnvPath, saveAppMap, FakeLLMProvider,
+  type AppMap, type Screen,
+} from "@agente-qa/core";
 import type { ChatPrompts } from "../prompts/types.js";
 
 const createProviderMock = vi.fn();
-const createRealSiteExplorerMock = vi.fn();
 const withLLMSpinnerMock = vi.fn((provider: unknown) => provider);
 
 vi.mock("@agente-qa/core", async () => {
@@ -14,7 +16,6 @@ vi.mock("@agente-qa/core", async () => {
   return {
     ...actual,
     createProvider: (...args: unknown[]) => createProviderMock(...args),
-    createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
   };
 });
 
@@ -32,14 +33,36 @@ async function writeEnv(projectRoot: string, values: Record<string, string>): Pr
   await fs.writeFile(projectEnvPath(projectRoot), `${content}\n`, "utf-8");
 }
 
+const loginScreen: Screen = {
+  id: "login", name: "Log in", className: "LoginPage", urlTemplate: "/",
+  signature: "sha256:a", requiresAuth: false,
+  texts: ["Welcome back", "Email"], probeValues: [], locators: [],
+  ambiguous: [], transitions: [], writeActions: [],
+  states: [],
+};
+
+const baseMap: AppMap = {
+  schemaVersion: 1, appUrl: "https://example.com/", createdAt: "t",
+  complete: true, authenticated: false, scenarios: [],
+  stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
+  screens: [loginScreen],
+};
+
+const emptyPrompts = (overrides: Partial<ChatPrompts> = {}): ChatPrompts => ({
+  inputInitialText: vi.fn(),
+  askUser: vi.fn(),
+  chooseScenario: vi.fn(),
+  presentForApproval: vi.fn(),
+  confirmOverwrite: vi.fn().mockResolvedValue(true),
+  ...overrides,
+});
+
 describe("runCreatePlan", () => {
   let tmpProject: string;
 
   beforeEach(async () => {
     tmpProject = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-chat-project-"));
     createProviderMock.mockReset();
-    createRealSiteExplorerMock.mockReset();
-    createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]));
     withLLMSpinnerMock.mockClear();
     withLLMSpinnerMock.mockImplementation((provider: unknown) => provider);
   });
@@ -49,12 +72,7 @@ describe("runCreatePlan", () => {
   });
 
   it("throws a clear error when init hasn't been run yet", async () => {
-    const prompts: ChatPrompts = {
-      inputInitialText: vi.fn(),
-      askUser: vi.fn(),
-      presentForApproval: vi.fn(),
-      confirmOverwrite: vi.fn().mockResolvedValue(true),
-    };
+    const prompts = emptyPrompts();
     await expect(runCreatePlan(prompts, tmpProject)).rejects.toThrow(/agente-qa init/);
   });
 
@@ -62,33 +80,37 @@ describe("runCreatePlan", () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic" });
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
 
-    const prompts: ChatPrompts = {
-      inputInitialText: vi.fn(),
-      askUser: vi.fn(),
-      presentForApproval: vi.fn(),
-      confirmOverwrite: vi.fn(),
-    };
-
+    const prompts = emptyPrompts();
     await expect(runCreatePlan(prompts, tmpProject)).rejects.toThrow(/AGENTE_QA_LLM_API_KEY/);
   });
 
-  it("loads env/config, runs intake through the fake LLM, and writes the feature file", async () => {
+  it("throws an actionable error naming 'agente-qa map' when there is no app map yet", async () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+    createProviderMock.mockReturnValue(new FakeLLMProvider([]));
+
+    const prompts = emptyPrompts({ inputInitialText: vi.fn().mockResolvedValue("quiero probar el login") });
+    await expect(runCreatePlan(prompts, tmpProject)).rejects.toThrow(/agente-qa map/);
+  });
+
+  it("loads env/config/map, runs intake through the fake LLM, and writes the feature file", async () => {
+    await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+    await saveAppMap(tmpProject, baseMap);
 
     const fake = new FakeLLMProvider([
       '{"ambiguous": false, "questions": []}',
-      '{"matchedPatternName": "login"}',
-      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+      JSON.stringify({
+        fileName: "login.feature",
+        featureText: 'Feature: Login\n\n  @screen:login\n  Scenario: x\n    Then I see "Welcome back"\n',
+      }),
     ]);
     createProviderMock.mockReturnValue(fake);
 
-    const prompts: ChatPrompts = {
+    const prompts = emptyPrompts({
       inputInitialText: vi.fn().mockResolvedValue("quiero probar el login"),
-      askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      confirmOverwrite: vi.fn().mockResolvedValue(true),
-    };
+    });
 
     const filePath = await runCreatePlan(prompts, tmpProject);
 
@@ -99,47 +121,57 @@ describe("runCreatePlan", () => {
   it("wraps the LLM provider with the spinner decorator before using it", async () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+    await saveAppMap(tmpProject, baseMap);
 
     const fake = new FakeLLMProvider([
       '{"ambiguous": false, "questions": []}',
-      '{"matchedPatternName": "login"}',
-      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+      JSON.stringify({
+        fileName: "login.feature",
+        featureText: 'Feature: Login\n\n  @screen:login\n  Scenario: x\n    Then I see "Welcome back"\n',
+      }),
     ]);
     createProviderMock.mockReturnValue(fake);
 
-    const prompts: ChatPrompts = {
+    const prompts = emptyPrompts({
       inputInitialText: vi.fn().mockResolvedValue("quiero probar el login"),
-      askUser: vi.fn(),
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      confirmOverwrite: vi.fn().mockResolvedValue(true),
-    };
+    });
 
     await runCreatePlan(prompts, tmpProject);
 
     expect(withLLMSpinnerMock.mock.calls[0][0]).toBe(fake);
   });
 
-  it("passes the project's configured app language through to Gherkin generation", async () => {
+  it("offers the map's candidate scenarios through the chooseScenario prompt", async () => {
     await writeEnv(tmpProject, { AGENTE_QA_LLM_PROVIDER: "anthropic", AGENTE_QA_LLM_API_KEY: "sk-test" });
-    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com", appLanguage: "en" });
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+    await saveAppMap(tmpProject, {
+      ...baseMap,
+      scenarios: [{
+        id: "s1", title: "Invalid login shows an error", screenId: "login",
+        involvedScreens: ["login"], rationale: "Covers the failure path",
+      }],
+    });
 
     const fake = new FakeLLMProvider([
-      '{"ambiguous": false, "questions": []}',
-      '{"matchedPatternName": "login"}',
-      "Feature: Login\n  Scenario: x\n    Given a\n    When b\n    Then c\n",
+      JSON.stringify({
+        fileName: "login.feature",
+        featureText: 'Feature: Login\n\n  @screen:login\n  Scenario: x\n    Then I see "Welcome back"\n',
+      }),
     ]);
     createProviderMock.mockReturnValue(fake);
 
-    const prompts: ChatPrompts = {
-      inputInitialText: vi.fn().mockResolvedValue("quiero probar el login"),
-      askUser: vi.fn(),
+    const chooseScenario = vi.fn().mockImplementation(async (candidates) => candidates[0]);
+    const prompts = emptyPrompts({
+      inputInitialText: vi.fn().mockResolvedValue(""),
+      chooseScenario,
       presentForApproval: vi.fn().mockResolvedValue({ approved: true }),
-      confirmOverwrite: vi.fn().mockResolvedValue(true),
-    };
+    });
 
     await runCreatePlan(prompts, tmpProject);
 
-    const gherkinPrompt = fake.receivedCalls[2].find((m) => m.role === "user")?.content;
-    expect(gherkinPrompt).toContain("inglés");
+    expect(chooseScenario).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "s1", title: "Invalid login shows an error" }),
+    ]);
   });
 });

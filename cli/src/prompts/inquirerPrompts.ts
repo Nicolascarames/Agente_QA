@@ -100,10 +100,22 @@ export const realMenuPrompts: MenuPrompts = {
 export function buildRealChatPrompts(): ChatPrompts {
   return {
     async inputInitialText() {
-      return input({ message: "¿Qué quieres probar? (pega el texto o descríbelo)" });
+      return input({ message: "¿Qué quieres probar? (pega el texto o descríbelo, o déjalo vacío para elegir entre las sugerencias del mapa)" });
     },
     async askUser(question) {
       return input({ message: question });
+    },
+    async chooseScenario(candidates) {
+      const WRITE_OWN = "__write_own__";
+      const choice = await select<string>({
+        message: "El mapa sugiere estos escenarios. ¿Cuál usamos?",
+        choices: [
+          ...candidates.map((c) => ({ name: `${c.title} — ${c.rationale}`, value: c.id })),
+          { name: "Prefiero escribir mi propia petición", value: WRITE_OWN },
+        ],
+      });
+      if (choice === WRITE_OWN) return null;
+      return candidates.find((c) => c.id === choice) ?? null;
     },
     async presentForApproval(featureText) {
       console.log(`\n${featureText}\n`);

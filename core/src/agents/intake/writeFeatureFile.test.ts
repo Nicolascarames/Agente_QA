@@ -16,7 +16,7 @@ describe("writeFeatureFile", () => {
   });
 
   it("writes the feature file under <testsDir>/features/", async () => {
-    const plan = { fileName: "login.feature", featureText: "Feature: Login\n", matchedPatternName: null };
+    const plan = { fileName: "login.feature", featureText: "Feature: Login\n" };
     const filePath = await writeFeatureFile(tmpProject, "tests", plan);
 
     expect(filePath).toBe(path.join(tmpProject, "tests", "features", "login.feature"));
@@ -24,7 +24,7 @@ describe("writeFeatureFile", () => {
   });
 
   it("creates intermediate directories if they don't exist", async () => {
-    const plan = { fileName: "signup.feature", featureText: "Feature: Signup\n", matchedPatternName: null };
+    const plan = { fileName: "signup.feature", featureText: "Feature: Signup\n" };
     await writeFeatureFile(tmpProject, "qa/tests", plan);
     const exists = await fs
       .stat(path.join(tmpProject, "qa", "tests", "features", "signup.feature"))
@@ -32,17 +32,10 @@ describe("writeFeatureFile", () => {
     expect(exists).toBe(true);
   });
 
-  it("prepends a pattern header comment when matchedPatternName is set", async () => {
-    const plan = { fileName: "login.feature", featureText: "Feature: Login\n", matchedPatternName: "login" };
+  it("writes the featureText verbatim, with no header prepended", async () => {
+    const plan = { fileName: "checkout.feature", featureText: '@screen:checkout\nFeature: Checkout\n' };
     const filePath = await writeFeatureFile(tmpProject, "tests", plan);
 
-    expect(await fs.readFile(filePath, "utf-8")).toBe("# agente-qa:pattern=login\nFeature: Login\n");
-  });
-
-  it("writes no header when matchedPatternName is null", async () => {
-    const plan = { fileName: "checkout.feature", featureText: "Feature: Checkout\n", matchedPatternName: null };
-    const filePath = await writeFeatureFile(tmpProject, "tests", plan);
-
-    expect(await fs.readFile(filePath, "utf-8")).toBe("Feature: Checkout\n");
+    expect(await fs.readFile(filePath, "utf-8")).toBe("@screen:checkout\nFeature: Checkout\n");
   });
 });

@@ -1,3 +1,5 @@
+import type { ScenarioCandidate } from "@agente-qa/core";
+
 export interface InitPrompts {
   inputTestsDir(): Promise<string>;
   confirmHeadedMode(): Promise<boolean>;
@@ -17,6 +19,7 @@ export interface MenuPrompts {
 export interface ChatPrompts {
   inputInitialText(): Promise<string>;
   askUser(question: string): Promise<string>;
+  chooseScenario(candidates: ScenarioCandidate[]): Promise<ScenarioCandidate | null>;
   presentForApproval(featureText: string): Promise<{ approved: boolean; feedback?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
 }
