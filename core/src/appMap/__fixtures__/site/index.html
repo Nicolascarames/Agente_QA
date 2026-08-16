@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Fixture · Log in</title></head>
+  <body>
+    <header><button type="button">Log in</button></header>
+    <main>
+      <h1>Welcome back</h1>
+      <form id="login">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" />
+        <button type="submit">Log in</button>
+      </form>
+      <a href="/reset.html">Forgot password?</a>
+      <a href="/list.html">Orders</a>
+      <p id="error" hidden>Authentication failed. Please try again.</p>
+      <!-- Duplicate of the field label, in a <p> and outside any single region:
+           no region scoping brings it down to one match, so it is the fixture's
+           irreducibly ambiguous case. -->
+      <aside><p>Email</p></aside>
+    </main>
+    <script>
+      document.getElementById("login").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const ok = document.getElementById("email").value === "user@example.test"
+          && document.getElementById("password").value === "s3cr3t-pass";
+        if (ok) { window.location.href = "/dashboard.html"; return; }
+        document.getElementById("error").hidden = false;
+      });
+    </script>
+  </body>
+</html>
