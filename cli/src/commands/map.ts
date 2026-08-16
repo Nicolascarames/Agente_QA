@@ -56,11 +56,11 @@ export async function runMapCommand(projectRoot: string, deps: MapCommandDeps = 
         },
         approveWriteActions: async (actions) => {
           if (actions.length === 0) return [];
-          const elegidas = await checkbox<string>({
+          const selected = await checkbox<string>({
             message: "Estas acciones envían formularios y pueden modificar datos. ¿Cuáles puedo ejecutar?",
             choices: actions.map((a) => ({ name: `${a.screenId} · ${a.action.label}`, value: `${a.screenId}::${a.action.locator}` })),
           });
-          return elegidas.map((value) => {
+          return selected.map((value) => {
             const [screenId, locator] = value.split("::");
             return { screenId, locator };
           });
