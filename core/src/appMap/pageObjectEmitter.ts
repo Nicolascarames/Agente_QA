@@ -4,6 +4,24 @@ import type { LocatorEntry, Screen } from "./schema.js";
 const FILLABLE: LocatorEntry["kind"][] = ["input"];
 const CLICKABLE: LocatorEntry["kind"][] = ["button", "link"];
 
+type MethodPrefix = "get" | "fill" | "click" | "select";
+
+/**
+ * Which method prefixes a locator's `kind` earns — the single source for the
+ * get_ / fill_ / click_ / select_ naming rules. Both `locatorMethods` (which
+ * emits the Page Object's Python) and `pageObjectMethodNames` (which the
+ * code-generation prompt uses to tell the model what it may call) read this,
+ * so the emitted class and the prompt's promised method list cannot drift
+ * apart the way they already have once in this project.
+ */
+function methodPrefixesFor(locator: LocatorEntry): MethodPrefix[] {
+  const prefixes: MethodPrefix[] = ["get"];
+  if (FILLABLE.includes(locator.kind)) prefixes.push("fill");
+  if (CLICKABLE.includes(locator.kind)) prefixes.push("click");
+  if (locator.kind === "select") prefixes.push("select");
+  return prefixes;
+}
+
 function locatorMethods(locator: LocatorEntry): string {
   const stateNote = locator.stateId ? `        # solo visible en el estado: ${locator.stateId}\n` : "";
   const lines = [
@@ -12,28 +30,45 @@ function locatorMethods(locator: LocatorEntry): string {
     `        return self.${locator.python}`,
   ].filter((line) => line.length > 0);
 
-  if (FILLABLE.includes(locator.kind)) {
-    lines.push(
-      "",
-      `    def fill_${locator.name}(self, value: str) -> None:`,
-      `        self.get_${locator.name}().fill(value)`
-    );
-  }
-  if (CLICKABLE.includes(locator.kind)) {
-    lines.push(
-      "",
-      `    def click_${locator.name}(self) -> None:`,
-      `        self.get_${locator.name}().click()`
-    );
-  }
-  if (locator.kind === "select") {
-    lines.push(
-      "",
-      `    def select_${locator.name}(self, value: str) -> None:`,
-      `        self.get_${locator.name}().select_option(value)`
-    );
+  for (const prefix of methodPrefixesFor(locator)) {
+    if (prefix === "get") continue; // already emitted above
+    if (prefix === "fill") {
+      lines.push(
+        "",
+        `    def fill_${locator.name}(self, value: str) -> None:`,
+        `        self.get_${locator.name}().fill(value)`
+      );
+    } else if (prefix === "click") {
+      lines.push(
+        "",
+        `    def click_${locator.name}(self) -> None:`,
+        `        self.get_${locator.name}().click()`
+      );
+    } else if (prefix === "select") {
+      lines.push(
+        "",
+        `    def select_${locator.name}(self, value: str) -> None:`,
+        `        self.get_${locator.name}().select_option(value)`
+      );
+    }
   }
   return lines.join("\n");
+}
+
+/**
+ * Every method name a screen's emitted Page Object exposes: `goto` (only when
+ * the route has no variable segment) followed by get_ / fill_ / click_ / select_
+ * per locator, in the same order `emitPageObject` writes them. The
+ * code-generation prompt lists these so the model can only call methods that
+ * really exist on the class it is forbidden from writing itself.
+ */
+export function pageObjectMethodNames(screen: Screen): string[] {
+  const templated = screen.urlTemplate.includes(":");
+  const gotoMethod = templated ? [] : ["goto"];
+  const locatorMethodNames = screen.locators.flatMap((locator) =>
+    methodPrefixesFor(locator).map((prefix) => `${prefix}_${locator.name}`)
+  );
+  return [...gotoMethod, ...locatorMethodNames];
 }
 
 /**

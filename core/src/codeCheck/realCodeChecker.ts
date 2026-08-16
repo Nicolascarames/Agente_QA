@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { assertSafeRelativePath } from "../util/assertSafeRelativePath.js";
 import { checkLocatorPatterns } from "./locatorLint.js";
+import { checkNoDirectPageUse } from "./pageFixtureLint.js";
 import { checkStepParsers } from "./stepParserLint.js";
 import { checkCredentialSubstitution } from "./credentialLint.js";
 import type { CodeChecker, CodeFile, CodeCheckResult } from "./codeChecker.js";
@@ -95,6 +96,11 @@ export function createRealCodeChecker(options?: {
         const locatorResult = checkLocatorPatterns(files);
         if (!locatorResult.ok && locatorResult.errors) {
           errors.push(locatorResult.errors);
+        }
+
+        const directPageUseErrors = checkNoDirectPageUse(files);
+        if (directPageUseErrors.length > 0) {
+          errors.push(directPageUseErrors.join("\n\n"));
         }
 
         const stepParserResult = checkStepParsers(files);
