@@ -101,3 +101,9 @@ export type { JunitResults, JunitTestCase } from "./agents/reportes/parseJunitRe
 export { generateSummaryMarkdown } from "./agents/reportes/generateSummaryMarkdown.js";
 export { runReportes } from "./agents/reportes/runReportes.js";
 export type { ReportesCallbacks, ReportesResult } from "./agents/reportes/runReportes.js";
+
+export { AppMapSchema, OverridesFileSchema } from "./appMap/schema.js";
+export type {
+  AppMap, Screen, LocatorEntry, ScreenState, Transition, WriteAction,
+  AmbiguousCandidate, ScenarioCandidate, OverridesFile, LocatorOverride,
+} from "./appMap/schema.js";
