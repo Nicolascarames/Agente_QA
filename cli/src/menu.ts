@@ -11,6 +11,7 @@ import { runInit } from "./commands/init.js";
 import { runGenerateTests } from "./commands/generate.js";
 import { runExecuteTests } from "./commands/execute.js";
 import { runGenerateReports } from "./commands/reports.js";
+import { runMapCommand } from "./commands/map.js";
 
 export interface MenuDeps {
   menuPrompts: MenuPrompts;
@@ -30,6 +31,10 @@ export async function runMenuLoop(deps: MenuDeps): Promise<void> {
     const choice = await deps.menuPrompts.selectMenuChoice();
 
     switch (choice) {
+      case "map": {
+        await runMapCommand(deps.projectRoot);
+        break;
+      }
       case "create-plan": {
         try {
           const filePath = await runCreatePlan(deps.chatPrompts, deps.projectRoot);

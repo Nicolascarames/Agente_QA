@@ -8,7 +8,7 @@ export interface InitPrompts {
   selectGitignoreEntries(candidates: string[]): Promise<string[]>;
 }
 
-export type MenuChoice = "create-plan" | "generate-tests" | "run-tests" | "reports" | "config" | "exit";
+export type MenuChoice = "map" | "create-plan" | "generate-tests" | "run-tests" | "reports" | "config" | "exit";
 
 export interface MenuPrompts {
   selectMenuChoice(): Promise<MenuChoice>;

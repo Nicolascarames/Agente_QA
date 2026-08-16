@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { ProjectEnv } from "./projectEnv.js";
+import type { CrawlLimits } from "../appMap/crawler.js";
 
 export const ProjectConfigSchema = z.object({
   testsDir: z.string().min(1),
@@ -25,8 +26,34 @@ export const ProjectConfigSchema = z.object({
     ),
   appLanguage: z.enum(["es", "en"]).default("es"),
   routes: z.record(z.string(), z.string()).default({}),
+  crawl: z
+    .object({
+      maxScreens: z.number().int().min(1).default(500),
+      maxDepth: z.number().int().min(1).default(25),
+      maxDurationMinutes: z.number().int().min(1).default(60),
+      loopSuspicionThreshold: z.number().int().min(2).default(3),
+      excludeRoutes: z.array(z.string()).default([]),
+    })
+    // zod v4's `.default()` substitutes this value verbatim when the key is missing —
+    // it does not re-parse it through the object shape above, so the per-field
+    // `.default(...)` calls would never fire on `{}`. Spelling the whole default out
+    // here keeps `ProjectConfigSchema.parse({})` returning the same limits as the
+    // per-field defaults describe, instead of an empty `crawl: {}`.
+    .default({ maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] }),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
+
+// `CrawlLimits` (hand-written TypeScript, appMap/crawler.ts) and the `crawl` block above
+// describe the same contract in two files. This guard makes them fail to compile the
+// moment a field is added to one and not the other, instead of drifting apart in silence.
+type ConfigCrawl = z.infer<typeof ProjectConfigSchema>["crawl"];
+type Conformance = [CrawlLimits] extends [ConfigCrawl]
+  ? [ConfigCrawl] extends [CrawlLimits]
+    ? true
+    : never
+  : never;
+const _crawlLimitsMatchConfig: Conformance = true;
+void _crawlLimitsMatchConfig;
 
 export function projectConfigPath(projectRoot: string): string {
   return path.join(projectRoot, ".agente-qa", "config.json");

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { saveProjectConfig, loadProjectConfig, projectConfigPath, requireAppUrl, testEnvVars } from "./projectConfig.js";
+import { saveProjectConfig, loadProjectConfig, projectConfigPath, requireAppUrl, testEnvVars, ProjectConfigSchema } from "./projectConfig.js";
 
 describe("projectConfig", () => {
   let tmpProject: string;
@@ -19,6 +19,14 @@ describe("projectConfig", () => {
     expect(await loadProjectConfig(tmpProject)).toBeNull();
   });
 
+  const defaultCrawl = {
+    maxScreens: 500,
+    maxDepth: 25,
+    maxDurationMinutes: 60,
+    loopSuspicionThreshold: 3,
+    excludeRoutes: [] as string[],
+  };
+
   it("saves and loads project config round-trip, defaulting headedMode to false when omitted", async () => {
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     expect(await loadProjectConfig(tmpProject)).toEqual({
@@ -27,6 +35,7 @@ describe("projectConfig", () => {
       appUrl: "https://example.com",
       appLanguage: "es",
       routes: {},
+      crawl: defaultCrawl,
     });
   });
 
@@ -38,6 +47,7 @@ describe("projectConfig", () => {
       appUrl: "https://example.com",
       appLanguage: "es",
       routes: {},
+      crawl: defaultCrawl,
     });
   });
 
@@ -65,6 +75,7 @@ describe("projectConfig", () => {
       appUrl: "https://example.com",
       appLanguage: "en",
       routes: { home: "/", login: "/login" },
+      crawl: defaultCrawl,
     });
   });
 
@@ -103,16 +114,45 @@ describe("projectConfig", () => {
     await expect(loadProjectConfig(tmpProject)).rejects.toThrow(/ejecuta/i);
   });
 
+  it("defaults the crawl block when the config has none", () => {
+    const parsed = ProjectConfigSchema.parse({ testsDir: "tests", appUrl: "https://example.test/" });
+    expect(parsed.crawl).toEqual({
+      maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [],
+    });
+  });
+
+  it("keeps user-supplied crawl limits", () => {
+    const parsed = ProjectConfigSchema.parse({
+      testsDir: "tests", appUrl: "https://example.test/",
+      crawl: { maxScreens: 20, maxDepth: 3, maxDurationMinutes: 5, loopSuspicionThreshold: 2, excludeRoutes: ["/admin/*"] },
+    });
+    expect(parsed.crawl.excludeRoutes).toEqual(["/admin/*"]);
+  });
+
   describe("requireAppUrl", () => {
     it("returns the configured appUrl", () => {
       expect(
-        requireAppUrl({ testsDir: "tests", headedMode: false, appUrl: "https://mi-app.com", appLanguage: "es", routes: {} })
+        requireAppUrl({
+          testsDir: "tests",
+          headedMode: false,
+          appUrl: "https://mi-app.com",
+          appLanguage: "es",
+          routes: {},
+          crawl: defaultCrawl,
+        })
       ).toBe("https://mi-app.com");
     });
   });
 
   describe("testEnvVars", () => {
-    const config = { testsDir: "tests", headedMode: false, appUrl: "https://mi-app.com", appLanguage: "es" as const, routes: {} };
+    const config = {
+      testsDir: "tests",
+      headedMode: false,
+      appUrl: "https://mi-app.com",
+      appLanguage: "es" as const,
+      routes: {},
+      crawl: defaultCrawl,
+    };
 
     it("maps appUrl and present test credentials to their AGENTE_QA_* names", () => {
       expect(testEnvVars(config, { testUsername: "qa", testPassword: "pwd", llmProvider: undefined, llmApiKey: undefined, llmBaseURL: undefined, llmModel: undefined })).toEqual({

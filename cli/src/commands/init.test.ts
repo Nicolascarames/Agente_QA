@@ -30,6 +30,14 @@ describe("runInit", () => {
     await fs.rm(tmpProject, { recursive: true, force: true });
   });
 
+  const defaultCrawl = {
+    maxScreens: 500,
+    maxDepth: 25,
+    maxDurationMinutes: 60,
+    loopSuspicionThreshold: 3,
+    excludeRoutes: [] as string[],
+  };
+
   it("saves the project config from the prompt answers", async () => {
     await runInit(prompts(), tmpProject);
 
@@ -39,6 +47,7 @@ describe("runInit", () => {
       appUrl: "https://example.com",
       appLanguage: "es",
       routes: { home: "/" },
+      crawl: defaultCrawl,
     });
   });
 
@@ -51,6 +60,7 @@ describe("runInit", () => {
       appUrl: "https://example.com",
       appLanguage: "es",
       routes: { home: "/" },
+      crawl: defaultCrawl,
     });
   });
 

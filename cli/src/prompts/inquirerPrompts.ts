@@ -85,6 +85,7 @@ export const realMenuPrompts: MenuPrompts = {
     return select<MenuChoice>({
       message: "¿Qué quieres hacer?",
       choices: [
+        { name: "Mapear aplicación (Agente 1)", value: "map" },
         { name: "Crear plan de pruebas desde un texto", value: "create-plan" },
         { name: "Generar tests Playwright desde un plan aprobado", value: "generate-tests" },
         { name: "Ejecutar tests", value: "run-tests" },

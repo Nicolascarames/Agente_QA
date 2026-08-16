@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runInit } from "../src/commands/init.js";
+import { runMapCommand } from "../src/commands/map.js";
 import { runMenuLoop } from "../src/menu.js";
 import {
   realInitPrompts,
@@ -30,6 +31,13 @@ program
     if (result.gitignoreEntriesAdded.length > 0) {
       console.log(`Añadido al .gitignore: ${result.gitignoreEntriesAdded.join(", ")}`);
     }
+  });
+
+program
+  .command("map")
+  .description("Mapea la aplicación y genera Page Objects (Agente 1)")
+  .action(async () => {
+    await runMapCommand(process.cwd());
   });
 
 program

@@ -1,31 +1,27 @@
 import {
-  createProvider,
   loadProjectEnv,
-  requireLlmConfig,
   requireAppUrl,
   loadProjectConfig,
   loadAllPatterns,
   createRealSiteExplorer,
   runIntake,
-  projectEnvPath,
   type IntakeCallbacks,
 } from "@agente-qa/core";
 import type { ChatPrompts } from "../prompts/types.js";
-import { withLLMSpinner } from "../util/spinner.js";
+import { buildLlm } from "../util/buildLlm.js";
 
 export async function runCreatePlan(prompts: ChatPrompts, projectRoot: string): Promise<string> {
   const env = await loadProjectEnv(projectRoot);
   if (!env) {
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
-  const llmCredentials = requireLlmConfig(env, projectEnvPath(projectRoot));
 
   const projectConfig = await loadProjectConfig(projectRoot);
   if (!projectConfig) {
     throw new Error("No hay configuración de proyecto. Ejecuta 'agente-qa init' primero.");
   }
 
-  const llm = withLLMSpinner(createProvider(llmCredentials));
+  const llm = await buildLlm(projectRoot);
   const patterns = await loadAllPatterns(projectRoot);
   const explorer = createRealSiteExplorer(llm);
   const credentials =
