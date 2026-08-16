@@ -89,6 +89,8 @@ export {
   realLocatorVerifier,
   MissingLocatorVerifierToolError,
 } from "./locatorVerify/realLocatorVerifier.js";
+export { locatorsUsedBy, checkMapFreshness } from "./locatorVerify/mapFreshness.js";
+export type { UsedLocator, MapFreshnessResult } from "./locatorVerify/mapFreshness.js";
 
 export { listAvailableTags } from "./agents/ejecutor/listAvailableTags.js";
 export { runEjecutor } from "./agents/ejecutor/runEjecutor.js";
