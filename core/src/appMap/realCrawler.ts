@@ -3,7 +3,7 @@ import type { Locator, Page } from "playwright";
 import type { EmitEvent } from "../events/agentEvent.js";
 import type { AmbiguousCandidate, AppMap, LocatorEntry, Screen, WriteAction } from "./schema.js";
 import { screenSignature, isSuspectedLoop } from "./signature.js";
-import { toUrlTemplate, siblingTemplate } from "./urlTemplate.js";
+import { toUrlTemplate, siblingTemplate, matchesTemplate } from "./urlTemplate.js";
 import { pythonIdentifier, uniqueName } from "./naming.js";
 import { pythonLiteral } from "./pythonLiteral.js";
 import { redactText } from "./redact.js";
@@ -684,6 +684,16 @@ export function createRealCrawler(): Crawler {
       const assignedScreenIds = new Set<string>();
       const recentSignatures: string[] = [];
       const prunedTemplates = new Set<string>();
+      // Every concrete route that ended up represented by another screen, and
+      // the screen that absorbed it. Transitions are recorded during the walk
+      // against the template the browser had at hand (`/blog/first-post`), but
+      // the screen that answers for it may since have been renamed to
+      // `/blog/:id` — without this the resolution below found nothing and the
+      // transition came back `toScreenId: null`, which every consumer reads as
+      // "leaves the application". The value is the Screen object, not its id:
+      // a collapse rewrites the id in place, and holding the reference means
+      // the lookup always reads the current one.
+      const absorbedBy = new Map<string, Screen>();
       let complete = true;
       let authenticated = false;
 
@@ -764,6 +774,24 @@ export function createRealCrawler(): Crawler {
           // trees say so. Without this rule a catalogue or a blog explodes into
           // hundreds of screens and hundreds of committed Page Objects, with
           // `maxScreens` as the only brake.
+          // Third and later siblings. The first pair already collapsed into a
+          // template, and `siblingTemplate` deliberately refuses a side that
+          // carries `:id`, so from here on only a pattern match can recognise
+          // the same screen. The signature still decides, exactly as it does
+          // for the first pair: shape alone would let `/settings/:id` swallow
+          // any route of that shape.
+          const absorbing = screens.find(
+            (s) => s.signature === screen.signature && matchesTemplate(s.urlTemplate, template)
+          );
+          if (absorbing !== undefined) {
+            absorbedBy.set(template, absorbing);
+            emit({
+              agent: "explorador", status: "info", depth: 0,
+              message: `${template} ya está representada por ${absorbing.urlTemplate}, no se añade otra pantalla`,
+            });
+            continue;
+          }
+
           const sibling = screens.find(
             (s) => s.signature === screen.signature && siblingTemplate(s.urlTemplate, template) !== null
           );
@@ -774,6 +802,11 @@ export function createRealCrawler(): Crawler {
             const collapsedId = uniqueName(pythonIdentifier(collapsed).replace(/^_+/, ""), assignedScreenIds);
             assignedScreenIds.add(collapsedId);
             Object.assign(sibling, screenIdentity(collapsedId), { urlTemplate: collapsed });
+            // Both concrete routes now answer to the collapsed screen: the one
+            // just visited AND the one that was already in the map under its
+            // own name, which transitions recorded earlier still point at.
+            absorbedBy.set(previous, sibling);
+            absorbedBy.set(template, sibling);
             emit({
               agent: "explorador", status: "info", depth: 0,
               message: `${template} es la misma pantalla que ${previous} con otros datos, se unifican en ${collapsed}`,
@@ -891,12 +924,16 @@ export function createRealCrawler(): Crawler {
         // `toScreenId` must hold a screen id, not the route template the walk
         // had at hand: consumers read it against `screen.id` and a template
         // matches none of them. Resolved here, once, when every screen the
-        // walk could reach is already known.
+        // walk could reach is already known — and through `absorbedBy` too,
+        // because a destination recorded as `/blog/first-post` is answered by
+        // the screen that has since become `/blog/:id`.
+        const screenIdForTemplate = (template: string): string | null =>
+          screens.find((s) => s.urlTemplate === template)?.id ?? absorbedBy.get(template)?.id ?? null;
         for (const screen of screens) {
           screen.transitions = screen.transitions.map((transition) =>
             transition.toScreenId === null
               ? transition
-              : { ...transition, toScreenId: screens.find((s) => s.urlTemplate === transition.toScreenId)?.id ?? null }
+              : { ...transition, toScreenId: screenIdForTemplate(transition.toScreenId) }
           );
         }
 

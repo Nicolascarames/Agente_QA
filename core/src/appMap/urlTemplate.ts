@@ -35,6 +35,29 @@ export function toUrlTemplate(url: string, baseUrl: string): string {
  * `/settings/billing` also share it — so the caller decides with the screen
  * signature, which says whether the two are really the same screen.
  */
+/**
+ * Whether a concrete route is an instance of a route template already in the
+ * map: a `:id` segment matches any single segment, every other segment must be
+ * equal.
+ *
+ * `siblingTemplate` alone only ever collapses the FIRST pair, because it
+ * refuses a side that already carries `:id` — by design, or `/user/:id` and
+ * `/user/settings` would collapse into `/user/:id` and swallow a real screen.
+ * The consequence was that from the third sibling onward the rule stopped
+ * firing entirely: `/blog/first-post` and `/blog/second-post` became
+ * `/blog/:id`, and `/blog/third-post` then landed in the map as a separate
+ * screen, so the catalogue explosion the rule exists to prevent simply resumed
+ * at item three. Matching a new concrete route against the templates already
+ * stored is what makes the rule hold for the whole catalogue.
+ */
+export function matchesTemplate(template: string, concrete: string): boolean {
+  if (!template.includes(VARIABLE)) return false;
+  const left = template.split("/");
+  const right = concrete.split("/");
+  if (left.length !== right.length) return false;
+  return left.every((segment, index) => segment === VARIABLE || segment === right[index]);
+}
+
 export function siblingTemplate(a: string, b: string): string | null {
   if (a === b) return null;
   const left = a.split("/");

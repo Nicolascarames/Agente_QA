@@ -3,8 +3,14 @@
   <head><meta charset="utf-8" /><title>Fixture · Orders</title></head>
   <body><main><h1>Orders</h1>
   <ul><li><a href="/item/1">Order 1</a></li><li><a href="/item/2">Order 2</a></li></ul>
-  <!-- Sibling URLs: same shape, same content, different last segment. -->
+  <!-- Sibling URLs: same shape, same content, different last segment. THREE of
+       them on purpose: with only two, the sibling rule looks like it works.
+       The first pair collapses into /blog/:id, and `siblingTemplate` refuses a
+       side that already carries `:id`, so the third post used to land in the
+       map as its own screen — the catalogue explosion the rule exists to
+       prevent, resuming at item three. -->
   <a href="/blog/first-post">First post</a>
   <a href="/blog/second-post">Second post</a>
+  <a href="/blog/third-post">Third post</a>
   <a href="/loop-a.html">Next</a></main></body>
 </html>

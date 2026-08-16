@@ -148,20 +148,48 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
   // `toScreenId` is read against `screen.id` by every consumer. It used to
   // hold the route template, which matches no screen id at all, and exactly
   // one consumer compensated for it.
-  it("records every transition target as a screen id, never as a route template", async () => {
+  //
+  // Skipping nulls made this test blind to the defect that mattered: a
+  // transition into a screen that was later renamed by the sibling collapse
+  // (`/blog/first-post` → `/blog/:id`) resolved to null, and the prompt
+  // builder prints null as "(externo)" — the map claimed three links out of
+  // /list.html left the application. Every transition here has an internal
+  // destination (the fixture links nowhere off-host, so `externalUrl` is never
+  // set), so null is always a failure. The loop question is answered YES so
+  // that no branch is pruned: a pruned destination is legitimately unknown and
+  // would muddy what this test is about.
+  it("resolves every internal transition to a real screen id, never to null", async () => {
     const result = await createRealCrawler().crawl({
       baseUrl: site.url, limits,
-      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      callbacks: { confirmContinueOnLoop: async () => true, approveWriteActions: async () => [] },
       emit: () => {},
     });
     if (!result.ok) throw new Error(result.error);
     const ids = new Set(result.map.screens.map((s) => s.id));
-    const targets = result.map.screens.flatMap((s) => s.transitions.map((t) => t.toScreenId));
-    expect(targets.length).toBeGreaterThan(0);
-    for (const target of targets) {
-      if (target === null) continue;
-      expect(ids.has(target)).toBe(true);
+    const transitions = result.map.screens.flatMap((s) => s.transitions);
+    expect(transitions.length).toBeGreaterThan(0);
+    for (const transition of transitions) {
+      if (transition.externalUrl !== undefined) continue;
+      expect(transition.toScreenId).not.toBeNull();
+      expect(ids.has(transition.toScreenId!)).toBe(true);
     }
+  }, 20000);
+
+  // The three /blog/<slug> links out of /list.html all lead to the one screen
+  // the collapse produced. Resolving them through the concrete templates they
+  // were recorded under is what keeps them from coming back null.
+  it("points every link into a collapsed sibling at the screen that absorbed it", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits,
+      callbacks: { confirmContinueOnLoop: async () => true, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    const list = result.map.screens.find((s) => s.urlTemplate === "/list.html");
+    const blog = result.map.screens.find((s) => s.urlTemplate === "/blog/:id");
+    expect(blog).toBeDefined();
+    const intoBlog = list!.transitions.filter((t) => t.toScreenId === blog!.id);
+    expect(intoBlog.map((t) => t.locator).sort()).toEqual(["first_post", "second_post", "third_post"]);
   }, 20000);
 
   // `appUrl` is validated as a URL but never normalised, so a base URL with no
@@ -183,17 +211,25 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
   // Third templating rule of the spec: two sibling URLs differing in exactly
   // one segment are one screen with different data. Without it a blog or a
   // catalogue becomes one screen — and one committed Page Object — per item.
-  it("collapses two sibling routes that render the same screen", async () => {
+  //
+  // The THIRD post is what makes this test discriminating. Once the first pair
+  // collapses, the stored template carries `:id` and `siblingTemplate` returns
+  // null for any further comparison against it, so the rule used to go quiet
+  // from item three onward and the map came back with both `/blog/:id` AND
+  // `/blog/third-post`. Exactly one screen is the assertion, not merely the
+  // presence of `/blog/:id`.
+  it("collapses every sibling route that renders the same screen, not just the first pair", async () => {
     const result = await createRealCrawler().crawl({
       baseUrl: site.url, limits,
       callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
       emit: () => {},
     });
     if (!result.ok) throw new Error(result.error);
+    expect(result.map.screens.filter((s) => s.urlTemplate === "/blog/:id")).toHaveLength(1);
     const templates = result.map.screens.map((s) => s.urlTemplate);
-    expect(templates).toContain("/blog/:id");
     expect(templates).not.toContain("/blog/first-post");
     expect(templates).not.toContain("/blog/second-post");
+    expect(templates).not.toContain("/blog/third-post");
   }, 20000);
 
   // Review finding: /order-history.html and /order/history.html both
