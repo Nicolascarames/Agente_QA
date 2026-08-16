@@ -1493,9 +1493,13 @@ submit shows an error for wrong credentials and redirects to the dashboard for
 the right ones, plus a "Log in" button duplicated in the header (region
 disambiguation) and an "Email" text that appears twice with no distinguishing
 region (irreducible ambiguity); `reset.html` a second route reached by clicking;
-`dashboard.html` the authenticated screen; `list.html` a paginated list whose
-"Next" always renders the same structure (loop detection) and rows linking to
-`/item/1`, `/item/2` (URL templating).
+`dashboard.html` the authenticated screen; `list.html` rows linking to `/item/1`
+and `/item/2` (URL templating); `loop-a/b/c.html` three distinct routes with
+identical structure (loop detection).
+
+`index.html` links to `list.html` directly, without authentication, on purpose:
+the first pass never submits a form, so anything reachable only through the
+login would be unreachable in the tests of Task 13.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1521,7 +1525,7 @@ describe("startFixtureSite", () => {
   it("serves each fixture route", async () => {
     const site = await startFixtureSite();
     try {
-      for (const route of ["/reset.html", "/dashboard.html", "/list.html"]) {
+      for (const route of ["/reset.html", "/dashboard.html", "/list.html", "/loop-a.html"]) {
         expect((await fetch(site.url.replace(/\/$/, "") + route)).status).toBe(200);
       }
     } finally {
@@ -1565,8 +1569,12 @@ Expected: FAIL — cannot resolve `./server.js`.
         <button type="submit">Log in</button>
       </form>
       <a href="/reset.html">Forgot password?</a>
+      <a href="/list.html">Orders</a>
       <p id="error" hidden>Authentication failed. Please try again.</p>
-      <aside><span>Email</span></aside>
+      <!-- Duplicate of the field label, in a <p> and outside any single region:
+           no region scoping brings it down to one match, so it is the fixture's
+           irreducibly ambiguous case. -->
+      <aside><p>Email</p></aside>
     </main>
     <script>
       document.getElementById("login").addEventListener("submit", (event) => {
@@ -1611,7 +1619,23 @@ Expected: FAIL — cannot resolve `./server.js`.
   <head><meta charset="utf-8" /><title>Fixture · Orders</title></head>
   <body><main><h1>Orders</h1>
   <ul><li><a href="/item/1">Order 1</a></li><li><a href="/item/2">Order 2</a></li></ul>
-  <a href="/list.html?page=2">Next</a></main></body>
+  <a href="/loop-a.html">Next</a></main></body>
+</html>
+```
+
+`core/src/appMap/__fixtures__/site/loop-a.html`, `loop-b.html` and `loop-c.html` —
+three distinct routes with identical structure, which is what the loop detector
+is actually for. Query-string pagination (`?page=2`) would NOT exercise it:
+`toUrlTemplate` drops the query, so the second page collapses onto the first
+template and is skipped before the signature is ever compared. Create the three
+files with the same body, changing only the `Next` target (`loop-a` → `loop-b` →
+`loop-c` → `loop-a`):
+
+```html
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Fixture · Loop</title></head>
+  <body><main><h1>Loop page</h1><a href="/loop-b.html">Next</a></main></body>
 </html>
 ```
 
@@ -2012,6 +2036,25 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
     }
   }
 
+  // A password input does NOT expose the `textbox` role in ARIA, so the loop
+  // above never sees it. Without this block no login screen would get a
+  // fill_password method and the whole point of the map would be missed.
+  // These are addressed by label, which is what Playwright offers for a
+  // labelled field of any type.
+  for (const handle of await page.locator('input[type="password"]').all()) {
+    const id = await handle.getAttribute("id");
+    const label = id ? (await page.locator(`label[for="${id}"]`).innerText().catch(() => "")) : "";
+    const name = (label || (await handle.getAttribute("aria-label")) || (await handle.getAttribute("placeholder")) || "").trim();
+    if (name.length === 0) continue;
+    candidates.push({
+      kind: "input",
+      role: null,
+      accessibleName: name,
+      build: (scope) => scope.getByLabel(name, { exact: true }),
+      python: (prefix) => `${prefix}get_by_label(${pythonLiteral(name)})`,
+    });
+  }
+
   for (const text of await page.getByRole("paragraph").allInnerTexts()) {
     const trimmed = text.trim();
     if (trimmed.length === 0) continue;
@@ -2194,6 +2237,9 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
   });
 
   it("asks before continuing down a suspected loop and honours a no", async () => {
+    // /loop-a, /loop-b and /loop-c are three DIFFERENT routes with identical
+    // structure: URL templating cannot dedupe them, so the signature is the
+    // only thing that can spot the repetition.
     let asked = 0;
     const result = await createRealCrawler().crawl({
       baseUrl: site.url, limits: { ...limits, loopSuspicionThreshold: 2 },
@@ -2202,6 +2248,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     });
     if (!result.ok) throw new Error(result.error);
     expect(asked).toBeGreaterThan(0);
+    expect(result.map.screens.filter((s) => s.urlTemplate.startsWith("/loop-")).length).toBeLessThan(3);
   });
 
   it("skips routes matched by excludeRoutes", async () => {
@@ -2603,7 +2650,10 @@ async function runWritePass(
         if (!field?.accessibleName) continue;
         const value = valueFor(field.accessibleName, data, input.credentials);
         probeValues.push(value);
-        await page.getByRole("textbox", { name: field.accessibleName, exact: true })
+        // By label, not by role: a password input has no `textbox` role, and
+        // filling it by role would silently do nothing — the valid submit
+        // would never authenticate and the failure would look like the app's.
+        await page.getByLabel(field.accessibleName, { exact: true })
           .fill(value, { timeout: 5_000 }).catch(() => undefined);
       }
 
@@ -3170,6 +3220,22 @@ crawl: z
     excludeRoutes: z.array(z.string()).default([]),
   })
   .default({}),
+```
+
+`CrawlLimits` (Task 11, hand-written TypeScript) and this block describe the same
+contract in two files. Add a compile-time guard in the same file so they cannot
+drift apart in silence — `tsc` fails the moment a field is added to one and not
+the other:
+
+```ts
+import type { CrawlLimits } from "../appMap/crawler.js";
+
+type ConfigCrawl = z.infer<typeof ProjectConfigSchema>["crawl"];
+type Conformance = [CrawlLimits] extends [ConfigCrawl]
+  ? [ConfigCrawl] extends [CrawlLimits] ? true : never
+  : never;
+const _crawlLimitsMatchConfig: Conformance = true;
+void _crawlLimitsMatchConfig;
 ```
 
 `cli/src/commands/map.ts`:
