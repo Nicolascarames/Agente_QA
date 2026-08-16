@@ -27,6 +27,14 @@ describe("screenSignature", () => {
     const level2 = `- heading "Orders" [level=2]\n- button "New"`;
     expect(screenSignature(level1)).not.toBe(screenSignature(level2));
   });
+
+  it("gives the same signature to two pages that differ only in a link's href", () => {
+    // Real Chromium aria snapshots of the loop-a/loop-b fixture pages: same
+    // structure, but the "Next" link points somewhere else on each page.
+    const loopA = `- main:\n  - heading "Loop page" [level=1]\n  - link "Next":\n    - /url: /loop-b.html`;
+    const loopB = `- main:\n  - heading "Loop page" [level=1]\n  - link "Next":\n    - /url: /loop-c.html`;
+    expect(screenSignature(loopA)).toBe(screenSignature(loopB));
+  });
 });
 
 describe("isSuspectedLoop", () => {
