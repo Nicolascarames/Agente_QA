@@ -28,7 +28,15 @@ export async function loadAppMap(projectRoot: string): Promise<AppMap | null> {
   } catch {
     return null;
   }
-  const parsed = AppMapSchema.safeParse(JSON.parse(raw));
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      `El fichero map.json de ${target} no es JSON válido. Vuelve a mapear la aplicación con "agente-qa map".`
+    );
+  }
+  const parsed = AppMapSchema.safeParse(json);
   if (!parsed.success) {
     throw new Error(
       `El fichero map.json de ${target} no tiene el formato esperado. Vuelve a mapear la aplicación con "agente-qa map".`

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadOverrides, saveOverride, applyOverrides } from "./overrides.js";
+import { loadOverrides, saveOverride, applyOverrides, overridesPath } from "./overrides.js";
 import type { AppMap } from "./schema.js";
 
 const map: AppMap = {
@@ -43,6 +43,24 @@ describe("loadOverrides / saveOverride", () => {
     expect(loaded.locators).toHaveLength(1);
     expect(loaded.locators[0].python).toBe("second");
   });
+
+  it("rejects malformed JSON with a clear message instead of a raw SyntaxError", async () => {
+    await fs.mkdir(path.dirname(overridesPath(projectRoot)), { recursive: true });
+    await fs.writeFile(overridesPath(projectRoot), "{ not json", "utf-8");
+    await expect(loadOverrides(projectRoot)).rejects.toThrow(/overrides\.json/);
+  });
+
+  it("returns a fresh object on every call instead of a shared singleton", async () => {
+    const otherRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-ovr-"));
+    try {
+      const a = await loadOverrides(projectRoot);
+      const b = await loadOverrides(otherRoot);
+      expect(a).not.toBe(b);
+      expect(a.locators).not.toBe(b.locators);
+    } finally {
+      await fs.rm(otherRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("applyOverrides", () => {
@@ -60,6 +78,12 @@ describe("applyOverrides", () => {
       locators: [{ screenId: "login", name: "error_message", python: "changed" }],
     });
     expect(map.screens[0].locators[0].python).toBe('page.get_by_role("alert")');
+  });
+
+  it("deep-clones the map so mutating nested arrays on the result doesn't affect the original", () => {
+    const { map: patched } = applyOverrides(map, { schemaVersion: 1, locators: [] });
+    patched.screens[0].texts.push("x");
+    expect(map.screens[0].texts).toEqual([]);
   });
 
   it("reports an override whose screen no longer exists as an orphan", () => {

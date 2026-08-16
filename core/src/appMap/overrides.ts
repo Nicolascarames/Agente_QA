@@ -3,23 +3,30 @@ import path from "node:path";
 import { appMapDir } from "./mapStore.js";
 import { OverridesFileSchema, type AppMap, type LocatorOverride, type OverridesFile } from "./schema.js";
 
-const EMPTY: OverridesFile = { schemaVersion: 1, locators: [] };
-
 export function overridesPath(projectRoot: string): string {
   return path.join(appMapDir(projectRoot), "overrides.json");
 }
 
 export async function loadOverrides(projectRoot: string): Promise<OverridesFile> {
+  const target = overridesPath(projectRoot);
   let raw: string;
   try {
-    raw = await fs.readFile(overridesPath(projectRoot), "utf-8");
+    raw = await fs.readFile(target, "utf-8");
   } catch {
-    return EMPTY;
+    return { schemaVersion: 1, locators: [] };
   }
-  const parsed = OverridesFileSchema.safeParse(JSON.parse(raw));
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error(
+      `El fichero overrides.json de ${target} no es JSON válido. Corrígelo o bórralo.`
+    );
+  }
+  const parsed = OverridesFileSchema.safeParse(json);
   if (!parsed.success) {
     throw new Error(
-      `El fichero overrides.json de ${overridesPath(projectRoot)} no tiene el formato esperado. Corrígelo o bórralo.`
+      `El fichero overrides.json de ${target} no tiene el formato esperado. Corrígelo o bórralo.`
     );
   }
   return parsed.data;
@@ -49,10 +56,10 @@ export function applyOverrides(
   overrides: OverridesFile
 ): { map: AppMap; orphans: LocatorOverride[] } {
   const orphans: LocatorOverride[] = [];
-  const screens = map.screens.map((screen) => ({ ...screen, locators: screen.locators.map((l) => ({ ...l })) }));
+  const patched: AppMap = structuredClone(map);
 
   for (const override of overrides.locators) {
-    const screen = screens.find((s) => s.id === override.screenId);
+    const screen = patched.screens.find((s) => s.id === override.screenId);
     const locator = screen?.locators.find((l) => l.name === override.name);
     if (!locator) {
       orphans.push(override);
@@ -61,5 +68,5 @@ export function applyOverrides(
     locator.python = override.python;
   }
 
-  return { map: { ...map, screens }, orphans };
+  return { map: patched, orphans };
 }

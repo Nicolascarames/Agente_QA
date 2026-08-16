@@ -42,6 +42,12 @@ describe("saveAppMap / loadAppMap", () => {
     await expect(loadAppMap(projectRoot)).rejects.toThrow(/map\.json/);
   });
 
+  it("rejects malformed JSON with a clear message instead of a raw SyntaxError", async () => {
+    await fs.mkdir(path.dirname(appMapPath(projectRoot)), { recursive: true });
+    await fs.writeFile(appMapPath(projectRoot), "{ not json", "utf-8");
+    await expect(loadAppMap(projectRoot)).rejects.toThrow(/map\.json/);
+  });
+
   it("overwrites a previous map", async () => {
     await saveAppMap(projectRoot, map);
     await saveAppMap(projectRoot, { ...map, authenticated: true });
