@@ -1,9 +1,13 @@
+import { chromium } from "playwright";
 import type { Locator, Page } from "playwright";
-import type { AmbiguousCandidate, LocatorEntry, Screen } from "./schema.js";
-import { screenSignature } from "./signature.js";
+import type { AmbiguousCandidate, AppMap, LocatorEntry, Screen, WriteAction } from "./schema.js";
+import { screenSignature, isSuspectedLoop } from "./signature.js";
 import { toUrlTemplate } from "./urlTemplate.js";
 import { pythonIdentifier, uniqueName } from "./naming.js";
 import { redactText } from "./redact.js";
+import { elementKey } from "./elementIdentity.js";
+import type { Crawler, CrawlInput, CrawlResult } from "./crawler.js";
+import { MissingCrawlerToolError } from "./crawler.js";
 
 const REGIONS = ["main", "form", "navigation", "banner", "contentinfo", "dialog"] as const;
 
@@ -201,4 +205,167 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
     transitions: [],
     writeActions: [],
   };
+}
+
+function matchesExcluded(urlTemplate: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    const regex = new RegExp("^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+    return regex.test(urlTemplate);
+  });
+}
+
+async function collectWriteActions(page: Page, screen: Screen): Promise<WriteAction[]> {
+  const actions: WriteAction[] = [];
+  for (const submit of await page.locator("form button[type=submit], form input[type=submit]").all()) {
+    const label = (await submit.innerText().catch(() => "")).trim() || "Enviar";
+    const locator = screen.locators.find((l) => l.accessibleName === label && l.kind === "button");
+    if (!locator) continue;
+    actions.push({
+      locator: locator.name,
+      label,
+      kind: "submit",
+      formFields: screen.locators.filter((l) => l.kind === "input").map((l) => l.name),
+    });
+  }
+  return actions;
+}
+
+/**
+ * The first pass walks the app breadth-first, from `baseUrl` outward, never
+ * clicking the same element twice and never repeating a screen it has
+ * already visited by its route template. The numeric limits in
+ * `input.limits` are a safety net, not the primary stopping mechanism.
+ *
+ * Every screen's `id` is derived here, and only here, from its URL template:
+ * Tasks 15 and 16 look it up on the resulting `Screen.id`, so a second
+ * derivation anywhere else in this file would risk drifting from this one.
+ */
+export function createRealCrawler(): Crawler {
+  return {
+    async crawl(input: CrawlInput): Promise<CrawlResult> {
+      const startedAt = Date.now();
+      let browser;
+      try {
+        browser = await chromium.launch({ headless: input.headed !== true });
+      } catch (err) {
+        return {
+          ok: false,
+          error: new MissingCrawlerToolError(
+            'No se pudo abrir el navegador. Ejecuta "npx playwright install chromium" e inténtalo de nuevo.'
+          ).message,
+        };
+      }
+
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      const screens: Screen[] = [];
+      const visitedTemplates = new Set<string>();
+      const clickedElements = new Set<string>();
+      const recentSignatures: string[] = [];
+      const prunedTemplates = new Set<string>();
+      let complete = true;
+
+      const deadline = startedAt + input.limits.maxDurationMinutes * 60_000;
+      const queue: { url: string; depth: number }[] = [{ url: input.baseUrl, depth: 0 }];
+
+      try {
+        while (queue.length > 0) {
+          if (screens.length >= input.limits.maxScreens || Date.now() > deadline) {
+            complete = false;
+            input.emit({ agent: "explorador", status: "warn", depth: 0, message: "Límite de seguridad alcanzado, el mapa queda incompleto" });
+            break;
+          }
+
+          const next = queue.shift()!;
+          if (next.depth > input.limits.maxDepth) { complete = false; continue; }
+
+          const stepStart = Date.now();
+          await page.goto(next.url, { waitUntil: "domcontentloaded" });
+          const template = toUrlTemplate(page.url(), input.baseUrl);
+          if (visitedTemplates.has(template) || matchesExcluded(template, input.limits.excludeRoutes)) continue;
+          if (prunedTemplates.has(template)) continue;
+          visitedTemplates.add(template);
+
+          const screenId = template === "/" ? "home" : pythonIdentifier(template).replace(/^_+/, "");
+          const screen = await captureScreen(page, { screenId, baseUrl: input.baseUrl, secrets: secretsOf(input) });
+          recentSignatures.push(screen.signature);
+
+          if (isSuspectedLoop(recentSignatures, input.limits.loopSuspicionThreshold)) {
+            const keepGoing = await input.callbacks.confirmContinueOnLoop({
+              urlTemplate: template,
+              repeats: input.limits.loopSuspicionThreshold,
+            });
+            if (!keepGoing) {
+              prunedTemplates.add(template);
+              input.emit({ agent: "explorador", status: "warn", depth: 1, message: `Rama podada por bucle: ${template}` });
+              continue;
+            }
+            recentSignatures.length = 0;
+          }
+
+          screen.writeActions = await collectWriteActions(page, screen);
+          screens.push(screen);
+          input.emit({
+            agent: "explorador", status: "ok", depth: 0,
+            message: `${template} · pantalla ${screens.length}`,
+            detail: `${screen.texts.length} textos · ${screen.locators.length} localizadores`,
+            durationMs: Date.now() - stepStart,
+          });
+
+          // First pass: navigation only. Submits are recorded, never clicked.
+          for (const locator of screen.locators.filter((l) => l.kind === "link" || l.kind === "button")) {
+            if (screen.writeActions.some((action) => action.locator === locator.name)) continue;
+            const key = elementKey({
+              screenId: screen.id, role: locator.kind, accessibleName: locator.accessibleName ?? locator.name, index: 0,
+            });
+            if (clickedElements.has(key)) continue;
+            clickedElements.add(key);
+
+            await page.goto(next.url, { waitUntil: "domcontentloaded" });
+            const before = page.url();
+            await page.getByRole(locator.kind === "link" ? "link" : "button", {
+              name: locator.accessibleName ?? "", exact: true,
+            }).first().click({ timeout: 5_000 }).catch(() => undefined);
+            await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+            const after = page.url();
+            if (after === before) continue;
+
+            const targetTemplate = toUrlTemplate(after, input.baseUrl);
+            const external = !after.startsWith(input.baseUrl);
+            screen.transitions.push({
+              locator: locator.name,
+              action: "click",
+              toScreenId: external ? null : targetTemplate,
+              urlChanged: true,
+              ...(external ? { externalUrl: after } : {}),
+            });
+            if (!external && !visitedTemplates.has(targetTemplate)) queue.push({ url: after, depth: next.depth + 1 });
+          }
+        }
+      } finally {
+        await browser.close();
+      }
+
+      const map: AppMap = {
+        schemaVersion: 1,
+        appUrl: input.baseUrl,
+        createdAt: new Date().toISOString(),
+        complete,
+        authenticated: false,
+        screens,
+        scenarios: [],
+        stats: {
+          screens: screens.length,
+          locators: screens.reduce((sum, s) => sum + s.locators.length, 0),
+          ambiguous: screens.reduce((sum, s) => sum + s.ambiguous.length, 0),
+          durationMs: Date.now() - startedAt,
+        },
+      };
+      return { ok: true, map };
+    },
+  };
+}
+
+function secretsOf(input: CrawlInput): string[] {
+  return input.credentials ? [input.credentials.username, input.credentials.password] : [];
 }
