@@ -117,3 +117,10 @@ export type {
 } from "./appMap/crawler.js";
 export { MissingCrawlerToolError } from "./appMap/crawler.js";
 export { FakeCrawler } from "./appMap/testUtils.js";
+
+export { runExplorador } from "./agents/explorador/runExplorador.js";
+export type { ExploradorCallbacks, RunExploradorOptions, ExploradorResult } from "./agents/explorador/runExplorador.js";
+export { generateScenarioCandidates } from "./agents/explorador/scenarioCandidates.js";
+export { createRealCrawler } from "./appMap/realCrawler.js";
+export { emitPageObject } from "./appMap/pageObjectEmitter.js";
+export { redactMap, redactText, REDACTED } from "./appMap/redact.js";
