@@ -21,6 +21,12 @@ describe("screenSignature", () => {
   it("returns a sha256-prefixed value", () => {
     expect(screenSignature(`- button "Log in"`)).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
+
+  it("preserves structural annotations: different heading levels produce different signatures", () => {
+    const level1 = `- heading "Orders" [level=1]\n- button "New"`;
+    const level2 = `- heading "Orders" [level=2]\n- button "New"`;
+    expect(screenSignature(level1)).not.toBe(screenSignature(level2));
+  });
 });
 
 describe("isSuspectedLoop", () => {

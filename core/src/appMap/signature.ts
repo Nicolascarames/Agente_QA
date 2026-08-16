@@ -5,6 +5,7 @@ const VOLATILE = [
   /\d[\d.,]*\s?(?:€|\$|%)/g,                  // amounts
   /\b\d+\b/g,                                 // any bare number
 ];
+const STRUCTURAL = /\[[^\]]*\]/g;             // bracketed structural annotations like [level=1]
 
 /**
  * Fingerprint of the accessibility tree with the data stripped out: roles and
@@ -13,8 +14,22 @@ const VOLATILE = [
  * into a detectable loop instead of an endless supply of new screens.
  */
 export function screenSignature(ariaSnapshot: string): string {
-  let normalized = ariaSnapshot;
-  for (const pattern of VOLATILE) normalized = normalized.replace(pattern, "#");
+  // Save structural annotations and replace with placeholders
+  const annotations: string[] = [];
+  let withPlaceholders = ariaSnapshot.replace(STRUCTURAL, (match) => {
+    annotations.push(match);
+    return `__STRUCT_${annotations.length - 1}__`;
+  });
+
+  // Strip volatile data (dates, amounts, bare numbers)
+  for (const pattern of VOLATILE) withPlaceholders = withPlaceholders.replace(pattern, "#");
+
+  // Restore structural annotations
+  let normalized = withPlaceholders;
+  for (let i = 0; i < annotations.length; i++) {
+    normalized = normalized.replace(`__STRUCT_${i}__`, annotations[i]);
+  }
+
   normalized = normalized
     .split(/\r?\n/)
     .map((line) => line.trim())

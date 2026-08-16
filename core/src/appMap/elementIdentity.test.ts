@@ -64,4 +64,42 @@ describe("mergeScreenState", () => {
     });
     expect(merged.locators[0].stateId).toBe("invalid-credentials");
   });
+
+  it("deduplicates incoming texts before filtering", () => {
+    const merged = mergeScreenState(screen, {
+      id: "validation-error",
+      reachedBy: { action: "submit", locator: "log_in_button", data: "invalid" },
+      texts: ["Required", "Required"],
+      locators: [],
+    });
+    expect(merged.texts.filter((t) => t === "Required")).toHaveLength(1);
+    expect(merged.states[0].addsTexts).toEqual(["Required"]);
+  });
+
+  it("skips locators whose name already exists on the screen", () => {
+    const baseScreen: Screen = {
+      id: "login", name: "Log in", className: "LoginPage", urlTemplate: "/",
+      signature: "sha256:a", requiresAuth: false,
+      texts: [], probeValues: [],
+      locators: [{
+        name: "email_field", kind: "input",
+        python: 'page.fill("input[type=email]", data)',
+        count: 1, verifiedAt: "2026-08-16T10:00:00.000Z",
+      }],
+      states: [],
+      ambiguous: [], transitions: [], writeActions: [],
+    };
+    const merged = mergeScreenState(baseScreen, {
+      id: "validation-error",
+      reachedBy: { action: "submit", locator: "log_in_button", data: "invalid" },
+      texts: [],
+      locators: [{
+        name: "email_field", kind: "input",
+        python: 'page.fill("input[type=email]", data)',
+        count: 1, verifiedAt: "2026-08-16T10:00:00.000Z",
+      }],
+    });
+    expect(merged.locators).toHaveLength(1);
+    expect(merged.locators[0].stateId).toBeUndefined();
+  });
 });
