@@ -1,5 +1,8 @@
 export { slugify } from "./util/slugify.js";
 
+export type { AgentId, EventStatus, AgentEvent, EmitEvent } from "./events/agentEvent.js";
+export { noopEmit } from "./events/agentEvent.js";
+
 export {
   ProjectConfigSchema,
   projectConfigPath,
