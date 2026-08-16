@@ -164,6 +164,25 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     await page.close();
   });
 
+  // An input with an `id` and no matching <label for> is the ordinary case in
+  // a single-page application, and reading its label without a count() gate
+  // paid Playwright's full default timeout — measured at 30 006 ms — once per
+  // field per capture. This asserts elapsed time with a generous but finite
+  // bound: the point is that the lookup never BLOCKS, not that it takes any
+  // particular number of milliseconds. The test timeout is far above the
+  // 30s stall on purpose, so the old behaviour fails on the assertion below
+  // instead of dying as an opaque vitest timeout.
+  it("does not stall on an input whose id has no matching label", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url);
+    const startedAt = Date.now();
+    const screen = await captureScreen(page, { screenId: "login", baseUrl: site.url, secrets: [] });
+    const elapsedMs = Date.now() - startedAt;
+    expect(screen.locators.some((l) => l.accessibleName === "Search orders")).toBe(true);
+    expect(elapsedMs).toBeLessThan(15_000);
+    await page.close();
+  }, 90_000);
+
   it("warns through the event channel for every candidate it discards as ambiguous", async () => {
     const page = await (await browser!.newContext()).newPage();
     const events: AgentEvent[] = [];

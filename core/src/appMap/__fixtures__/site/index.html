@@ -18,6 +18,14 @@
            never authenticates — a bug that looks like the application's. -->
       <label for="quick-password">Password</label>
       <input id="quick-password" name="quick-password" type="password" />
+      <!-- An `id` with NO matching <label for>: named only by aria-label and
+           placeholder, which is the ordinary case in a single-page
+           application. Reading its label without gating on count() first paid
+           Playwright's full 30s default EVERY time the field was named — once
+           per capture, and captures happen several times per screen. Every
+           other input in this fixture is labelled, which is exactly why the
+           fixture never showed the stall. -->
+      <input id="site-search" type="text" aria-label="Search orders" placeholder="Search orders" />
     </header>
     <main>
       <h1>Welcome back</h1>
