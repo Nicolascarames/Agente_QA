@@ -63,7 +63,12 @@
         event.preventDefault();
         const ok = document.getElementById("email").value === "user@example.test"
           && document.getElementById("password").value === "s3cr3t-pass";
-        if (ok) { window.location.href = "/dashboard.html"; return; }
+        if (ok) {
+          // The session the server checks before serving /dashboard.html.
+          document.cookie = "agente_qa_session=1; path=/";
+          window.location.href = "/dashboard.html";
+          return;
+        }
         document.getElementById("error").hidden = false;
       });
     </script>

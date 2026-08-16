@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-import type { Locator, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import type { EmitEvent } from "../events/agentEvent.js";
 import type { AmbiguousCandidate, AppMap, LocatorEntry, Screen, WriteAction } from "./schema.js";
 import { screenSignature, isSuspectedLoop } from "./signature.js";
@@ -46,8 +46,6 @@ interface CaptureContext {
   screenId: string;
   baseUrl: string;
   secrets: string[];
-  /** Screens captured while the crawl holds a real session are private screens. */
-  requiresAuth?: boolean;
   /** Optional so tests can capture a screen without wiring an event channel. */
   emit?: EmitEvent;
 }
@@ -324,7 +322,10 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
     ...screenIdentity(context.screenId),
     urlTemplate,
     signature: screenSignature(ariaSnapshot),
-    requiresAuth: context.requiresAuth === true,
+    // Always public at capture time. Whether a screen really needs a session
+    // is decided afterwards, by `derivePrivateScreens`, from a context that
+    // holds no session — the walk itself cannot tell.
+    requiresAuth: false,
     texts,
     probeValues: [],
     locators,
@@ -525,26 +526,37 @@ async function clickWriteAction(page: Page, screen: Screen, action: WriteAction,
  * fill and submit the write pass uses, and reports success only when the
  * submit actually navigated away. On any failure the caller carries on with
  * the public surface and the map stays `authenticated: false`.
+ *
+ * The login screen's signature comes back with the answer: it is what lets the
+ * `requiresAuth` derivation recognise a screen that answers a session-less
+ * request by rendering the login form in place of its own content.
  */
-async function attemptLogin(page: Page, input: CrawlInput, emit: EmitEvent, secrets: string[]): Promise<boolean> {
-  if (input.credentials === undefined) return false;
+interface LoginOutcome {
+  authenticated: boolean;
+  loginSignature: string | null;
+}
+
+async function attemptLogin(page: Page, input: CrawlInput, emit: EmitEvent, secrets: string[]): Promise<LoginOutcome> {
+  if (input.credentials === undefined) return { authenticated: false, loginSignature: null };
   try {
     await page.goto(input.baseUrl, { waitUntil: "domcontentloaded" });
   } catch {
     emit({ agent: "explorador", status: "warn", depth: 1, message: `No se pudo cargar ${input.baseUrl} para iniciar sesión` });
-    return false;
+    return { authenticated: false, loginSignature: null };
   }
 
   const entry = await captureScreen(page, { screenId: "login", baseUrl: input.baseUrl, secrets });
   const action = (await collectWriteActions(page, entry, secrets)).find((a) => hasPasswordField(entry, a));
   if (action === undefined) {
     emit({ agent: "explorador", status: "info", depth: 1, message: "No se encontró formulario de login en la pantalla inicial, se mapea solo la parte pública" });
-    return false;
+    return { authenticated: false, loginSignature: null };
   }
 
   const before = page.url();
   await fillFormFields(page, entry, action, "valid", input.credentials, emit);
-  if (!(await clickWriteAction(page, entry, action, emit))) return false;
+  if (!(await clickWriteAction(page, entry, action, emit))) {
+    return { authenticated: false, loginSignature: entry.signature };
+  }
 
   const authenticated = page.url() !== before;
   emit(
@@ -552,7 +564,84 @@ async function attemptLogin(page: Page, input: CrawlInput, emit: EmitEvent, secr
       ? { agent: "explorador", status: "ok", depth: 1, message: `Sesión iniciada, el mapa cubrirá la zona privada → ${page.url()}` }
       : { agent: "explorador", status: "warn", depth: 1, message: "El login no cambió de pantalla, se mapea solo la parte pública" }
   );
-  return authenticated;
+  return { authenticated, loginSignature: entry.signature };
+}
+
+/**
+ * `requiresAuth` is a property of the SCREEN, not of the crawl. Deriving it
+ * from the single `authenticated` flag marked the login screen, the
+ * password-reset screen and every public listing as private — and consumers
+ * read this flag to decide whether a generated test needs a logged-in fixture,
+ * so a credentialed crawl would have wrapped a login around every test,
+ * including the test for the login screen itself. The spec's own example map
+ * shows the login screen as `requiresAuth: false`.
+ *
+ * Derived here instead, after the walk, from a context that holds no session
+ * at all: a screen is private when, asked for without credentials, it
+ * redirects somewhere else, answers with a non-OK status, or renders the login
+ * screen in place of its own content — the single-page-application case, where
+ * nothing redirects and the status stays 200.
+ *
+ * Signature EQUALITY against the walk's own capture is deliberately NOT the
+ * test. A public page almost always renders differently once logged in — the
+ * header alone says "Log out" where it said "Log in" — so "the signature
+ * changed" would mark every public page private and recreate this very defect
+ * through another door. Only the LOGIN screen's signature is compared, which
+ * is the one comparison that means what it says.
+ */
+async function derivePrivateScreens(
+  browser: Browser,
+  screens: Screen[],
+  concreteUrls: Map<Screen, string>,
+  loginSignature: string | null,
+  input: CrawlInput,
+  secrets: string[],
+  emit: EmitEvent
+): Promise<void> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    for (const screen of screens) {
+      const url = concreteUrls.get(screen);
+      if (url === undefined) continue;
+
+      let status: number;
+      try {
+        const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+        status = response?.status() ?? 200;
+      } catch {
+        // Cannot tell without a session: leave the screen public rather than
+        // invent a flag a generated test would then obey.
+        continue;
+      }
+      // Bounded, and swallowed: a client-side redirect needs a moment, a chatty
+      // app never goes quiet, and the redirect check only needs the final URL.
+      await page.waitForLoadState("networkidle", { timeout: 1_000 }).catch(() => undefined);
+
+      const redirected = toUrlTemplate(page.url(), input.baseUrl) !== toUrlTemplate(url, input.baseUrl);
+      const rejected = status === 401 || status === 403;
+      const isLoginScreen = loginSignature !== null && screen.signature === loginSignature;
+      let showsLoginInstead = false;
+      if (!redirected && !rejected && loginSignature !== null && !isLoginScreen) {
+        const snapshot = await page
+          .locator("body")
+          .ariaSnapshot({ timeout: SHORT_READ_TIMEOUT_MS })
+          .catch(() => "");
+        showsLoginInstead =
+          snapshot.length > 0 && screenSignature(redactText(snapshot, secrets)) === loginSignature;
+      }
+
+      screen.requiresAuth = redirected || rejected || showsLoginInstead;
+      if (screen.requiresAuth) {
+        emit({
+          agent: "explorador", status: "info", depth: 1,
+          message: `${screen.urlTemplate} necesita sesión: sin credenciales no se muestra`,
+        });
+      }
+    }
+  } finally {
+    await context.close();
+  }
 }
 
 /**
@@ -571,6 +660,7 @@ async function runWritePass(
   page: Page,
   screens: Screen[],
   approved: { screenId: string; locator: string }[],
+  concreteUrls: Map<Screen, string>,
   input: CrawlInput,
   emit: EmitEvent
 ): Promise<boolean> {
@@ -579,14 +669,27 @@ async function runWritePass(
   for (const { screenId, locator: locatorName } of approved) {
     const index = screens.findIndex((s) => s.id === screenId);
     if (index < 0) continue;
-    let screen = screens[index];
+    const screen = screens[index];
     const action = screen.writeActions.find((a) => a.locator === locatorName);
     if (!action) continue;
 
     const isLoginAction = hasPasswordField(screen, action);
 
+    // A route template with a variable segment is not addressable: rebuilding a
+    // URL from `/item/:id` makes the crawler request that literal path, the
+    // same defect already fixed in the Page Object emitter. The concrete URL
+    // the walk really captured the screen at is the answer whenever there is
+    // one; without it, a templated screen is skipped rather than guessed at.
+    const url = concreteUrls.get(screen) ?? (screen.urlTemplate.includes(":") ? null : resolveScreenUrl(input.baseUrl, screen.urlTemplate));
+    if (url === null) {
+      emit({
+        agent: "explorador", status: "warn", depth: 1,
+        message: `"${action.label}" está en ${screen.urlTemplate}, una ruta con segmentos variables sin URL concreta conocida: no se prueba`,
+      });
+      continue;
+    }
+
     for (const data of ["invalid", "valid"] as const) {
-      const url = resolveScreenUrl(input.baseUrl, screen.urlTemplate);
       try {
         await page.goto(url, { waitUntil: "domcontentloaded" });
       } catch {
@@ -616,17 +719,20 @@ async function runWritePass(
         continue;
       }
 
-      const after = await captureScreen(page, {
-        screenId: screen.id, baseUrl: input.baseUrl, secrets, requiresAuth: screen.requiresAuth,
-      });
-      screen = mergeScreenState(screen, {
-        id: `${data}-submit-${action.locator}`,
-        reachedBy: { action: "submit", locator: action.locator, data },
-        texts: after.texts.filter((t) => !probeValues.includes(t)),
-        locators: after.locators.filter((l) => !screen.locators.some((existing) => existing.python === l.python)),
-      });
-      screen = { ...screen, probeValues: Array.from(new Set([...screen.probeValues, ...probeValues])) };
-      screens[index] = screen;
+      const after = await captureScreen(page, { screenId: screen.id, baseUrl: input.baseUrl, secrets });
+      // Merged IN PLACE. `screens`, `concreteUrls` and `absorbedBy` all hold
+      // this exact object; swapping in the fresh one `mergeScreenState`
+      // returns would silently orphan every lookup keyed on its identity.
+      Object.assign(
+        screen,
+        mergeScreenState(screen, {
+          id: `${data}-submit-${action.locator}`,
+          reachedBy: { action: "submit", locator: action.locator, data },
+          texts: after.texts.filter((t) => !probeValues.includes(t)),
+          locators: after.locators.filter((l) => !screen.locators.some((existing) => existing.python === l.python)),
+        }),
+        { probeValues: Array.from(new Set([...screen.probeValues, ...probeValues])) }
+      );
       emit({
         agent: "explorador", status: "ok", depth: 1,
         message: `Envío ${data === "invalid" ? "inválido" : "válido"} de "${action.label}"`,
@@ -694,8 +800,15 @@ export function createRealCrawler(): Crawler {
       // a collapse rewrites the id in place, and holding the reference means
       // the lookup always reads the current one.
       const absorbedBy = new Map<string, Screen>();
+      // The concrete URL each screen was really captured at. A route template
+      // is not addressable — `/item/:id` is not a URL — so anything that needs
+      // to request a screen again later (the session-less `requiresAuth`
+      // derivation, the write pass) reads it from here instead of rebuilding
+      // one from the template.
+      const concreteUrls = new Map<Screen, string>();
       let complete = true;
       let authenticated = false;
+      let loginSignature: string | null = null;
 
       const deadline = startedAt + input.limits.maxDurationMinutes * 60_000;
       const queue: { url: string; depth: number }[] = [{ url: input.baseUrl, depth: 0 }];
@@ -711,7 +824,9 @@ export function createRealCrawler(): Crawler {
         // Log in BEFORE the walk, so the walk runs inside the session and the
         // map covers the private area. The screen the login lands on is queued
         // as a second entry point: nothing on the public surface links to it.
-        authenticated = await attemptLogin(page, input, emit, secrets);
+        const login = await attemptLogin(page, input, emit, secrets);
+        authenticated = login.authenticated;
+        loginSignature = login.loginSignature;
         if (authenticated) {
           const landed = page.url();
           if (toUrlTemplate(landed, input.baseUrl) !== toUrlTemplate(input.baseUrl, input.baseUrl)) {
@@ -763,9 +878,12 @@ export function createRealCrawler(): Crawler {
           const rawScreenId = template === "/" ? "home" : pythonIdentifier(template).replace(/^_+/, "");
           const screenId = uniqueName(rawScreenId, assignedScreenIds);
           assignedScreenIds.add(screenId);
-          const screen = await captureScreen(page, {
-            screenId, baseUrl: input.baseUrl, secrets, requiresAuth: authenticated, emit,
-          });
+          // No `requiresAuth` here: the walk cannot know whether a screen it
+          // reached inside a session would also have rendered without one.
+          // Every screen starts public and `derivePrivateScreens` flips the
+          // ones that really need a session, after the walk.
+          const screen = await captureScreen(page, { screenId, baseUrl: input.baseUrl, secrets, emit });
+          concreteUrls.set(screen, page.url());
 
           // Third templating rule of the spec: two sibling URLs that differ in
           // exactly one segment are the same screen with different data. The
@@ -945,8 +1063,16 @@ export function createRealCrawler(): Crawler {
           screen.writeActions.map((action) => ({ screenId: screen.id, action }))
         );
         const approvedWriteActions = await input.callbacks.approveWriteActions(pendingWriteActions);
-        const writeAuthenticated = await runWritePass(page, screens, approvedWriteActions, input, emit);
+        const writeAuthenticated = await runWritePass(page, screens, approvedWriteActions, concreteUrls, input, emit);
         authenticated = authenticated || writeAuthenticated;
+
+        // Only a crawl that held a session can have screens that needed one:
+        // without credentials every screen in the map was, by construction,
+        // reached without logging in. Skipping the probe entirely in that case
+        // keeps a public crawl exactly as fast as it was.
+        if (authenticated) {
+          await derivePrivateScreens(browser, screens, concreteUrls, loginSignature, input, secrets, emit);
+        }
       } finally {
         await browser.close();
       }

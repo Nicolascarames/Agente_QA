@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const SITE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "site");
 
+/** Kept in step with the cookie index.html sets on a successful login. */
+const SESSION_COOKIE = "agente_qa_session";
+const PRIVATE_PATHS = new Set(["/dashboard.html"]);
+
 /**
  * Test-only. Serving the fixture from disk keeps crawler tests independent of
  * any external site: a public app can change any day and break the suite for
@@ -20,6 +24,17 @@ export async function startFixtureSite(): Promise<{
   const server = createServer(async (request, response) => {
     const requested = new URL(request.url ?? "/", "http://localhost").pathname;
     requestedPaths.push(requested);
+
+    // The fixture's private area, gated on the session cookie the login sets.
+    // Before this it was "private" only in the sense of being linked from
+    // nowhere, so a session-less request could not tell it from a public page
+    // and `requiresAuth` could not be derived — only stamped from the crawl's
+    // own session flag, which marked the login and reset screens private too.
+    if (PRIVATE_PATHS.has(requested) && !(request.headers.cookie ?? "").includes(`${SESSION_COOKIE}=1`)) {
+      response.writeHead(302, { location: "/" });
+      response.end();
+      return;
+    }
     const relative = requested === "/" ? "index.html" : requested.replace(/^\//, "");
     // /item/1 and /item/2 are route templates, not files: they share one page.
     // /blog/<slug> likewise: sibling URLs that differ only in the last segment.

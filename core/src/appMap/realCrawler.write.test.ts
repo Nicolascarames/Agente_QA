@@ -14,11 +14,15 @@ let site: Awaited<ReturnType<typeof startFixtureSite>>;
 beforeAll(async () => { site = await startFixtureSite(); });
 afterAll(async () => { await site.close(); });
 
-// A full crawl now waits for `networkidle` (short, explicit timeout) once per
+// A full crawl waits for `networkidle` (short, explicit timeout) once per
 // captured screen — real but bounded time client-rendered content needs to
-// mount — so a multi-screen fixture crawl runs past vitest's 5s default. 20s
-// matches the timeout already used for other real-browser suites in this
-// project (see core/src/locatorVerify/realLocatorVerifier.test.ts).
+// mount — so a multi-screen fixture crawl runs past vitest's 5s default.
+//
+// 40s, not the 20s the unauthenticated walk suite uses: every crawl in THIS
+// file carries credentials, and a credentialed crawl now ends with the
+// session-less `requiresAuth` derivation, one extra request per screen.
+// Measured on this fixture: ~9.6s of walk plus ~4.6s of derivation over 10
+// screens (~460ms each), against a 14.2s total.
 describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", () => {
   it("does not execute any write action when the user approves none", async () => {
     const result = await createRealCrawler().crawl({
@@ -29,7 +33,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     if (!result.ok) throw new Error(result.error);
     const login = result.map.screens.find((s) => s.urlTemplate === "/");
     expect(login?.states).toHaveLength(0);
-  }, 20000);
+  }, 40000);
 
   it("captures the error message only reachable by submitting invalid data", async () => {
     const result = await createRealCrawler().crawl({
@@ -44,7 +48,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     const login = result.map.screens.find((s) => s.urlTemplate === "/");
     expect(login?.texts).toContain("Authentication failed. Please try again.");
     expect(login?.states.some((s) => s.reachedBy.data === "invalid")).toBe(true);
-  }, 20000);
+  }, 40000);
 
   it("keeps the error message as a state of the same screen, not a new screen", async () => {
     const result = await createRealCrawler().crawl({
@@ -57,7 +61,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     });
     if (!result.ok) throw new Error(result.error);
     expect(result.map.screens.filter((s) => s.urlTemplate === "/")).toHaveLength(1);
-  }, 20000);
+  }, 40000);
 
   it("records the values it typed in probeValues and keeps them out of texts", async () => {
     const result = await createRealCrawler().crawl({
@@ -72,7 +76,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     const login = result.map.screens.find((s) => s.urlTemplate === "/");
     expect(login?.probeValues.length).toBeGreaterThan(0);
     for (const value of login!.probeValues) expect(login!.texts).not.toContain(value);
-  }, 20000);
+  }, 40000);
 
   it("marks the map as authenticated when the login succeeds", async () => {
     const result = await createRealCrawler().crawl({
@@ -85,7 +89,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     });
     if (!result.ok) throw new Error(result.error);
     expect(result.map.authenticated).toBe(true);
-  }, 20000);
+  }, 40000);
 
   it("never leaks the real password into the map", async () => {
     const result = await createRealCrawler().crawl({
@@ -98,7 +102,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     });
     if (!result.ok) throw new Error(result.error);
     expect(JSON.stringify(result.map)).not.toContain("s3cr3t-pass");
-  }, 20000);
+  }, 40000);
 
   // Review finding: the submit click used to re-resolve the button by
   // `getByRole("button", { name, exact }).last()` — DOM position, not the
@@ -124,7 +128,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     expect(result.map.authenticated).toBe(true);
     const login = result.map.screens.find((s) => s.urlTemplate === "/");
     expect(login?.probeValues).not.toContain(credentials.password);
-  }, 20000);
+  }, 40000);
 
   // The password field is disambiguated to region:main by the header decoy
   // sharing its label. Filling it by re-resolving the label unscoped matches
@@ -144,7 +148,32 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     if (!result.ok) throw new Error(result.error);
     const login = result.map.screens.find((s) => s.urlTemplate === "/");
     expect(login?.probeValues).toContain("agente-qa-invalid-password");
-  }, 20000);
+  }, 40000);
+
+  // `requiresAuth` used to be stamped from the crawl's single `authenticated`
+  // flag, so a credentialed crawl marked EVERY screen private — the login
+  // screen, the password-reset screen and every public listing included.
+  // Consumers read this flag to decide whether a generated test needs a
+  // logged-in fixture, so the follow-up plan would have wrapped a login around
+  // every test, including the test for the login screen itself. The spec's own
+  // example map shows the login screen as `requiresAuth: false`.
+  it("marks only the screens that really need a session, not every screen of a credentialed crawl", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits, credentials,
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.map.authenticated).toBe(true);
+
+    const at = (template: string) => result.map.screens.find((s) => s.urlTemplate === template);
+    expect(at("/")).toBeDefined();
+    expect(at("/")!.requiresAuth).toBe(false);
+    expect(at("/reset.html")!.requiresAuth).toBe(false);
+    expect(at("/list.html")!.requiresAuth).toBe(false);
+    expect(at("/dashboard.html")).toBeDefined();
+    expect(at("/dashboard.html")!.requiresAuth).toBe(true);
+  }, 40000);
 
   // The crawl proceeds authenticated: nothing on the public surface links to
   // /dashboard.html, so it can only enter the map through a real login.
@@ -162,7 +191,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     expect(dashboard).toBeDefined();
     expect(dashboard!.requiresAuth).toBe(true);
     expect(result.map.authenticated).toBe(true);
-  }, 20000);
+  }, 40000);
 
   it("leaves the map unauthenticated and public when there are no credentials", async () => {
     const result = await createRealCrawler().crawl({
@@ -174,7 +203,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     expect(result.map.authenticated).toBe(false);
     expect(result.map.screens.some((s) => s.urlTemplate === "/dashboard.html")).toBe(false);
     expect(result.map.screens.every((s) => s.requiresAuth === false)).toBe(true);
-  }, 20000);
+  }, 40000);
 
   // Clicking it would kill the session the authenticated pass depends on.
   it("never follows the log out control while walking", async () => {
@@ -188,7 +217,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     const logOut = dashboard?.locators.find((l) => l.accessibleName === "Log out");
     expect(logOut).toBeDefined();
     expect(dashboard!.transitions.some((t) => t.locator === logOut!.name)).toBe(false);
-  }, 20000);
+  }, 40000);
 
   // The event channel is a third consumer of the same data the two redaction
   // nets protect, and it reaches the terminal and CI logs. A form submitting
@@ -212,7 +241,7 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
       expect(message).not.toContain("list.html");
       expect(message).not.toContain("s3cr3t-pass");
     }
-  }, 20000);
+  }, 40000);
 
   // Review finding: the write pass's own `page.goto` (reloading the screen
   // before each submit attempt) had no try/catch and sat inside the
@@ -244,5 +273,5 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     }
     expect(result.ok).toBe(true);
     expect(events.some((e) => e.startsWith("warn:"))).toBe(true);
-  }, 20000);
+  }, 40000);
 });
