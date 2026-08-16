@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium } from "playwright";
 import { startFixtureSite } from "./__fixtures__/server.js";
 import { createRealCrawler } from "./realCrawler.js";
-import type { CrawlLimits } from "./crawler.js";
+import type { CrawlLimits, CrawlResult } from "./crawler.js";
 
 const limits: CrawlLimits = {
   maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60,
@@ -98,5 +98,63 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     });
     if (!result.ok) throw new Error(result.error);
     expect(JSON.stringify(result.map)).not.toContain("s3cr3t-pass");
+  }, 20000);
+
+  // Review finding: the submit click used to re-resolve the button by
+  // `getByRole("button", { name, exact }).last()` — DOM position, not the
+  // `disambiguatedBy` region `resolveCandidate` already established at
+  // capture time. It only worked because the header's decoy "Log in" button
+  // happens to precede the form's submit button. index.html also carries a
+  // SECOND decoy, placed AFTER the form, precisely so `.last()` would click
+  // it instead of the real submit button under the old code: the real submit
+  // would never fire, the login would never navigate, and the merge branch
+  // would push the user's real typed password into `screen.probeValues`
+  // without ever setting `authenticated`. This proves the write pass reuses
+  // the region scope instead, regardless of where decoys sit in the DOM.
+  it("resolves the submit button by its recorded region scope, not by DOM position, with a decoy on both sides", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url, limits, credentials,
+      callbacks: {
+        confirmContinueOnLoop: async () => false,
+        approveWriteActions: async (actions) => actions.map((a) => ({ screenId: a.screenId, locator: a.action.locator })),
+      },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.map.authenticated).toBe(true);
+    const login = result.map.screens.find((s) => s.urlTemplate === "/");
+    expect(login?.probeValues).not.toContain(credentials.password);
+  }, 20000);
+
+  // Review finding: the write pass's own `page.goto` (reloading the screen
+  // before each submit attempt) had no try/catch and sat inside the
+  // `try { ... } finally { browser.close() }` region with no enclosing
+  // `catch` — the browser closed, but the throw still propagated past
+  // `crawl()`, rejecting the whole promise instead of resolving
+  // `{ ok: false, error }`, breaking the contract every caller relies on.
+  // A dedicated fixture server is closed right at the walk/write-pass
+  // boundary (inside `approveWriteActions`, the last callback before the
+  // write pass starts) so the write pass's own `goto` is the one that fails.
+  it("resolves instead of rejecting when the write pass cannot reload a screen", async () => {
+    const dedicated = await startFixtureSite();
+    const events: string[] = [];
+    let result: CrawlResult;
+    try {
+      result = await createRealCrawler().crawl({
+        baseUrl: dedicated.url, limits, credentials,
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (actions) => {
+            await dedicated.close();
+            return actions.map((a) => ({ screenId: a.screenId, locator: a.action.locator }));
+          },
+        },
+        emit: (event) => events.push(`${event.status}:${event.message}`),
+      });
+    } finally {
+      await dedicated.close().catch(() => undefined);
+    }
+    expect(result.ok).toBe(true);
+    expect(events.some((e) => e.startsWith("warn:"))).toBe(true);
   }, 20000);
 });

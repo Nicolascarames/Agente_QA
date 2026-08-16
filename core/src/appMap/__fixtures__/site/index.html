@@ -34,6 +34,14 @@
            irreducibly ambiguous case. -->
       <aside><p>Email</p></aside>
     </main>
+    <!-- Second decoy, same name as the form's submit button, placed AFTER the
+         form in DOM order — the opposite of the header decoy above. Proves
+         the write pass cannot rely on DOM position at all: a `.last()` click
+         would land HERE instead of on the real submit button, so the real
+         submit never fires. The write pass must resolve the submit button
+         through its own `disambiguatedBy` region scope (region:main), which
+         stays correct regardless of where this decoy sits in the DOM. -->
+    <button type="button">Log in</button>
     <script>
       document.getElementById("login").addEventListener("submit", (event) => {
         event.preventDefault();

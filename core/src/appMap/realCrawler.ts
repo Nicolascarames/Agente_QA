@@ -288,7 +288,20 @@ async function runWritePass(
 
     for (const data of ["invalid", "valid"] as const) {
       const probeValues: string[] = [];
-      await page.goto(input.baseUrl + screen.urlTemplate.replace(/^\//, ""), { waitUntil: "domcontentloaded" });
+      const url = input.baseUrl + screen.urlTemplate.replace(/^\//, "");
+      try {
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+      } catch {
+        // A dead link or a reset connection here must not reject `crawl()`:
+        // every caller relies on it resolving `{ ok: false, error }` at
+        // worst, never throwing. Guarded the same way the walk's own `goto`
+        // calls are above: emit a warning and skip this write action.
+        input.emit({
+          agent: "explorador", status: "warn", depth: 1,
+          message: `No se pudo cargar ${screen.urlTemplate} antes de probar "${action.label}", se omite`,
+        });
+        continue;
+      }
 
       for (const fieldName of action.formFields) {
         const field = screen.locators.find((l) => l.name === fieldName);
@@ -302,9 +315,36 @@ async function runWritePass(
           .fill(value, { timeout: 5_000 }).catch(() => undefined);
       }
 
+      // Reuse the SAME scope `resolveCandidate` already validated at capture
+      // time, instead of re-resolving the label unscoped and taking `.last()`.
+      // `.last()` picks by DOM position — it only worked on the fixture
+      // because the decoy button in the header happens to precede the form's
+      // submit button in DOM order, which is luck, not correctness. Clicking
+      // the wrong element here is worse than in the walk's click loop above:
+      // a "valid" submit that lands on the wrong element never navigates,
+      // falls into the merge branch below, and pushes the user's real typed
+      // password into `screen.probeValues`.
+      const submitLocator = screen.locators.find((l) => l.name === action.locator);
+      const region = submitLocator?.disambiguatedBy?.startsWith("region:")
+        ? submitLocator.disambiguatedBy.slice("region:".length)
+        : null;
+      const submitTarget = region
+        ? page.getByRole(region as never).getByRole("button", { name: action.label, exact: true })
+        : page.getByRole("button", { name: action.label, exact: true });
+
+      const submitMatches = await submitTarget.count().catch(() => 0);
+      if (submitMatches !== 1) {
+        // Still ambiguous even scoped (or the scope disappeared since
+        // capture): guessing positionally is worse than skipping.
+        input.emit({
+          agent: "explorador", status: "warn", depth: 1,
+          message: `"${action.label}" ya no resuelve a un único elemento al enviar (${submitMatches} coincidencias), se omite`,
+        });
+        continue;
+      }
+
       const before = page.url();
-      await page.getByRole("button", { name: action.label, exact: true }).last()
-        .click({ timeout: 5_000 }).catch(() => undefined);
+      await submitTarget.click({ timeout: 5_000 }).catch(() => undefined);
       await page.waitForLoadState("domcontentloaded").catch(() => undefined);
 
       if (page.url() !== before) {
