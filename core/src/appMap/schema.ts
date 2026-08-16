@@ -31,6 +31,7 @@ export const ScreenStateSchema = z.object({
 export const TransitionSchema = z.object({
   locator: z.string(),
   action: z.enum(["click", "submit"]),
+  /** The destination `Screen.id`. Null when the click leaves the app, or led nowhere the map knows. */
   toScreenId: z.string().nullable(),
   urlChanged: z.boolean(),
   /** Set for links that leave the app's host: recorded, never followed. */
@@ -44,9 +45,16 @@ export const WriteActionSchema = z.object({
   formFields: z.array(z.string()),
 });
 
+/**
+ * `count` records what the candidate REALLY matched. A candidate that matched
+ * zero elements — a text that only exists in another state of the screen, for
+ * instance — is as ambiguous as one that matched five, and a floor of 2 here
+ * only bought a schema that forced the crawler to write down a count it never
+ * measured.
+ */
 export const AmbiguousCandidateSchema = z.object({
   candidate: z.string(),
-  count: z.number().int().min(2),
+  count: z.number().int().min(0),
   reason: z.string(),
 });
 
