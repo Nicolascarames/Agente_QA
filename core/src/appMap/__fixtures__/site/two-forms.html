@@ -11,6 +11,12 @@
   <body>
     <main>
       <h1>Two forms</h1>
+      <!-- Duplicate of the sign-in submit, inside <main> and outside both
+           forms. With two forms on the screen `page.locator("form")` is
+           ambiguous itself, so the only scope left is the individual form —
+           addressed by its `id`, never by position: `.nth(0)` resolves today
+           and silently points at another form the day one is added above it. -->
+      <button type="button">Sign in</button>
       <form id="signin">
         <label for="signin-email">Account email</label>
         <input id="signin-email" name="email" type="email" />

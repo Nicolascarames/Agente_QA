@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <!-- Deliberately linked from nowhere: opened directly by the capture tests.
+       There is NO landmark on this page on purpose — no <main>, no <header> —
+       and the form carries no accessible name, so `getByRole("form")` sees
+       nothing at all. That is the shape of the real application whose "Log in",
+       "Sign up" and "Welcome back" each matched twice: the ARIA landmark list
+       had a "form" entry, but an unnamed <form> exposes no `form` role, so the
+       one scope that could have separated the duplicates was never tried and
+       the login button never made it into the Page Object. -->
+  <head><meta charset="utf-8" /><title>Fixture · Unnamed form</title></head>
+  <body>
+    <div>
+      <!-- The duplicate, outside the form and visible, so visibility cannot
+           separate the two either. -->
+      <button type="button">Log in</button>
+    </div>
+    <form>
+      <label for="user">User</label>
+      <input id="user" name="user" type="text" />
+      <button type="submit">Log in</button>
+    </form>
+  </body>
+</html>

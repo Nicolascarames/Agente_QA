@@ -15,6 +15,18 @@ export { pythonLiteral } from "./pythonLiteral.js";
 
 const REGIONS = ["main", "form", "navigation", "banner", "contentinfo", "dialog"] as const;
 
+/**
+ * The `form` ARIA landmark above only matches a `<form>` that HAS an accessible
+ * name: an unnamed `<form>` — the overwhelmingly common case, and what a real
+ * login application turned out to have — exposes no `form` role at all, so
+ * `getByRole("form")` answered 0 and the one scope that could have separated
+ * that application's duplicates was never really tried. Measured there: "Log
+ * in", "Sign up" and "Welcome back" each matched twice with both copies
+ * visible, and the login button itself was therefore missing from the Page
+ * Object. These CSS scopes reach the same element the landmark cannot see.
+ */
+const FORM_SELECTOR = "form";
+
 /** Fields the crawler treats as fillable form inputs, everywhere in this file. */
 const FIELD_SELECTOR =
   'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])';
@@ -370,8 +382,73 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
 }
 
 /**
+ * A container a duplicated candidate can be narrowed to. `id` is what lands in
+ * `disambiguatedBy`, and it is the whole scope: `scopedBy` rebuilds the very
+ * same container from it later, so the walk and the write pass interact with
+ * exactly the element the map recorded.
+ */
+interface Scope {
+  id: string;
+  locator: Locator;
+  pythonPrefix: string;
+}
+
+/** A CSS attribute selector value, safe to sit inside single quotes. */
+function cssValue(value: string): string {
+  return value.replace(/['\\]/g, "\\$&");
+}
+
+/**
+ * Every scope that resolves to exactly one element on this screen, in the order
+ * they are tried: the ARIA landmarks first — a named region is the most
+ * meaningful container an application can declare — then the CSS ones, from the
+ * least specific to the most.
+ *
+ * The form scopes exist because `getByRole("form")` cannot see an unnamed
+ * `<form>`. `page.locator("form")` fires when the screen has exactly one form;
+ * when it has several, each is addressed by a STABLE ATTRIBUTE, never by
+ * position — `.nth()` would resolve today and quietly point at another form the
+ * day one is added above it.
+ *
+ * Computed once per capture rather than per candidate: the DOM does not change
+ * underneath a capture, and this used to cost six `count()` round trips for
+ * every ambiguous candidate on the screen.
+ */
+async function singleMatchScopes(page: Page): Promise<Scope[]> {
+  const selectors = [FORM_SELECTOR];
+  for (const { id, name } of await page.evaluate((selector: string) =>
+    Array.from(document.querySelectorAll(selector)).map((form) => ({
+      id: form.getAttribute("id") ?? "",
+      name: form.getAttribute("name") ?? "",
+    })), FORM_SELECTOR
+  )) {
+    if (id.length > 0) selectors.push(`${FORM_SELECTOR}[id='${cssValue(id)}']`);
+    else if (name.length > 0) selectors.push(`${FORM_SELECTOR}[name='${cssValue(name)}']`);
+  }
+
+  const candidates: Scope[] = [
+    ...REGIONS.map((region) => ({
+      id: `region:${region}`,
+      locator: page.getByRole(region as never),
+      pythonPrefix: `page.get_by_role(${pythonLiteral(region)}).`,
+    })),
+    ...selectors.map((selector) => ({
+      id: `selector:${selector}`,
+      locator: page.locator(selector),
+      pythonPrefix: `page.locator(${pythonLiteral(selector)}).`,
+    })),
+  ];
+
+  const scopes: Scope[] = [];
+  for (const scope of candidates) {
+    if ((await scope.locator.count().catch(() => 0)) === 1) scopes.push(scope);
+  }
+  return scopes;
+}
+
+/**
  * A candidate that matches more than one element is NOT discarded on the spot:
- * it is first scoped to the nearest meaningful region. The reference app has
+ * it is first scoped to the nearest meaningful container. The reference app has
  * "Log in" twice (header and form), so a rule that dropped every duplicate
  * would leave the screen's main element out of the map. Position (.first,
  * .nth()) is never used to disambiguate: it survives any reordering of the
@@ -379,7 +456,8 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
  */
 async function resolveCandidate(
   page: Page,
-  candidate: Candidate
+  candidate: Candidate,
+  scopes: Scope[]
 ): Promise<{ python: string; disambiguatedBy?: string } | { ambiguous: AmbiguousCandidate }> {
   let reportedPython = candidate.forms[0].python("page.");
   let reportedCount = -1;
@@ -395,14 +473,9 @@ async function resolveCandidate(
     // it at all, so the next form gets its turn.
     if (plainCount === 0) continue;
 
-    for (const region of REGIONS) {
-      const scope = page.getByRole(region as never);
-      if ((await scope.count()) !== 1) continue;
-      if ((await form.build(scope).count()) !== 1) continue;
-      return {
-        python: `page.get_by_role(${pythonLiteral(region)}).${form.python("")}`,
-        disambiguatedBy: `region:${region}`,
-      };
+    for (const scope of scopes) {
+      if ((await form.build(scope.locator).count().catch(() => 0)) !== 1) continue;
+      return { python: `${scope.pythonPrefix}${form.python("")}`, disambiguatedBy: scope.id };
     }
     // A form that matched several elements is the more informative report: it
     // says the element IS there and could not be pinned down, which is a
@@ -415,7 +488,7 @@ async function resolveCandidate(
     ambiguous: {
       candidate: reportedPython,
       count: Math.max(reportedCount, 0),
-      reason: reportedCount > 1 ? "aparece varias veces y ninguna región lo deja en 1" : "no encontrado al validar",
+      reason: reportedCount > 1 ? "aparece varias veces y ningún ámbito lo deja en 1" : "no encontrado al validar",
     },
   };
 }
@@ -438,6 +511,7 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
   const ambiguous: AmbiguousCandidate[] = [];
   const taken = new Set<string>();
   const texts: string[] = [];
+  const scopes = await singleMatchScopes(page);
 
   for (const candidate of await collectCandidates(page)) {
     const cleanName = redactText(candidate.accessibleName, context.secrets);
@@ -446,7 +520,7 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
     // `texts` above, which is the only thing this pass owed it.
     if (candidate.textOnly === true) continue;
 
-    const resolved = await resolveCandidate(page, candidate);
+    const resolved = await resolveCandidate(page, candidate, scopes);
     if ("ambiguous" in resolved) {
       const entry = { ...resolved.ambiguous, candidate: redactText(resolved.ambiguous.candidate, context.secrets) };
       ambiguous.push(entry);
@@ -588,14 +662,18 @@ function valueFor(fieldName: string, data: "valid" | "invalid", credentials?: Cr
   return "agente-qa";
 }
 
-/** The region `resolveCandidate` already validated this locator in, if any. */
-function regionOf(entry: { disambiguatedBy?: string } | undefined): string | null {
+/**
+ * The container `resolveCandidate` already validated this locator in, rebuilt
+ * from what it recorded — an ARIA landmark or a CSS scope, the same two kinds
+ * `singleMatchScopes` offers. Anything the crawler interacts with goes through
+ * here, so it acts on exactly the element the emitted Python addresses.
+ */
+function scopedBy(page: Page, entry: { disambiguatedBy?: string } | undefined): Locator | Page {
   const value = entry?.disambiguatedBy;
-  return value !== undefined && value.startsWith("region:") ? value.slice("region:".length) : null;
-}
-
-function scopedBy(page: Page, region: string | null): Locator | Page {
-  return region === null ? page : page.getByRole(region as never);
+  if (value === undefined) return page;
+  if (value.startsWith("region:")) return page.getByRole(value.slice("region:".length) as never);
+  if (value.startsWith("selector:")) return page.locator(value.slice("selector:".length));
+  return page;
 }
 
 /**
@@ -657,7 +735,7 @@ async function fillFormFields(
     const field = screen.locators.find((l) => l.name === fieldName);
     if (field?.accessibleName === undefined) continue;
     const value = valueFor(field.accessibleName, data, credentials);
-    const { target, matches } = await fieldTarget(scopedBy(page, regionOf(field)), field.accessibleName);
+    const { target, matches } = await fieldTarget(scopedBy(page, field), field.accessibleName);
     if (target === null) {
       emit({
         agent: "explorador", status: "warn", depth: 1,
@@ -687,7 +765,7 @@ async function fillFormFields(
  */
 async function clickWriteAction(page: Page, screen: Screen, action: WriteAction, emit: EmitEvent): Promise<boolean> {
   const submitLocator = screen.locators.find((l) => l.name === action.locator);
-  const target = scopedBy(page, regionOf(submitLocator)).getByRole("button", { name: action.label, exact: true });
+  const target = scopedBy(page, submitLocator).getByRole("button", { name: action.label, exact: true });
   const matches = await target.count().catch(() => 0);
   if (matches !== 1) {
     // Still ambiguous even scoped (or the scope disappeared since capture):
@@ -1188,7 +1266,7 @@ export function createRealCrawler(): Crawler {
             // leads to, while the generated Python (built from the scoped
             // locator) claims to reach somewhere the map does not.
             const role = locator.kind === "link" ? "link" : "button";
-            const target = scopedBy(page, regionOf(locator)).getByRole(role as never, { name, exact: true });
+            const target = scopedBy(page, locator).getByRole(role as never, { name, exact: true });
 
             const matches = await target.count().catch(() => 0);
             if (matches !== 1) {

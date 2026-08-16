@@ -43,6 +43,14 @@
         <label for="attachment">Attachment</label>
         <input id="attachment" name="attachment" type="file" />
         <button type="submit">Log in</button>
+        <!-- Duplicate of the field label above, INSIDE the same form on
+             purpose: it is the fixture's irreducibly ambiguous case, and it
+             only stays irreducible while no scope can separate the two copies.
+             Outside the form it was separable the moment CSS form scopes
+             joined the ARIA landmarks — `page.locator("form")` would have
+             pinned the label copy down and this case would have quietly
+             stopped testing anything. -->
+        <aside><p>Email</p></aside>
       </form>
       <a href="/reset.html">Forgot password?</a>
       <a href="/list.html">Orders</a>
@@ -53,10 +61,6 @@
       <a href="/order-history.html">Order history (dash)</a>
       <a href="/order/history.html">Order history (slash)</a>
       <p id="error" hidden>Authentication failed. Please try again.</p>
-      <!-- Duplicate of the field label, in a <p> and outside any single region:
-           no region scoping brings it down to one match, so it is the fixture's
-           irreducibly ambiguous case. -->
-      <aside><p>Email</p></aside>
     </main>
     <!-- Second decoy, same name as the form's submit button, placed AFTER the
          form in DOM order — the opposite of the header decoy above. Proves

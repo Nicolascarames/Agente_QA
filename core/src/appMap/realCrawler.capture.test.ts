@@ -96,6 +96,42 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
     await page.close();
   });
 
+  // `getByRole("form")` only matches a <form> that HAS an accessible name, so
+  // the "form" entry in the ARIA landmark list never fired for an unnamed one
+  // — the overwhelmingly common case, and the shape of the real application
+  // where "Log in", "Sign up" and "Welcome back" each matched twice with both
+  // copies visible. The login button itself was missing from the Page Object.
+  it("disambiguates through an unnamed form, which exposes no ARIA form role at all", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url.replace(/\/$/, "") + "/unnamed-form.html");
+    // Ground truth first: the landmark scope really cannot see this form.
+    expect(await page.getByRole("form").count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Log in", exact: true }).count()).toBe(2);
+
+    const screen = await captureScreen(page, { screenId: "unnamed_form", baseUrl: site.url, secrets: [] });
+    const logIn = screen.locators.find((l) => l.accessibleName === "Log in" && l.kind === "button");
+    expect(logIn).toBeDefined();
+    expect(logIn!.disambiguatedBy).toBe("selector:form");
+    expect(logIn!.python).toBe('page.locator("form").get_by_role("button", name="Log in", exact=True)');
+    await page.close();
+  });
+
+  // With several forms on the screen `page.locator("form")` is ambiguous
+  // itself, so each form is addressed by a stable attribute. Never by position.
+  it("scopes to an individual form by a stable attribute when the screen has several", async () => {
+    const page = await (await browser!.newContext()).newPage();
+    await page.goto(site.url.replace(/\/$/, "") + "/two-forms.html");
+    const screen = await captureScreen(page, { screenId: "two_forms", baseUrl: site.url, secrets: [] });
+    const signIn = screen.locators.find((l) => l.accessibleName === "Sign in" && l.kind === "button");
+    expect(signIn).toBeDefined();
+    expect(signIn!.disambiguatedBy).toBe("selector:form[id='signin']");
+    expect(signIn!.python).toBe(
+      'page.locator("form[id=\'signin\']").get_by_role("button", name="Sign in", exact=True)'
+    );
+    expect(signIn!.python).not.toMatch(/\.(first|last|nth\()/);
+    await page.close();
+  });
+
   it("records an irreducibly duplicated text as ambiguous instead of guessing", async () => {
     const page = await (await browser!.newContext()).newPage();
     await page.goto(site.url);
