@@ -1,4 +1,5 @@
-import type { ScreenEvidence } from "../siteExplorer/siteExplorer.js";
+import type { AppMap } from "../appMap/schema.js";
+import { findScreen, screenLiterals, textsAfterClick } from "../appMap/mapQuery.js";
 
 export function ambiguityCheckPrompt(text: string): string {
   return `Eres un analista de QA que va a convertir la siguiente petición en un plan de pruebas Gherkin.
@@ -36,47 +37,75 @@ ${text}
 Usa null si ningún patrón encaja con suficiente confianza.`;
 }
 
-export function gherkinGenerationPrompt(
-  text: string,
-  matchedPattern: { name: string; gherkinTemplate: string } | null,
-  appLanguage: "es" | "en",
-  evidence: ScreenEvidence[]
-): string {
-  const patternSection = matchedPattern
-    ? `Usa como punto de partida este patrón conocido ("${matchedPattern.name}"), adaptándolo a los detalles específicos de la petición:
+export function gherkinGenerationPrompt(text: string, map: AppMap, screenId: string): string {
+  const screen = findScreen(map, screenId);
+  if (!screen) throw new Error(`La pantalla "${screenId}" no existe en el mapa.`);
 
-"""
-${matchedPattern.gherkinTemplate}
-"""`
-    : "No hay ningún patrón conocido aplicable: escribe el plan desde cero.";
+  const literals = screenLiterals(map, screenId)
+    .filter((literal) => !screen.probeValues.includes(literal))
+    .map((literal) => `  - ${JSON.stringify(literal)}`)
+    .join("\n");
 
-  const languageLabel = appLanguage === "en" ? "inglés" : "español";
-  const languageSection = `La interfaz real de la aplicación bajo test está en ${languageLabel}. Esto rige SOLO cómo redactas la prosa de los pasos (nombres de acciones, elementos, descripciones sin comillas) — no los traduzcas al castellano aunque el resto de esta conversación esté en castellano. NO uses esto como fuente de qué texto esperar entre comillas: la aplicación puede ser bilingüe (por ejemplo, login en un idioma y panel interno en otro) y un único valor global no puede acertar siempre. Para cualquier texto entre comillas, la única fuente de verdad es la evidencia real de abajo.`;
+  const clicks = screen.locators
+    .filter((locator) => locator.kind === "button" || locator.kind === "link")
+    .map((locator) => {
+      // A locator that submits a form (e.g. a login button) reaches its resulting
+      // state via action "submit", not "click" — textsAfterClick only covers the
+      // latter. Both are things a user does BY interacting with this locator, so
+      // both belong here: the model needs "log_in_button → Authentication failed"
+      // just as much as "forgot_button → Reset password".
+      const afterSubmit = screen.states
+        .filter((state) => state.reachedBy.locator === locator.name && state.reachedBy.action === "submit")
+        .flatMap((state) => state.addsTexts);
+      const after = Array.from(new Set([...textsAfterClick(map, screenId, locator.name), ...afterSubmit]))
+        .filter((literal) => !screen.probeValues.includes(literal));
+      const effect = after.length > 0
+        ? `hace aparecer: ${after.map((a) => JSON.stringify(a)).join(", ")}`
+        : "no se registró ningún cambio de contenido";
+      return `  - ${locator.name} (${JSON.stringify(locator.accessibleName ?? locator.name)}) → ${effect}`;
+    })
+    .join("\n");
 
-  const evidenceSection =
-    evidence.length > 0
-      ? `Esto es lo que se ha comprobado de verdad en la aplicación real:
+  const fields = screen.locators
+    .filter((locator) => locator.kind === "input" || locator.kind === "select")
+    .map((locator) => `  - ${JSON.stringify(locator.accessibleName ?? locator.name)}`)
+    .join("\n");
 
-${evidence
-  .map((screen) => `### ${screen.stepText}\nURL real: ${screen.url}\n"""\n${screen.ariaSnapshot}\n"""`)
-  .join("\n\n")}
-
-REGLA OBLIGATORIA sobre los textos esperados: cualquier texto que escribas entre comillas en un paso (títulos, mensajes de error, mensajes de validación, nombres de botones) debe aparecer LITERALMENTE en alguna de esas capturas. Si el texto que necesitas no aparece en ninguna, no lo inventes: escribe el paso sin literal (por ejemplo "veo un mensaje de error" en vez de "veo el mensaje de error "...""). Un literal inventado hace fallar el test generado y bloquea la generación de código más adelante.`
-      : "No se pudo capturar evidencia real de la aplicación: evita escribir textos literales entre comillas que no puedas garantizar, y prefiere pasos sin literal.";
-
-  return `Eres un analista de QA. Escribe un plan de pruebas en formato Gherkin (Feature/Scenario/Given/When/Then, con tags como @smoke o @regression donde corresponda) para esta petición:
+  return `Eres un ingeniero de QA. Escribe un plan de pruebas en Gherkin para esta petición:
 
 """
 ${text}
 """
 
-${patternSection}
+Transcurre en la pantalla "${screen.name}" del mapa de la aplicación, recorrida con un
+navegador real. Estos son los ÚNICOS textos que existen de verdad en esa pantalla:
 
-${languageSection}
+${literals}
 
-${evidenceSection}
+Campos que se pueden rellenar:
 
-Para los escenarios que inician sesión con una cuenta válida, NO escribas el correo ni la contraseña como texto literal: escribe un paso sin datos, por ejemplo "Cuando introduzco las credenciales de la cuenta de prueba". El código generado leerá esas credenciales de la configuración del proyecto. Las credenciales inválidas (para probar el error de login) sí se escriben literales: no son secretos y forman parte del escenario.
+${fields.length > 0 ? fields : "  (ninguno)"}
 
-Responde ÚNICAMENTE con el contenido completo del archivo .feature, empezando por la línea "Feature:". No incluyas explicaciones ni bloques de código markdown.`;
+Qué provoca cada acción — úsalo para que cada Then afirme sobre el DESTINO, no sobre el
+elemento que se acaba de pulsar:
+
+${clicks.length > 0 ? clicks : "  (ninguna)"}
+
+Reglas, todas obligatorias:
+
+1. Escribe el Gherkin en INGLÉS (English): la prosa de los pasos y los títulos de escenario.
+2. Todo texto entre comillas debe estar copiado LETRA POR LETRA de las listas de arriba.
+   No inventes ningún texto de interfaz: si no está en la lista, no existe.
+3. Cada escenario lleva la etiqueta @screen:${screen.id}.
+4. Un Then afirma lo que aparece DESPUÉS de la acción. Si pulsas un elemento y la lista
+   dice qué hace aparecer, afirma ese texto — nunca el nombre del elemento que pulsaste,
+   porque tras la acción puede haber desaparecido.
+5. Usa este vocabulario de pasos:
+     Given I am on the "<pantalla>" screen
+     When  I fill "<campo>" with "<valor>"
+     When  I click "<elemento>"
+     Then  I see "<texto>"
+     Then  I do not see "<texto>"
+
+Responde SOLO con el JSON: {"fileName": "kebab-case.feature", "featureText": "..."}`;
 }
