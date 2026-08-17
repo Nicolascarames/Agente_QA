@@ -119,6 +119,7 @@ export type { ExploradorCallbacks, RunExploradorOptions, ExploradorResult } from
 export { generateScenarioCandidates } from "./agents/explorador/scenarioCandidates.js";
 export { createRealCrawler } from "./appMap/realCrawler.js";
 export { emitPageObject } from "./appMap/pageObjectEmitter.js";
+export { toSelfPageExpression } from "./appMap/pythonExpression.js";
 export { redactMap, redactText, REDACTED } from "./appMap/redact.js";
 
 export { findScreen, screenLiterals, textsAfterClick, findLocator } from "./appMap/mapQuery.js";

@@ -1,4 +1,5 @@
 import { pythonLiteral } from "./pythonLiteral.js";
+import { toSelfPageExpression } from "./pythonExpression.js";
 import type { LocatorEntry, Screen } from "./schema.js";
 
 const FILLABLE: LocatorEntry["kind"][] = ["input"];
@@ -27,7 +28,7 @@ function locatorMethods(locator: LocatorEntry): string {
   const lines = [
     `    def get_${locator.name}(self) -> Locator:`,
     stateNote.trimEnd(),
-    `        return self.${locator.python}`,
+    `        return ${toSelfPageExpression(locator.python)}`,
   ].filter((line) => line.length > 0);
 
   for (const prefix of methodPrefixesFor(locator)) {

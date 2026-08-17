@@ -1,5 +1,6 @@
 import type { AppMap, LocatorEntry } from "../appMap/schema.js";
 import { findScreen } from "../appMap/mapQuery.js";
+import { toSelfPageExpression } from "../appMap/pythonExpression.js";
 import type { LocatorCheck, LocatorVerifier, ExplorationCredentials } from "./locatorVerifier.js";
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
 
@@ -76,11 +77,6 @@ export function locatorsUsedBy(featureText: string, map: AppMap): UsedLocator[] 
   }
 
   return used;
-}
-
-/** `page.get_by_role(...)` -> `self.page.get_by_role(...)`, letter for letter beyond that. */
-function toSelfPageExpression(python: string): string {
-  return python.startsWith("page.") ? `self.page.${python.slice("page.".length)}` : python;
 }
 
 const PAGE_OBJECT_PATH = "pages/map_freshness.py";
