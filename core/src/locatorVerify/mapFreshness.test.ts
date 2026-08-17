@@ -24,12 +24,12 @@ const feature = `Feature: F\n\n  @screen:login\n  Scenario: S\n    When I click 
 
 describe("locatorsUsedBy", () => {
   it("picks only the locators the scenario actually names", () => {
-    const used = locatorsUsedBy(feature, map);
-    expect(used.map((u) => u.locator.name)).toEqual(["log_in_button"]);
+    const result = locatorsUsedBy(feature, map);
+    expect(result.used.map((u) => u.locator.name)).toEqual(["log_in_button"]);
   });
 
   it("returns nothing for a scenario with no screen tag", () => {
-    expect(locatorsUsedBy(`Feature: F\n  Scenario: S\n    When I click "Log in"\n`, map)).toEqual([]);
+    expect(locatorsUsedBy(`Feature: F\n  Scenario: S\n    When I click "Log in"\n`, map).used).toEqual([]);
   });
 
   it("collects the field name from an I fill step, never the data value it types", () => {
@@ -38,15 +38,67 @@ describe("locatorsUsedBy", () => {
     // resolve against any locator's accessibleName/name and `used` would
     // come back empty instead of naming email_input.
     const fillFeature = `Feature: F\n\n  @screen:login\n  Scenario: S\n    When I fill "Email" with "someone@example.com"\n`;
-    const used = locatorsUsedBy(fillFeature, map);
-    expect(used.map((u) => u.locator.name)).toEqual(["email_input"]);
+    const result = locatorsUsedBy(fillFeature, map);
+    expect(result.used.map((u) => u.locator.name)).toEqual(["email_input"]);
+  });
+});
+
+describe("locatorsUsedBy with two locators sharing an accessible name", () => {
+  const twinsMap: AppMap = {
+    ...map,
+    screens: [{
+      id: "home", name: "home", className: "HomePage", urlTemplate: "/",
+      signature: "sha256:t", requiresAuth: false,
+      texts: ["Log in"], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+      locators: [
+        { name: "log_in_button", kind: "button", accessibleName: "Log in",
+          python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'button\']"))',
+          count: 1, verifiedAt: "t" },
+        { name: "log_in_button_submit", kind: "button", accessibleName: "Log in",
+          python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'submit\']"))',
+          count: 1, verifiedAt: "t" },
+      ],
+    }],
+  };
+
+  const ambiguousFeature = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "Log in"\n`;
+
+  it("reports the ambiguity instead of silently taking the first match", () => {
+    const result = locatorsUsedBy(ambiguousFeature, twinsMap);
+    expect(result.used).toEqual([]);
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0].quoted).toBe("Log in");
+    expect(result.ambiguous[0].screenId).toBe("home");
+    expect(result.ambiguous[0].candidates.map((c) => c.name)).toEqual([
+      "log_in_button",
+      "log_in_button_submit",
+    ]);
+  });
+
+  it("resolves cleanly once the step names the locator itself", () => {
+    const rewritten = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "log_in_button_submit"\n`;
+    const result = locatorsUsedBy(rewritten, twinsMap);
+    expect(result.ambiguous).toEqual([]);
+    expect(result.used.map((u) => u.locator.name)).toEqual(["log_in_button_submit"]);
+  });
+
+  it("reports one ambiguity per quoted text, not one per step", () => {
+    const twice = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "Log in"\n    When I click "Log in"\n`;
+    expect(locatorsUsedBy(twice, twinsMap).ambiguous).toHaveLength(1);
+  });
+
+  it("treats the second quoted group of a fill step as data, never a locator", () => {
+    const fill = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "Log in" with "Log in"\n`;
+    const result = locatorsUsedBy(fill, twinsMap);
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0].quoted).toBe("Log in");
   });
 });
 
 describe("checkMapFreshness", () => {
   it("passes when every used locator still resolves to one element", async () => {
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(true);
     // The map's login screen here has requiresAuth: false — a regression that
     // always attached the auth warning regardless of requiresAuth would still
@@ -59,14 +111,14 @@ describe("checkMapFreshness", () => {
     const verifier = new FakeLocatorVerifier([
       { ok: false, errors: 'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.' },
     ]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.stale[0].name).toBe("log_in_button");
   });
 
   it("synthesizes a Page Object whose locator expression matches the map's python letter for letter", async () => {
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
-    await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     const call = verifier.receivedCalls[0];
     const pageObject = call.files.find((f) => f.path === "pages/map_freshness.py");
     expect(pageObject).toBeDefined();
@@ -81,13 +133,13 @@ describe("checkMapFreshness", () => {
 
   it("sends the verifier a check for get_<name> with an empty argument", async () => {
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
-    await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     expect(verifier.receivedCalls[0].checks).toEqual([{ method: "get_log_in_button", argument: "" }]);
   });
 
   it("propagates a non-empty count=0 warning through the ok:true branch", async () => {
     const verifier = new FakeLocatorVerifier([{ ok: true, warnings: "el locator log_in_button no se encontró (0 elementos)" }]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.warnings).toBe("el locator log_in_button no se encontró (0 elementos)");
   });
@@ -97,7 +149,7 @@ describe("checkMapFreshness", () => {
       ok: false,
       errors: 'El locator get_log_in_button("") resolvió a 3 elementos reales:\n1) <button>Log in</button>\nHazlo más específico para que resuelva exactamente a 1 elemento.',
     }]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.stale).toEqual([{ screenId: "login", name: "log_in_button", count: 3 }]);
   });
@@ -107,7 +159,7 @@ describe("checkMapFreshness", () => {
       ok: false,
       errors: 'El locator get_log_in_button("") no se pudo verificar: Timeout 30000ms exceeded.',
     }]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, map).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.stale).toEqual([{ screenId: "login", name: "log_in_button", count: 0 }]);
   });
@@ -144,7 +196,7 @@ describe("checkMapFreshness", () => {
       `  @screen:item\n  Scenario: C\n    When I click "Add to cart"\n`;
 
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
-    await checkMapFreshness(locatorsUsedBy(threeScreenFeature, twoScreenMap), verifier, "https://example.test/", undefined);
+    await checkMapFreshness(locatorsUsedBy(threeScreenFeature, twoScreenMap).used, verifier, "https://example.test/", undefined);
     // The templated /item/:id screen cannot resolve to a concrete URL, so it
     // falls back to baseUrl — which is already the login screen's resolved
     // URL, so deduping collapses them into one entry rather than three.
@@ -185,7 +237,7 @@ describe("checkMapFreshness", () => {
         "2) <button>Submit now</button>\n" +
         "Hazlo más específico para que resuelva exactamente a 1 elemento.",
     }]);
-    const result = await checkMapFreshness(locatorsUsedBy(formFeature, formMap), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(formFeature, formMap).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(false);
     // If the match stayed a plain substring test, "submit" would also match
     // inside "get_submit_2(...)" and get reported stale with submit_2's
@@ -232,7 +284,7 @@ describe("checkMapFreshness", () => {
         "3) <button>Submit form</button>\n" +
         "Hazlo más específico para que resuelva exactamente a 1 elemento.",
     }]);
-    const result = await checkMapFreshness(locatorsUsedBy(checkoutFeature, formMap), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(checkoutFeature, formMap).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.stale).toEqual([{ screenId: "checkout", name: "form_submit", count: 3 }]);
@@ -248,7 +300,7 @@ describe("checkMapFreshness", () => {
     // verified.
     const authMap: AppMap = { ...map, screens: [{ ...map.screens[0], requiresAuth: true }] };
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, authMap), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, authMap).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.warnings).toBeDefined();
@@ -262,7 +314,7 @@ describe("checkMapFreshness", () => {
     const verifier = new FakeLocatorVerifier([
       { ok: true, warnings: "el locator log_in_button no se encontró (0 elementos)" },
     ]);
-    const result = await checkMapFreshness(locatorsUsedBy(feature, authMap), verifier, "https://example.test/", undefined);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, authMap).used, verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.warnings).toContain("el locator log_in_button no se encontró (0 elementos)");
