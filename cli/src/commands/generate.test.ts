@@ -211,7 +211,7 @@ describe("runGenerateTests", () => {
     expect(verifier.receivedCalls[0].credentials).toEqual({ username: "qa@example.com", password: "s3cret" });
   });
 
-  it("routes a stale locator through the onStaleLocator prompt, and persists the override it returns", async () => {
+  it("routes a stale locator through the onStaleLocator prompt, persists the override it returns, and stops the run", async () => {
     await writeEnv(tmpProject, BASE_ENV);
     await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
     await saveAppMap(tmpProject, baseMap);
@@ -220,14 +220,16 @@ describe("runGenerateTests", () => {
     createProviderMock.mockReturnValue(new FakeLLMProvider([scriptedResponse]));
     realCodeCheckerCheckMock.mockResolvedValue({ ok: true });
     createRealLocatorVerifierMock.mockReturnValue(
-      new FakeLocatorVerifier([{ ok: false, errors: "log_in_button: 0 coincidencias" }])
+      new FakeLocatorVerifier([{ ok: false, errors: 'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.' }])
     );
     const overridePython = 'page.get_by_test_id("login-btn")';
     const prompts = generatorPrompts({
       onStaleLocator: vi.fn().mockResolvedValue({ action: "override", python: overridePython }),
     });
 
-    await runGenerateTests(prompts, tmpProject);
+    // runGenerador now stops the run once an override is persisted, instead of
+    // generating against a Page Object that still holds the stale expression.
+    await expect(runGenerateTests(prompts, tmpProject)).rejects.toThrow(/agente-qa map/);
 
     expect(prompts.onStaleLocator).toHaveBeenCalledWith([{ screenId: "login", name: "log_in_button", count: 0 }]);
     const overrides = await loadOverrides(tmpProject);

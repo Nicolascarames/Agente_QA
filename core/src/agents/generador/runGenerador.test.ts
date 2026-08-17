@@ -205,31 +205,43 @@ class LoginPage:
     expect(checker.receivedCalls).toHaveLength(0);
   });
 
-  it("routes a stale locator through onStaleLocator, and persists an override answer via saveOverride", async () => {
+  it("persists an override answer via saveOverride, but stops the run instead of generating against the still-stale Page Object", async () => {
     await saveAppMap(tmpProject, baseMap);
     const featureFilePath = await writeFeature(featureWithClick);
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const verifier = new FakeLocatorVerifier([{ ok: false, errors: "log_in_button: 0 coincidencias" }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: false, errors: 'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.' },
+    ]);
     const overridePython = 'page.get_by_test_id("login-btn")';
     const cb = callbacks({
       onStaleLocator: vi.fn().mockResolvedValue({ action: "override", python: overridePython }),
     });
 
-    await runGenerador({
-      featureFilePath,
-      llm,
-      checker,
-      verifier,
-      projectRoot: tmpProject,
-      testsDir: "tests",
-      baseUrl: "https://example.com",
-      credentials: undefined,
-      callbacks: cb,
-      emit: () => {},
-    });
+    // The override only ever reaches overrides.json — pages/*.py on disk (written
+    // by emitPageObject, which only runExplorador calls) still has the stale
+    // expression, so generating now would produce a step definition calling a
+    // Page Object method the user just said is wrong. The run must stop instead
+    // of silently reporting success against a map that hasn't been re-emitted.
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm,
+        checker,
+        verifier,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+        emit: () => {},
+      })
+    ).rejects.toThrow(/agente-qa map/);
 
     expect(cb.onStaleLocator).toHaveBeenCalledWith([{ screenId: "login", name: "log_in_button", count: 0 }]);
+    // The LLM must never be reached: generation happening after an override is
+    // persisted is exactly the bug this stop exists to prevent.
+    expect(llm.receivedCalls).toHaveLength(0);
 
     const overrides = await loadOverrides(tmpProject);
     expect(overrides.locators).toEqual([{ screenId: "login", name: "log_in_button", python: overridePython }]);
@@ -240,7 +252,9 @@ class LoginPage:
     const featureFilePath = await writeFeature(featureWithClick);
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
-    const verifier = new FakeLocatorVerifier([{ ok: false, errors: "log_in_button: 0 coincidencias" }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: false, errors: 'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.' },
+    ]);
     const cb = callbacks({ onStaleLocator: vi.fn().mockResolvedValue({ action: "remap" }) });
 
     await expect(
@@ -289,13 +303,18 @@ class LoginPage:
     expect(cb.onStaleLocator).not.toHaveBeenCalled();
   });
 
-  it("calls onStaleLocator once per stale entry, and persists an override for each", async () => {
+  it("calls onStaleLocator once per stale entry, persists an override for each, then stops the run", async () => {
     await saveAppMap(tmpProject, baseMap);
     const featureFilePath = await writeFeature(featureWithTwoLocators);
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
     const verifier = new FakeLocatorVerifier([
-      { ok: false, errors: "email_input: 0 coincidencias\n\nlog_in_button: 0 coincidencias" },
+      {
+        ok: false,
+        errors:
+          'El locator get_email_input("") no se pudo verificar: 0 coincidencias.\n\n' +
+          'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.',
+      },
     ]);
     const overridesByName: Record<string, string> = {
       email_input: 'page.get_by_test_id("email")',
@@ -307,22 +326,25 @@ class LoginPage:
     );
     const cb = callbacks({ onStaleLocator });
 
-    await runGenerador({
-      featureFilePath,
-      llm,
-      checker,
-      verifier,
-      projectRoot: tmpProject,
-      testsDir: "tests",
-      baseUrl: "https://example.com",
-      credentials: undefined,
-      callbacks: cb,
-      emit: () => {},
-    });
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm,
+        checker,
+        verifier,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+        emit: () => {},
+      })
+    ).rejects.toThrow(/agente-qa map/);
 
     expect(onStaleLocator).toHaveBeenCalledTimes(2);
     expect(onStaleLocator).toHaveBeenNthCalledWith(1, [{ screenId: "login", name: "email_input", count: 0 }]);
     expect(onStaleLocator).toHaveBeenNthCalledWith(2, [{ screenId: "login", name: "log_in_button", count: 0 }]);
+    expect(llm.receivedCalls).toHaveLength(0);
 
     const overrides = await loadOverrides(tmpProject);
     expect(overrides.locators).toEqual(
@@ -340,7 +362,12 @@ class LoginPage:
     const llm = new FakeLLMProvider([scriptedResponse]);
     const checker = new FakeCodeChecker([{ ok: true }]);
     const verifier = new FakeLocatorVerifier([
-      { ok: false, errors: "email_input: 0 coincidencias\n\nlog_in_button: 0 coincidencias" },
+      {
+        ok: false,
+        errors:
+          'El locator get_email_input("") no se pudo verificar: 0 coincidencias.\n\n' +
+          'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.',
+      },
     ]);
     let call = 0;
     const onStaleLocator = vi.fn(async () => {

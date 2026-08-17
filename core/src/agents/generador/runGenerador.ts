@@ -85,6 +85,14 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
         'La verificación de los localizadores contra la aplicación real ha fallado sin poder identificar qué localizador falló (por ejemplo, un fallo de navegación o que la aplicación no esté disponible en la URL configurada). Comprueba que la aplicación es accesible e inténtalo de nuevo.'
       );
     }
+    // An override the user types here only lands in overrides.json — the map in
+    // memory and the Page Objects already on disk (pages/*.py) stay on the stale
+    // expression, because emitPageObject only ever runs from runExplorador. If
+    // generation continued past this point, the step definition it writes would
+    // call a Page Object method the user just said is wrong, and the run would
+    // still report success. So once any override is persisted, stop the run
+    // instead of generating against a map that hasn't actually been re-emitted.
+    let overridePersisted = false;
     for (const stale of freshness.stale) {
       const decision = await callbacks.onStaleLocator([stale]);
       if (decision.action === "remap") {
@@ -93,6 +101,12 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
         );
       }
       await saveOverride(projectRoot, { screenId: stale.screenId, name: stale.name, python: decision.python });
+      overridePersisted = true;
+    }
+    if (overridePersisted) {
+      throw new Error(
+        'Se ha guardado el override del localizador. Ejecuta "agente-qa map" para aplicarlo antes de generar código: hasta entonces, el Page Object en disco sigue usando la expresión antigua.'
+      );
     }
   } else if (freshness.warnings) {
     emit({ agent: "generador", status: "warn", depth: 1, message: freshness.warnings });
