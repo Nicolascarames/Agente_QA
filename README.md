@@ -98,7 +98,7 @@ Todos los agentes informan de su progreso a través de un canal de eventos tipad
 
 ## Instalación — Plugin de Claude Code
 
-**No disponible todavía.** El plugin de Claude Code está en fase de diseño, sin implementación — estará disponible en una próxima versión. Por ahora, la única forma de usar Agente_QA es la CLI standalone (npm) de abajo.
+**No disponible todavía.** El plugin de Claude Code está en fase de diseño, sin implementación — estará disponible en una próxima versión. Por ahora, la única forma de usar Agente_QA es la CLI standalone, compilada desde este repositorio (ver más abajo).
 
 Cuando se publique, la instalación será así (nombre del marketplace aún sin decidir):
 
@@ -110,6 +110,15 @@ Cuando se publique, la instalación será así (nombre del marketplace aún sin 
 Requerirá tener [Claude Code](https://code.claude.com) instalado y una sesión iniciada con tu cuenta (Pro, Max, Team o Enterprise) — sin API key propia. Para explorar páginas y recuperar localizadores usará el [MCP de Playwright](https://github.com/microsoft/playwright-mcp) en vez de un navegador Node propio (detalle: [`docs/superpowers/specs/2026-08-14-plugin-playwright-mcp-design.md`](docs/superpowers/specs/2026-08-14-plugin-playwright-mcp-design.md)).
 
 ## Instalación — CLI standalone (npm)
+
+> **Lo publicado en npm hoy no incluye el mapa de la aplicación.** Los paquetes
+> del registro siguen en la versión `0.1.6`, anterior al Agente Explorador: si
+> instalas desde npm, `agente-qa map` responde "unknown command" y los agentes
+> que exigen el mapa no arrancan. Los comandos de esta sección describen cómo
+> será la instalación una vez publicada esta versión; para usar hoy el pipeline
+> de 5 agentes, clona y compila este repositorio — ver
+> ["Desarrollar sobre el propio Agente_QA"](#desarrollar-sobre-el-propio-agente_qa-no-para-usarlo-en-tu-app)
+> y "Estado del proyecto" al final.
 
 Instálalo dentro del propio repositorio cuya app vas a probar — coincide con
 dónde `init` crea `.agente-qa/` (config + `.env`), todo queda junto al
