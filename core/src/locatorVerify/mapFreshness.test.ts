@@ -48,10 +48,17 @@ describe("checkMapFreshness", () => {
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
     const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(true);
+    // The map's login screen here has requiresAuth: false — a regression that
+    // always attached the auth warning regardless of requiresAuth would still
+    // pass every OTHER test in this file, since most of them never assert
+    // warnings is absent.
+    if (result.ok) expect(result.warnings).toBeUndefined();
   });
 
   it("reports the stale locator by name and screen when it no longer resolves", async () => {
-    const verifier = new FakeLocatorVerifier([{ ok: false, errors: "log_in_button: 0 coincidencias" }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: false, errors: 'El locator get_log_in_button("") no se pudo verificar: 0 coincidencias.' },
+    ]);
     const result = await checkMapFreshness(locatorsUsedBy(feature, map), verifier, "https://example.test/", undefined);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.stale[0].name).toBe("log_in_button");
@@ -185,6 +192,81 @@ describe("checkMapFreshness", () => {
     // count — a healthy locator flagged for a failure that isn't its own.
     if (!result.ok) {
       expect(result.stale).toEqual([{ screenId: "form", name: "submit_2", count: 2 }]);
+    }
+  });
+
+  it("does not misattribute a failure of a longer locator name to a shorter one it contains as a suffix", async () => {
+    // The previous fix only checked the RIGHT boundary of the match (the
+    // character after it must not be a word character). That is not enough:
+    // with locators "submit" and "form_submit", a failure naming
+    // "get_form_submit(" has "submit" match INSIDE "form_submit", and the
+    // character right after that match is "(" — a non-word character — so the
+    // right-boundary check alone reports "submit" as stale even though only
+    // "form_submit" ever failed. A left boundary can't fix this either: the
+    // real match point is "get_<name>(", whose preceding character is always
+    // "_", a word character, so a symmetric boundary check would reject every
+    // genuine match too. The only correct fix is to search for the literal
+    // marker "get_${name}(" as a whole.
+    const formMap: AppMap = {
+      ...map,
+      screens: [{
+        id: "checkout", name: "Checkout", className: "CheckoutPage", urlTemplate: "/",
+        signature: "sha256:e", requiresAuth: false,
+        texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+        locators: [
+          { name: "submit", kind: "button", accessibleName: "Submit",
+            python: 'page.get_by_role("button", name="Submit", exact=True)', count: 1, verifiedAt: "t" },
+          { name: "form_submit", kind: "button", accessibleName: "Submit form",
+            python: 'page.get_by_role("button", name="Submit form", exact=True)', count: 1, verifiedAt: "t" },
+        ],
+      }],
+    };
+    const checkoutFeature =
+      `Feature: F\n\n  @screen:checkout\n  Scenario: S\n    When I click "Submit"\n    And I click "Submit form"\n`;
+    const verifier = new FakeLocatorVerifier([{
+      ok: false,
+      errors:
+        'El locator get_form_submit("") resolvió a 3 elementos reales:\n' +
+        "1) <button>Submit form</button>\n" +
+        "2) <button>Submit form</button>\n" +
+        "3) <button>Submit form</button>\n" +
+        "Hazlo más específico para que resuelva exactamente a 1 elemento.",
+    }]);
+    const result = await checkMapFreshness(locatorsUsedBy(checkoutFeature, formMap), verifier, "https://example.test/", undefined);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.stale).toEqual([{ screenId: "checkout", name: "form_submit", count: 3 }]);
+    }
+  });
+
+  it("reports explicitly that a screen requiring a session could not be verified, instead of silently reading as verified", async () => {
+    // The generated Python this check runs exports credentials as env vars and
+    // does goto + count — it never logs in. A screen behind auth renders the
+    // login form during this check, every locator legitimately counts 0 (a
+    // WARNING per the rule above, not a failure), and without this the result
+    // is a bare `ok: true` that looks identical to a screen that was actually
+    // verified.
+    const authMap: AppMap = { ...map, screens: [{ ...map.screens[0], requiresAuth: true }] };
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, authMap), verifier, "https://example.test/", undefined);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings).toContain(authMap.screens[0].name);
+      expect(result.warnings).toMatch(/sesión/i);
+    }
+  });
+
+  it("combines the auth warning with a genuine verifier warning instead of dropping one", async () => {
+    const authMap: AppMap = { ...map, screens: [{ ...map.screens[0], requiresAuth: true }] };
+    const verifier = new FakeLocatorVerifier([
+      { ok: true, warnings: "el locator log_in_button no se encontró (0 elementos)" },
+    ]);
+    const result = await checkMapFreshness(locatorsUsedBy(feature, authMap), verifier, "https://example.test/", undefined);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toContain("el locator log_in_button no se encontró (0 elementos)");
+      expect(result.warnings).toMatch(/sesión/i);
     }
   });
 });

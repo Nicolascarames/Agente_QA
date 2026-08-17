@@ -5,9 +5,12 @@ import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
 
 export interface UsedLocator {
   screenId: string;
+  screenName: string;
   locator: LocatorEntry;
   /** The screen's route template, carried along so `checkMapFreshness` can build `urls` without needing the map again. */
   urlTemplate: string;
+  /** Carried from `Screen.requiresAuth` so `checkMapFreshness` can be honest about what it could not verify — see the warning it builds below. */
+  requiresAuth: boolean;
 }
 
 export type MapFreshnessResult =
@@ -63,7 +66,13 @@ export function locatorsUsedBy(featureText: string, map: AppMap): UsedLocator[] 
     const key = `${currentScreenId}::${locator.name}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    used.push({ screenId: currentScreenId, locator, urlTemplate: screen.urlTemplate });
+    used.push({
+      screenId: currentScreenId,
+      screenName: screen.name,
+      locator,
+      urlTemplate: screen.urlTemplate,
+      requiresAuth: screen.requiresAuth,
+    });
   }
 
   return used;
@@ -111,22 +120,24 @@ function resolveUrl(baseUrl: string, urlTemplate: string): string {
 }
 
 /**
- * Index of `name` in `errors` where the match is the WHOLE locator name, not
- * merely a substring of a longer one — `uniqueName()` (appMap/naming.ts)
- * produces sibling names like `submit` and `submit_2`, and a plain substring
- * test would let `submit` match inside `get_submit_2(...)`. The character
- * immediately following a genuine match is never a word character (it is a
- * `(`, end of string, etc.). Returns -1 when no such occurrence exists.
+ * Index of the locator `name`'s OWN failure segment in `errors` — not merely
+ * a substring of a longer locator's name. `uniqueName()` (appMap/naming.ts)
+ * produces sibling names like `submit` and `submit_2`, or `submit` and
+ * `form_submit`, and a plain substring test would let `submit` match inside
+ * `get_submit_2(...)` or `get_form_submit(...)`.
+ *
+ * A right-boundary check alone (next character not a word character) is not
+ * enough: `submit` inside `form_submit` is immediately followed by `(` in
+ * `get_form_submit(`, which passes a right-only check. A symmetric left+right
+ * boundary check doesn't work either — the real match point is always
+ * `get_<name>(`, whose preceding character is `_`, a word character, so
+ * requiring a non-word character on the left would reject every genuine
+ * match too. The only expression that is actually specific to `name` is the
+ * verifier's own check method call, `get_${name}(` — searched for as a whole
+ * literal string, not `name` alone. Returns -1 when no such occurrence exists.
  */
 function indexOfLocatorName(errors: string, name: string): number {
-  let from = 0;
-  for (;;) {
-    const idx = errors.indexOf(name, from);
-    if (idx === -1) return -1;
-    const next = errors[idx + name.length];
-    if (next === undefined || !/\w/.test(next)) return idx;
-    from = idx + 1;
-  }
+  return errors.indexOf(`get_${name}(`);
 }
 
 /** Extracts the "resolvió a N elementos" count for one locator's segment of the verifier's error text; 0 when the failure text carries no count (e.g. an exception). */
@@ -138,6 +149,30 @@ function staleCountFor(errors: string, locatorName: string): number {
   const segment = boundary === -1 ? tail : tail.slice(0, boundary);
   const match = segment.match(/resolvió a (\d+) elementos/);
   return match ? Number(match[1]) : 0;
+}
+
+/**
+ * The generated Python this check runs only exports `credentials` as
+ * environment variables and then does `goto` + `count` — it never actually
+ * logs in. A screen behind auth therefore renders the login form during this
+ * check: every locator legitimately counts 0 (a WARNING per the rule above,
+ * never a failure), and the result reads as a bare `ok: true` indistinguishable
+ * from a screen that was genuinely verified. This does not implement a login
+ * flow — it only makes the result honest by naming, in Spanish, every
+ * auth-required screen among `used` that this check could not really verify.
+ */
+function authWarningFor(used: UsedLocator[]): string | undefined {
+  const screens = new Map<string, string>();
+  for (const entry of used) {
+    if (entry.requiresAuth && !screens.has(entry.screenId)) screens.set(entry.screenId, entry.screenName);
+  }
+  if (screens.size === 0) return undefined;
+
+  const names = Array.from(screens.values()).map((name) => `"${name}"`).join(", ");
+  const plural = screens.size > 1;
+  return `No se ${plural ? "han" : "ha"} podido verificar de verdad ${plural ? "las pantallas" : "la pantalla"} ${names}: ${
+    plural ? "requieren" : "requiere"
+  } sesión iniciada y este chequeo no la inicia, así que sus localizadores pueden estar contando sobre el formulario de login en vez de sobre la pantalla real.`;
 }
 
 /**
@@ -175,7 +210,9 @@ export async function checkMapFreshness(
   const result = await verifier.verify([file], checks, urls, credentials);
 
   if (result.ok) {
-    return result.warnings === undefined ? { ok: true } : { ok: true, warnings: result.warnings };
+    const authWarning = authWarningFor(used);
+    const warnings = [result.warnings, authWarning].filter((w): w is string => Boolean(w)).join("\n\n");
+    return warnings.length > 0 ? { ok: true, warnings } : { ok: true };
   }
 
   const errors = result.errors ?? "";
