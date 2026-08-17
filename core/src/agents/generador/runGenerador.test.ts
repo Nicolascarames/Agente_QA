@@ -497,7 +497,7 @@ class LoginPage:
     expect(cb.onStaleLocator).not.toHaveBeenCalled();
   });
 
-  it("emits an event before the freshness check names how many locators it will verify", async () => {
+  it("emits the freshness event before checkMapFreshness's browser round trip, not merely before generation starts", async () => {
     await saveAppMap(tmpProject, baseMap);
     const featureFilePath = await writeFeature(featureWithClick);
     const llm = new FakeLLMProvider([scriptedResponse]);
@@ -505,6 +505,11 @@ class LoginPage:
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
     const cb = callbacks();
     const events: AgentEvent[] = [];
+    // FakeLocatorVerifier.verify() pushes onto receivedCalls synchronously, before its
+    // own `await` (inside checkMapFreshness) ever suspends — so the length of
+    // receivedCalls at the instant the freshness event is captured tells us whether
+    // the round trip had already started when the event fired.
+    let verifierCallsWhenFreshnessEventFired: number | undefined;
 
     await runGenerador({
       featureFilePath,
@@ -516,16 +521,26 @@ class LoginPage:
       baseUrl: "https://example.com",
       credentials: undefined,
       callbacks: cb,
-      emit: (event) => events.push(event),
+      emit: (event) => {
+        events.push(event);
+        if (
+          event.agent === "generador" &&
+          event.status === "info" &&
+          event.message === "Verificando 1 localizador(es) contra la aplicación real"
+        ) {
+          verifierCallsWhenFreshnessEventFired = verifier.receivedCalls.length;
+        }
+      },
     });
 
-    // A revert that drops this emit (or fires it after checkMapFreshness resolves,
-    // defeating the point of warning the user before the browser round trip)
-    // leaves this assertion false, since the message and its position both matter.
-    const freshnessEventIndex = events.findIndex(
-      (e) => e.agent === "generador" && e.status === "info" && e.message === "Verificando 1 localizador(es) contra la aplicación real"
-    );
-    expect(freshnessEventIndex).toBeGreaterThanOrEqual(0);
+    // Neither the message text nor the event's position relative to the attempt loop
+    // can catch a revert that moves the emit() call to after `await checkMapFreshness(...)`:
+    // `used.length` is fixed before either ordering (so the text is identical), and the
+    // event still lands before the attempt loop's own events either way (both sit earlier
+    // in the function). What actually distinguishes "before" from "after" the round trip
+    // is whether verifier.verify() had already run: 0 received calls means the user was
+    // warned before the multi-second browser check, not after it.
+    expect(verifierCallsWhenFreshnessEventFired).toBe(0);
     expect(verifier.receivedCalls).toHaveLength(1);
   });
 
