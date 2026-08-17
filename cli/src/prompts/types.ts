@@ -26,8 +26,10 @@ export interface ChatPrompts {
 
 export interface GeneratorPrompts {
   selectFeatureFile(files: string[]): Promise<string>;
-  offerSavePattern(): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
+  onStaleLocator(
+    stale: { screenId: string; name: string; count: number }[]
+  ): Promise<{ action: "remap" } | { action: "override"; python: string }>;
 }
 
 export interface ExecutorPrompts {

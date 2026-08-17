@@ -74,6 +74,10 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
   }
 
   const used = locatorsUsedBy(featureText, map);
+  emit({
+    agent: "generador", status: "info", depth: 1,
+    message: `Verificando ${used.length} localizador(es) contra la aplicación real`,
+  });
   const freshness = await checkMapFreshness(used, verifier, baseUrl, credentials);
   if (!freshness.ok) {
     if (freshness.stale.length === 0) {
@@ -101,10 +105,20 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
   let files: GeneratedFile[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    emit({
+      agent: "generador", status: "info", depth: 1,
+      message: `Generando código (intento ${attempt} de ${MAX_ATTEMPTS})`,
+    });
     files = await generateCode(featureText, llm, map, screenId, naming, retry);
 
     const checkResult = await checker.check(files);
-    if (checkResult.ok) break;
+    if (checkResult.ok) {
+      emit({
+        agent: "generador", status: "ok", depth: 1,
+        message: `Código generado y verificado (intento ${attempt} de ${MAX_ATTEMPTS})`,
+      });
+      break;
+    }
 
     const errors = checkResult.errors ?? "Error desconocido de verificación de código.";
     if (attempt === MAX_ATTEMPTS) {

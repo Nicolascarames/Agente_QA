@@ -3,9 +3,11 @@ import {
   runReportes,
   type ReportesCallbacks,
   type ReportesResult,
+  type AgentEvent,
 } from "@agente-qa/core";
 import type { ReportesPrompts } from "../prompts/types.js";
 import { openFile } from "../util/openFile.js";
+import { formatAgentEvent } from "../util/renderEvent.js";
 
 export async function runGenerateReports(
   prompts: ReportesPrompts,
@@ -24,7 +26,9 @@ export async function runGenerateReports(
     },
   };
 
-  const result = await runReportes(projectRoot, projectConfig.testsDir, callbacks);
+  const result = await runReportes(projectRoot, projectConfig.testsDir, callbacks, (event: AgentEvent) => {
+    console.log(formatAgentEvent(event));
+  });
 
   await openFile("markdown", result.summaryPath);
   if (detailLevel === "completo") {

@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { TestRunner } from "../../testRun/testRunner.js";
+import type { EmitEvent } from "../../events/agentEvent.js";
 import { listFeatureFiles } from "../generador/listFeatureFiles.js";
 import { listAvailableTags } from "./listAvailableTags.js";
 
@@ -58,8 +59,12 @@ export async function runEjecutor(
   runner: TestRunner,
   headedMode: boolean,
   callbacks: ExecutorCallbacks,
+  emit: EmitEvent,
   testEnv: Record<string, string> = {}
 ): Promise<EjecutorResult> {
+  emit({ agent: "ejecutor", status: "start", depth: 0, message: "Ejecución de tests" });
+  const startedAt = Date.now();
+
   const featureFiles = await listFeatureFiles(projectRoot, testsDir);
   if (featureFiles.length === 0) {
     throw new Error("No hay tests generados todavía. Usa 'Generar tests Playwright' primero.");
@@ -93,6 +98,12 @@ export async function runEjecutor(
     htmlReportPath,
     onOutput: callbacks.onOutput,
     env: testEnv,
+  });
+
+  emit({
+    agent: "ejecutor", status: "ok", depth: 0,
+    message: `Ejecución completada (código de salida ${result.exitCode})`,
+    durationMs: Date.now() - startedAt,
   });
 
   return {

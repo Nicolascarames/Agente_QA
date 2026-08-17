@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { saveProjectConfig, projectEnvPath, FakeSiteExplorer, FakeLocatorVerifier } from "@agente-qa/core";
+import { saveProjectConfig, saveAppMap, projectEnvPath, FakeLocatorVerifier, type AppMap, type Screen } from "@agente-qa/core";
 
 function commandExists(cmd: string): boolean {
   return spawnSync(cmd, ["--version"]).error === undefined;
@@ -12,7 +12,6 @@ const hasPython = commandExists("python");
 const hasRuff = commandExists("ruff");
 
 const generateTextMock = vi.fn();
-const createRealSiteExplorerMock = vi.fn();
 const createRealLocatorVerifierMock = vi.fn();
 vi.mock("ai", () => ({
   generateText: (...args: unknown[]) => generateTextMock(...args),
@@ -29,7 +28,6 @@ vi.mock("@agente-qa/core", async () => {
   const actual = await vi.importActual<typeof import("@agente-qa/core")>("@agente-qa/core");
   return {
     ...actual,
-    createRealSiteExplorer: (...args: unknown[]) => createRealSiteExplorerMock(...args),
     createRealLocatorVerifier: (...args: unknown[]) => createRealLocatorVerifierMock(...args),
   };
 });
@@ -37,8 +35,22 @@ vi.mock("@agente-qa/core", async () => {
 import { runGenerateTests } from "./generate.js";
 import type { GeneratorPrompts } from "../prompts/types.js";
 
+const loginScreen: Screen = {
+  id: "login", name: "Log in", className: "LoginPage", urlTemplate: "/",
+  signature: "sha256:a", requiresAuth: false,
+  texts: [], probeValues: [], ambiguous: [], transitions: [], writeActions: [],
+  states: [], locators: [],
+};
+
+const baseMap: AppMap = {
+  schemaVersion: 1, appUrl: "https://example.com/", createdAt: "t",
+  complete: true, authenticated: false, scenarios: [],
+  stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
+  screens: [loginScreen],
+};
+
 describe.skipIf(!hasPython || !hasRuff)(
-  "end-to-end: generate tests via the real wiring (ruff/py_compile real; site explorer and LLM network call mocked)",
+  "end-to-end: generate tests via the real wiring (ruff/py_compile real; locator verifier and LLM network call mocked)",
   () => {
     let tmpProject: string;
 
@@ -51,16 +63,15 @@ describe.skipIf(!hasPython || !hasRuff)(
         "utf-8"
       );
       await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+      await saveAppMap(tmpProject, baseMap);
       const featuresDir = path.join(tmpProject, "tests", "features");
       await fs.mkdir(featuresDir, { recursive: true });
       await fs.writeFile(
         path.join(featuresDir, "login.feature"),
-        "# agente-qa:pattern=login\nFeature: Login\n  Scenario: x\n    Given a\n",
+        "Feature: Login\n\n  @screen:login\n  Scenario: x\n    Given a\n",
         "utf-8"
       );
       generateTextMock.mockReset();
-      createRealSiteExplorerMock.mockReset();
-      createRealSiteExplorerMock.mockReturnValue(new FakeSiteExplorer([{ ok: true, screens: [], source: "hints" }]));
       createRealLocatorVerifierMock.mockReset();
       createRealLocatorVerifierMock.mockReturnValue(new FakeLocatorVerifier([]));
     });
@@ -69,29 +80,30 @@ describe.skipIf(!hasPython || !hasRuff)(
       await fs.rm(tmpProject, { recursive: true, force: true });
     });
 
-    it("generates and writes tests/pages for the built-in login pattern", async () => {
+    it("generates and writes the test file for a scenario grounded in the map", async () => {
       generateTextMock.mockResolvedValueOnce({
         text: `# FILE: tests/test_login.py
-from pytest_bdd import scenarios
+from pytest_bdd import given, scenarios
 
 scenarios("../features/login.feature")
-# FILE: pages/login_page.py
-class LoginPage:
-    def __init__(self, page):
-        self.page = page
+
+
+@given("a")
+def a():
+    pass
 `,
       });
 
       const prompts: GeneratorPrompts = {
         selectFeatureFile: vi.fn().mockResolvedValue("login.feature"),
-        offerSavePattern: vi.fn(),
         confirmOverwrite: vi.fn().mockResolvedValue(true),
+        onStaleLocator: vi.fn().mockRejectedValue(new Error("onStaleLocator no debería haberse llamado")),
       };
 
       const writtenPaths = await runGenerateTests(prompts, tmpProject);
 
-      expect(writtenPaths).toHaveLength(2);
-      expect(prompts.offerSavePattern).not.toHaveBeenCalled();
+      expect(writtenPaths).toHaveLength(1);
+      expect(prompts.onStaleLocator).not.toHaveBeenCalled();
     });
   }
 );

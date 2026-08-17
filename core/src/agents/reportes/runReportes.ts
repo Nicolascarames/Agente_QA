@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { EmitEvent } from "../../events/agentEvent.js";
 import { parseJunitResults } from "./parseJunitResults.js";
 import { generateSummaryMarkdown } from "./generateSummaryMarkdown.js";
 
@@ -20,8 +21,12 @@ export interface ReportesResult {
 export async function runReportes(
   projectRoot: string,
   testsDir: string,
-  callbacks: ReportesCallbacks
+  callbacks: ReportesCallbacks,
+  emit: EmitEvent
 ): Promise<ReportesResult> {
+  emit({ agent: "reportes", status: "start", depth: 0, message: "Generación de reportes" });
+  const startedAt = Date.now();
+
   const resultsDir = path.join(projectRoot, testsDir, "results");
   const junitXmlPath = path.join(resultsDir, "latest.xml");
 
@@ -43,6 +48,12 @@ export async function runReportes(
 
   const summaryPath = path.join(resultsDir, "summary.md");
   await fs.writeFile(summaryPath, markdown, "utf-8");
+
+  emit({
+    agent: "reportes", status: "ok", depth: 0,
+    message: `${results.passed} pasado(s), ${results.failed} fallido(s), ${results.skipped} omitido(s) — resumen en ${summaryPath}`,
+    durationMs: Date.now() - startedAt,
+  });
 
   return {
     junitXmlPath,

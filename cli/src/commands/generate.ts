@@ -5,17 +5,17 @@ import {
   requireLlmConfig,
   requireAppUrl,
   loadProjectConfig,
-  loadAllPatterns,
   listFeatureFiles,
   realCodeChecker,
-  createRealSiteExplorer,
   createRealLocatorVerifier,
   runGenerador,
   projectEnvPath,
   type GeneratorCallbacks,
+  type AgentEvent,
 } from "@agente-qa/core";
 import type { GeneratorPrompts } from "../prompts/types.js";
 import { withLLMSpinner, withCodeCheckerSpinner, withLocatorVerifierSpinner } from "../util/spinner.js";
+import { formatAgentEvent } from "../util/renderEvent.js";
 
 export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: string): Promise<string[]> {
   const env = await loadProjectEnv(projectRoot);
@@ -41,36 +41,27 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
   const featureFilePath = path.join(projectRoot, projectConfig.testsDir, "features", chosen);
 
   const llm = withLLMSpinner(createProvider(llmCredentials));
-  const patterns = await loadAllPatterns(projectRoot);
-  const explorer = createRealSiteExplorer(llm);
   const credentials =
     env.testUsername && env.testPassword ? { username: env.testUsername, password: env.testPassword } : undefined;
 
   const callbacks: GeneratorCallbacks = {
-    offerSavePattern: () => prompts.offerSavePattern(),
     confirmOverwrite: (filePath) => prompts.confirmOverwrite(filePath),
-    onExplorationStep: (message) => {
-      console.log(message);
-    },
-    onVerificationStep: (message) => {
-      console.log(message);
-    },
+    onStaleLocator: (stale) => prompts.onStaleLocator(stale),
   };
 
   const { writtenPaths } = await runGenerador({
     featureFilePath,
     llm,
-    patterns,
     checker: withCodeCheckerSpinner(realCodeChecker),
-    explorer,
     verifier: withLocatorVerifierSpinner(createRealLocatorVerifier()),
     projectRoot,
     testsDir: projectConfig.testsDir,
     baseUrl,
-    appLanguage: projectConfig.appLanguage,
-    routes: projectConfig.routes,
     credentials,
     callbacks,
+    emit: (event: AgentEvent) => {
+      console.log(formatAgentEvent(event));
+    },
   });
 
   return writtenPaths;

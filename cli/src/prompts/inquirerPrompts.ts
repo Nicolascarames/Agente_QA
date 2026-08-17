@@ -151,19 +151,6 @@ export function buildRealGeneratorPrompts(): GeneratorPrompts {
         choices: files.map((f) => ({ name: f, value: f })),
       });
     },
-    async offerSavePattern() {
-      const save = await select({
-        message: "Esto parece un patrón reusable. ¿Lo guardo para la próxima vez?",
-        choices: [
-          { name: "Sí", value: true },
-          { name: "No", value: false },
-        ],
-      });
-      if (!save) return { save: false };
-      const name = await input({ message: "Nombre del patrón:" });
-      const description = await input({ message: "Descripción breve:" });
-      return { save: true, name, description };
-    },
     async confirmOverwrite(filePath) {
       return select({
         message: `Ya existe un archivo en ${filePath}. ¿Lo sobrescribo?`,
@@ -172,6 +159,24 @@ export function buildRealGeneratorPrompts(): GeneratorPrompts {
           { name: "No", value: false },
         ],
       });
+    },
+    async onStaleLocator(stale) {
+      const [item] = stale;
+      console.log(
+        `\n⚠ El localizador "${item.name}" de la pantalla "${item.screenId}" ya no es único en la aplicación real: ahora coincide con ${item.count} elemento(s).`
+      );
+      const action = await select<"remap" | "override">({
+        message: "¿Cómo lo solucionamos?",
+        choices: [
+          { name: "Volver a mapear la aplicación (agente-qa map)", value: "remap" },
+          { name: "Escribir yo mismo la expresión Playwright correcta", value: "override" },
+        ],
+      });
+      if (action === "remap") return { action: "remap" };
+      const python = await input({
+        message: `Expresión Playwright para "${item.name}" (ej. page.get_by_test_id("login-submit")):`,
+      });
+      return { action: "override", python };
     },
   };
 }

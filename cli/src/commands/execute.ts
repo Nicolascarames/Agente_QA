@@ -7,9 +7,11 @@ import {
   runEjecutor,
   type ExecutorCallbacks,
   type EjecutorResult,
+  type AgentEvent,
 } from "@agente-qa/core";
 import type { ExecutorPrompts } from "../prompts/types.js";
 import { withTestRunnerSpinner } from "../util/spinner.js";
+import { formatAgentEvent } from "../util/renderEvent.js";
 
 export async function runExecuteTests(prompts: ExecutorPrompts, projectRoot: string): Promise<EjecutorResult> {
   const projectConfig = await loadProjectConfig(projectRoot);
@@ -36,6 +38,9 @@ export async function runExecuteTests(prompts: ExecutorPrompts, projectRoot: str
     withTestRunnerSpinner(realTestRunner),
     projectConfig.headedMode,
     callbacks,
+    (event: AgentEvent) => {
+      console.log(formatAgentEvent(event));
+    },
     testEnvVars(projectConfig, env)
   );
 }

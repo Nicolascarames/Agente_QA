@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { FakeTestRunner } from "../../testRun/testUtils.js";
 import { runEjecutor, type ExecutorCallbacks } from "./runEjecutor.js";
+import type { AgentEvent } from "../../events/agentEvent.js";
 
 describe("runEjecutor", () => {
   let tmpProject: string;
@@ -30,7 +31,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks)).rejects.toThrow(
+    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {})).rejects.toThrow(
       /Generar tests Playwright/
     );
   });
@@ -45,7 +46,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(callbacks.selectTags).toHaveBeenCalledWith(["@regression", "@smoke"]);
     expect(runner.receivedCalls[0].markerExpression).toBe("smoke");
@@ -61,7 +62,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks)).rejects.toThrow(/@smoke-test/);
+    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {})).rejects.toThrow(/@smoke-test/);
   });
 
   it("does not throw for a strict subset selection using a plain identifier tag like '@smoke'", async () => {
@@ -74,7 +75,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks)).resolves.toBeDefined();
+    await expect(runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {})).resolves.toBeDefined();
     expect(runner.receivedCalls[0].markerExpression).toBe("smoke");
   });
 
@@ -87,7 +88,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(runner.receivedCalls[0].markerExpression).toBeNull();
   });
@@ -101,7 +102,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(callbacks.selectTags).not.toHaveBeenCalled();
     expect(runner.receivedCalls[0].markerExpression).toBeNull();
@@ -116,7 +117,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(runner.receivedCalls[0].screenshotMode).toBe("off");
     expect(runner.receivedCalls[0].videoMode).toBe("off");
@@ -131,7 +132,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(runner.receivedCalls[0].screenshotMode).toBe("only-on-failure");
     expect(runner.receivedCalls[0].videoMode).toBe("retain-on-failure");
@@ -146,7 +147,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(runner.receivedCalls[0].screenshotMode).toBe("on");
     expect(runner.receivedCalls[0].videoMode).toBe("on");
@@ -161,7 +162,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     const expectedCwd = path.join(tmpProject, "tests");
     const expectedXmlPath = path.join(expectedCwd, "results", "latest.xml");
@@ -183,7 +184,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     const expectedHtmlPath = path.join(tmpProject, "tests", "results", "latest.html");
     expect(result.htmlReportPath).toBe(expectedHtmlPath);
@@ -201,7 +202,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    const result = await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(result.exitCode).toBe(1);
     expect(result.browserSetupWarning).toBe('Ejecuta "playwright install".');
@@ -216,7 +217,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(runner.receivedCalls[0].env).toEqual({});
   });
@@ -230,7 +231,9 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks, { AGENTE_QA_APP_URL: "https://mi-app.com" });
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {}, {
+      AGENTE_QA_APP_URL: "https://mi-app.com",
+    });
 
     expect(runner.receivedCalls[0].env).toEqual({ AGENTE_QA_APP_URL: "https://mi-app.com" });
   });
@@ -244,7 +247,7 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, false, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, () => {});
 
     expect(runner.receivedCalls[0].headed).toBe(false);
     expect(runner.receivedCalls[0].verboseSteps).toBe(false);
@@ -259,9 +262,32 @@ describe("runEjecutor", () => {
       onOutput: vi.fn(),
     };
 
-    await runEjecutor(tmpProject, "tests", runner, true, callbacks);
+    await runEjecutor(tmpProject, "tests", runner, true, callbacks, () => {});
 
     expect(runner.receivedCalls[0].headed).toBe(true);
     expect(runner.receivedCalls[0].verboseSteps).toBe(true);
+  });
+
+  it("emits an 'ok' event reporting the exit code once the run completes", async () => {
+    await writeFeature("login.feature", "Feature: Login\n  Scenario: x\n    Given a\n");
+    const runner = new FakeTestRunner([{ exitCode: 1 }]);
+    const callbacks: ExecutorCallbacks = {
+      selectTags: vi.fn(),
+      selectCaptureMode: vi.fn().mockResolvedValue("off"),
+      onOutput: vi.fn(),
+    };
+    const events: AgentEvent[] = [];
+
+    await runEjecutor(tmpProject, "tests", runner, false, callbacks, (event) => events.push(event));
+
+    expect(
+      events.some(
+        (e) =>
+          e.agent === "ejecutor" &&
+          e.status === "ok" &&
+          e.depth === 0 &&
+          e.message.includes("código de salida 1")
+      )
+    ).toBe(true);
   });
 });

@@ -496,4 +496,69 @@ class LoginPage:
     ).toBe(true);
     expect(cb.onStaleLocator).not.toHaveBeenCalled();
   });
+
+  it("emits an event before the freshness check names how many locators it will verify", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(featureWithClick);
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const verifier = new FakeLocatorVerifier([{ ok: true }]);
+    const cb = callbacks();
+    const events: AgentEvent[] = [];
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      checker,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+      emit: (event) => events.push(event),
+    });
+
+    // A revert that drops this emit (or fires it after checkMapFreshness resolves,
+    // defeating the point of warning the user before the browser round trip)
+    // leaves this assertion false, since the message and its position both matter.
+    const freshnessEventIndex = events.findIndex(
+      (e) => e.agent === "generador" && e.status === "info" && e.message === "Verificando 1 localizador(es) contra la aplicación real"
+    );
+    expect(freshnessEventIndex).toBeGreaterThanOrEqual(0);
+    expect(verifier.receivedCalls).toHaveLength(1);
+  });
+
+  it("emits one event per generation attempt, and an 'ok' event on the attempt that passes verification", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(simpleFeature);
+    const llm = new FakeLLMProvider([scriptedResponse, scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: false, errors: "SyntaxError: line 1" }, { ok: true }]);
+    const verifier = new FakeLocatorVerifier([]);
+    const cb = callbacks();
+    const events: AgentEvent[] = [];
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      checker,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+      emit: (event) => events.push(event),
+    });
+
+    const attemptEvents = events.filter((e) => e.agent === "generador" && e.message.includes("intento"));
+    // Reverting to a single "generating..." message emitted once (instead of once per
+    // attempt) collapses these two apart, so the count and the ok-on-second-attempt
+    // both have to hold for this to pass.
+    expect(attemptEvents).toHaveLength(3); // info(1) + info(2) + ok(2)
+    expect(attemptEvents.filter((e) => e.status === "info")).toHaveLength(2);
+    expect(
+      attemptEvents.some((e) => e.status === "ok" && e.message.includes("intento 2 de 4"))
+    ).toBe(true);
+  });
 });

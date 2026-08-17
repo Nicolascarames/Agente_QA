@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runReportes, type ReportesCallbacks } from "./runReportes.js";
+import type { AgentEvent } from "../../events/agentEvent.js";
 
 const sampleXml = `<testsuites>
   <testsuite name="pytest" tests="2" time="0.9">
@@ -32,7 +33,7 @@ describe("runReportes", () => {
 
   it("throws a clear error when there are no results yet", async () => {
     const callbacks: ReportesCallbacks = { selectDetailLevel: vi.fn() };
-    await expect(runReportes(tmpProject, "tests", callbacks)).rejects.toThrow(/Ejecutar tests/);
+    await expect(runReportes(tmpProject, "tests", callbacks, () => {})).rejects.toThrow(/Ejecutar tests/);
   });
 
   it("parses the junit-xml, asks for the detail level, and writes the summary", async () => {
@@ -41,7 +42,7 @@ describe("runReportes", () => {
       selectDetailLevel: vi.fn().mockResolvedValue("resumen"),
     };
 
-    const result = await runReportes(tmpProject, "tests", callbacks);
+    const result = await runReportes(tmpProject, "tests", callbacks, () => {});
 
     expect(callbacks.selectDetailLevel).toHaveBeenCalledTimes(1);
     expect(result.totalTests).toBe(2);
@@ -64,7 +65,7 @@ describe("runReportes", () => {
       selectDetailLevel: vi.fn().mockResolvedValue("completo"),
     };
 
-    const result = await runReportes(tmpProject, "tests", callbacks);
+    const result = await runReportes(tmpProject, "tests", callbacks, () => {});
 
     const summaryContent = await fs.readFile(result.summaryPath, "utf-8");
     expect(summaryContent).toContain("## Pasados");
@@ -79,9 +80,31 @@ describe("runReportes", () => {
     const callbacks: ReportesCallbacks = {
       selectDetailLevel: vi.fn().mockResolvedValue("resumen"),
     };
-    const result = await runReportes(tmpProject, "tests", callbacks);
+    const result = await runReportes(tmpProject, "tests", callbacks, () => {});
 
     const summaryContent = await fs.readFile(result.summaryPath, "utf-8");
     expect(summaryContent).not.toContain("resumen viejo");
+  });
+
+  it("emits an 'ok' event with the pass/fail counts once the summary is written", async () => {
+    await writeJunitXml(sampleXml);
+    const callbacks: ReportesCallbacks = {
+      selectDetailLevel: vi.fn().mockResolvedValue("resumen"),
+    };
+    const events: AgentEvent[] = [];
+
+    const result = await runReportes(tmpProject, "tests", callbacks, (event) => events.push(event));
+
+    expect(
+      events.some(
+        (e) =>
+          e.agent === "reportes" &&
+          e.status === "ok" &&
+          e.depth === 0 &&
+          e.message.includes("1 pasado(s)") &&
+          e.message.includes("1 fallido(s)") &&
+          e.message.includes(result.summaryPath)
+      )
+    ).toBe(true);
   });
 });
