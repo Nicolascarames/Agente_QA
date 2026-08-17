@@ -9,7 +9,13 @@ const map: AppMap = {
   screens: [{
     id: "login", name: "Log in", className: "LoginPage", urlTemplate: "/",
     signature: "sha256:a", requiresAuth: false,
-    texts: ["Welcome back", "Email", "Password"],
+    // The probe value is deliberately also present in `texts` — mirroring how a
+    // crawler-typed probe can get echoed back onto the page (e.g. into a "no
+    // results for X" message). If it were absent from `texts`/`addsTexts`
+    // entirely, `screenLiterals` would never contain it and the leak test below
+    // would pass whether or not the prompt's own probeValues filter exists at
+    // all — the filter would be tested by a check that cannot fail.
+    texts: ["Welcome back", "Email", "Password", "agente-qa-probe@example.invalid"],
     probeValues: ["agente-qa-probe@example.invalid"],
     ambiguous: [], transitions: [], writeActions: [],
     locators: [{ name: "log_in_button", kind: "button", accessibleName: "Log in",

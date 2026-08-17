@@ -1,5 +1,5 @@
 import type { AppMap } from "../../appMap/schema.js";
-import { screenLiterals } from "../../appMap/mapQuery.js";
+import { findScreen, screenLiterals } from "../../appMap/mapQuery.js";
 
 export interface MissingLiteral {
   literal: string;
@@ -29,6 +29,28 @@ const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
 const FILL_STEP = /I fill "([^"]*)" with "([^"]*)"/;
 
 /**
+ * Every literal a scenario on this screen may legitimately quote — `screenLiterals`
+ * (map texts + states' `addsTexts`) minus the crawler's own probe values, PLUS the
+ * screen's own `name` and `id`. The prompt (`prompts/intake.ts`) mandates
+ * `Given I am on the "<pantalla>" screen`, which quotes `screen.name` — and
+ * `realCrawler` always sets `name: screenId`, a route slug that is never among a
+ * screen's own texts. Admitting both here is what keeps that step (and a future
+ * `Then I am on the "<pantalla>" screen`, same vocabulary) from being rejected as
+ * an invented literal on every real crawl: they are facts of the map, not
+ * something the model made up, which is the exact distinction this gate exists
+ * to enforce. The probe-value exclusion mirrors `gherkinGenerationPrompt`'s own
+ * filter — this is the one place both the prompt and this check must agree on
+ * what may be quoted, so a probe value never leaks back to the user as a "real"
+ * text in the exhaustion message either.
+ */
+function allowedLiterals(map: AppMap, screenId: string): string[] {
+  const screen = findScreen(map, screenId);
+  if (!screen) return screenLiterals(map, screenId);
+  const literals = screenLiterals(map, screenId).filter((literal) => !screen.probeValues.includes(literal));
+  return Array.from(new Set([...literals, screen.name, screen.id]));
+}
+
+/**
  * The gate that stops an invented literal from ever reaching a generated test.
  * It runs on the .feature, which is the file a human can still fix — by the
  * time the code exists the value is baked into an assertion.
@@ -46,7 +68,7 @@ export function checkFeatureLiterals(featureText: string, map: AppMap): FeatureL
     if (tag) {
       currentScreen = tag[1];
       screenTagFound = true;
-      for (const literal of screenLiterals(map, currentScreen)) candidates.add(literal);
+      for (const literal of allowedLiterals(map, currentScreen)) candidates.add(literal);
       continue;
     }
     if (/^(Feature|Scenario Outline|Scenario):/i.test(line) && !SCREEN_TAG.test(line)) {
@@ -55,7 +77,7 @@ export function checkFeatureLiterals(featureText: string, map: AppMap): FeatureL
     }
     if (currentScreen === null) continue;
 
-    const allowed = screenLiterals(map, currentScreen);
+    const allowed = allowedLiterals(map, currentScreen);
 
     const fillMatch = line.match(FILL_STEP);
     if (fillMatch) {
