@@ -4,31 +4,36 @@ Sistema agéntico de automatización de QA: convierte una descripción de prueba
 
 ## Arquitectura
 
-Pipeline de 4 agentes especializados —todos implementados—, con lógica compartida (prompts, contratos de datos entre agentes, generadores de Gherkin/Playwright) reutilizada por dos formas de uso:
+Pipeline de 5 agentes especializados —todos implementados—, con lógica compartida (prompts, contratos de datos entre agentes, el mapa de la aplicación, generadores de Gherkin/Playwright) reutilizada por dos formas de uso:
 
-1. **Agente de intake** — recibe el texto y diseña el plan de pruebas en Gherkin. Si la petición encaja con un patrón conocido (login, logout, signup, recuperar contraseña...), lo usa como punto de partida en vez de generar desde cero. Requiere tu aprobación explícita del plan antes de seguir.
-2. **Agente generador** — convierte el Gherkin aprobado en tests Python + Playwright (pytest-bdd, Page Object Model), con autochequeo de compilación/lint antes de escribir nada al proyecto. Si el caso no encajaba en ningún patrón, pregunta si se guarda como patrón nuevo reusable para ese proyecto.
-3. **Agente ejecutor** — selecciona (por tags Gherkin) y lanza los tests generados con `pytest`; pregunta capturas/vídeo en cada ejecución (nativo de `pytest-playwright`, solo en fallo por defecto).
-4. **Agente de reportes** — lee el `junit-xml` que deja Agente 3, confirma la ruta del reporte extendido (`pytest-html`, generado por el propio Agente 3) y genera un resumen en Markdown (conteos, duración, listado de fallos), con nivel de detalle a elegir en cada generación.
+1. **Agente Explorador** — recorre la aplicación con un navegador real, la mapea pantalla a pantalla (textos, localizadores, escenarios candidatos) y escribe `.agente-qa/map/map.json` más un Page Object Python por pantalla — mecánicamente, sin pasar por el LLM. Debe ejecutarse el primero: los agentes siguientes leen el mapa en vez de explorar nada por su cuenta.
+2. **Agente de intake** — recibe el texto (o un escenario candidato que el propio mapa propuso al explorar) y diseña el plan de pruebas en Gherkin, siempre en inglés, con cada texto citado copiado carácter a carácter del mapa. Requiere tu aprobación explícita del plan antes de seguir.
+3. **Agente generador** — convierte el Gherkin aprobado en el step definition Python correspondiente (pytest-bdd), revalidando antes contra la aplicación real que los localizadores del mapa que el escenario usa siguen siendo únicos, con autochequeo de compilación/lint antes de escribir nada al proyecto. Nunca escribe un Page Object: los localizadores ya los dejó el Agente Explorador.
+4. **Agente ejecutor** — selecciona (por tags Gherkin) y lanza los tests generados con `pytest`; pregunta capturas/vídeo en cada ejecución (nativo de `pytest-playwright`, solo en fallo por defecto).
+5. **Agente de reportes** — lee el `junit-xml` que deja el agente ejecutor, confirma la ruta del reporte extendido (`pytest-html`, generado por el propio agente ejecutor) y genera un resumen en Markdown (conteos, duración, listado de fallos), con nivel de detalle a elegir en cada generación.
 
-Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, generadores, librería de patrones) y arrancan siempre con una presentación y un menú de opciones, tanto en la instalación como al usar los agentes. Detalle completo del diseño: [`docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md`](docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md).
+Todos los agentes informan de su progreso a través de un canal de eventos tipado que el CLI imprime en pantalla al vuelo (inicio/fin de cada paso, avisos, duración), no solo al terminar.
+
+Ambas formas de uso comparten el mismo motor (prompts, contratos de datos, el mapa de la aplicación, generadores) y arrancan siempre con una presentación y un menú de opciones, tanto en la instalación como al usar los agentes. Detalle completo del diseño: [`docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md`](docs/superpowers/specs/2026-08-10-agente-qa-pipeline-design.md) (pipeline general) y [`docs/superpowers/specs/2026-08-15-agente-1-app-map-design.md`](docs/superpowers/specs/2026-08-15-agente-1-app-map-design.md) (mapa de la aplicación y Agente Explorador).
 
 ### Dos formas de instalar y usar
 
 | | Plugin de Claude Code | CLI standalone (npm) |
 |---|---|---|
-| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ Python, `ruff`, los navegadores de Playwright para Node, y `pytest`/`pytest-bdd`/`pytest-playwright`/`pytest-html` para "Generar tests Playwright"; estos últimos también para "Ejecutar tests") |
+| Requiere | Claude Code + suscripción Pro/Max/Team/Enterprise (o API key) | Node.js, sin dependencia de Claude Code (+ los navegadores de Playwright para Node desde "Mapear aplicación"; y Python, `ruff`, `pytest`/`pytest-bdd`/`pytest-playwright`/`pytest-html` desde "Generar tests Playwright" — estos últimos también para "Ejecutar tests") |
 | Modelo LLM | Solo Claude | Anthropic, OpenAI, Google, o cualquier proveedor compatible con la API de OpenAI (Groq, Together, Ollama local...) vía API key propia |
 | Coste | Incluido en tu suscripción Claude | Pago por uso de API del proveedor elegido |
 | Dónde corre | Dentro de una sesión Claude Code | Terminal, standalone, también en CI |
 
-> A partir de "Generar tests Playwright" (Agente 2), la CLI standalone necesita además **Python 3, `ruff`, y `pytest`/`pytest-bdd`/`pytest-playwright`/`pytest-html`** en el `PATH` — `ruff`+`py_compile` verifican que el código generado compila y pasa lint, y el stack de pytest se usa para lanzar un navegador real (headless) que comprueba que cada locator generado con un parámetro variable resuelve a exactamente un elemento en la aplicación real antes de aceptar el código — y los **navegadores de Playwright para Node** (`npx playwright install chromium`, una sola vez tras instalar `agente-qa`) para el propio "Site Explorer" de Agente 2. No hace falta para "Crear plan de pruebas" (Agente 1).
+> A partir de "Mapear aplicación" (Agente 1), la CLI standalone necesita los **navegadores de Playwright para Node** (`npx playwright install chromium`, una sola vez tras instalar `agente-qa`) — es el propio `agente-qa` el que controla un navegador real para recorrer la aplicación y escribir el mapa y los Page Objects. No hace falta nada de esto para "Crear plan de pruebas" (Agente 2): lee el mapa ya escrito, no explora nada por su cuenta.
 >
-> A partir de "Ejecutar tests" (Agente 3), la CLI standalone reutiliza el mismo stack de pytest para ejecutar los tests generados de verdad, capturar screenshots/vídeo solo en fallo, y generar el reporte extendido que "Ver/generar reportes" (Agente 4) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 3 ya dejó escritos.
+> A partir de "Generar tests Playwright" (Agente 3), la CLI standalone necesita además **Python 3, `ruff`, y `pytest`/`pytest-bdd`/`pytest-playwright`/`pytest-html`** en el `PATH` — `ruff`+`py_compile` verifican que el código generado compila y pasa lint, y el stack de pytest se usa para lanzar un navegador real (headless) que revalida que cada localizador del mapa que el escenario usa sigue resolviendo a exactamente un elemento en la aplicación real, antes de aceptar el código.
+>
+> A partir de "Ejecutar tests" (Agente 4), la CLI standalone reutiliza el mismo stack de pytest para ejecutar los tests generados de verdad, capturar screenshots/vídeo solo en fallo, y generar el reporte extendido que "Ver/generar reportes" (Agente 5) confirma después. No hace falta nada adicional para "Ver/generar reportes" en sí — solo lee ficheros que Agente 4 ya dejó escritos.
 
 ### Instalar Python y las dependencias de test
 
-Hace falta desde "Generar tests Playwright" en adelante (Agente 1, crear plan de pruebas, no lo necesita) — Agente 2 ya lanza un navegador real headless para verificar locators antes de aceptar el código, no solo Agente 3 al ejecutar los tests.
+Hace falta desde "Generar tests Playwright" en adelante (Agente 1, mapear aplicación, y Agente 2, crear plan de pruebas, no lo necesitan) — Agente 3 ya lanza un navegador real headless para revalidar los localizadores del mapa antes de aceptar el código, no solo Agente 4 al ejecutar los tests.
 
 **1. Python 3** (si no lo tienes ya — compruébalo con `python --version` o `python3 --version`):
 
@@ -43,17 +48,53 @@ pip install ruff pytest pytest-bdd pytest-playwright pytest-html
 playwright install
 ```
 
-- `ruff` — lo usa Agente 2 (Generar tests) para verificar lint/compilación antes de escribir nada al proyecto.
-- `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — Agente 2 (Generar tests) los usa para lanzar un navegador headless que verifica cada locator generado contra la aplicación real; Agente 3 (Ejecutar tests) reutiliza el mismo stack para correr los tests generados y producir el reporte extendido.
-- `playwright install` descarga los navegadores (Chromium/Firefox/WebKit) que usan los tests generados (Python `pytest-playwright`) — sin esto, `pytest-playwright` falla al lanzar el primer test aunque el paquete esté instalado.
+- `ruff` — lo usa Agente 3 (Generar tests) para verificar lint/compilación antes de escribir nada al proyecto.
+- `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — Agente 3 (Generar tests) los usa para lanzar un navegador headless que revalida cada localizador del mapa contra la aplicación real; Agente 4 (Ejecutar tests) reutiliza el mismo stack para correr los tests generados y producir el reporte extendido.
+- `playwright install` descarga los navegadores (Chromium/Firefox/WebKit) que usa ese paso de verificación y los tests generados (Python `pytest-playwright`) — sin esto, `pytest-playwright` falla al lanzar el primer test aunque el paquete esté instalado.
 
-`agente-qa` en sí (no los tests que genera) también controla un navegador real durante "Generar tests Playwright", para verificar rutas y localizadores contra la aplicación antes de escribir código — es un Playwright para Node, aparte del anterior. Una sola vez, tras instalar `agente-qa`:
+`agente-qa` en sí (no los tests que genera) también controla un navegador real, pero durante "Mapear aplicación" (Agente 1) — para recorrer la aplicación de verdad y escribir el mapa y los Page Objects, antes de que exista ningún test. Es un Playwright para Node, aparte del anterior (que es Playwright para Python, instalado con `pip`). Una sola vez, tras instalar `agente-qa`:
 
 ```
 npx playwright install chromium
 ```
 
 Verifica que todo quedó en el `PATH`: `ruff --version` y `pytest --version` deben responder sin error.
+
+## Los cinco agentes, paso a paso
+
+El orden importa: a partir del segundo, cada agente depende de lo que el anterior dejó escrito en disco. La primera vez hay que pasar por los cinco en orden; después, solo hace falta volver a uno cuando lo que produjo haya quedado desactualizado (por ejemplo, si la aplicación cambió, vuelve a mapear).
+
+### Agente 1 — Explorador (`agente-qa map`)
+
+- **Necesita**: la URL de la aplicación (de `config.json`) y, si vas a mapear pantallas que requieren login, las credenciales de una cuenta de pruebas en `.agente-qa/.env`.
+- **Produce**: `.agente-qa/map/map.json` (pantallas, textos, localizadores y escenarios candidatos que el propio recorrido sugiere) y un Page Object Python por pantalla (`pages/*.py`, dentro del `testsDir` del proyecto), escrito mecánicamente a partir del mapa — sin pasar por el LLM.
+- **Debe ejecutarse el primero.** Los agentes 2 y 3 leen el mapa en vez de explorar nada por su cuenta, y se niegan a arrancar si no lo encuentran — el error que lanzan nombra `agente-qa map` como el comando a ejecutar.
+- **Seguridad**: usa SIEMPRE una cuenta de pruebas, nunca una cuenta real — el recorrido autenticado navega la aplicación y, solo con tu confirmación explícita acción por acción, puede llegar a enviar formularios; captura lo que esa cuenta ve. El mapa y los Page Objects que genera **se comitean al repositorio del proyecto** (no están en `.gitignore`), así que no deben acabar conteniendo nada que no quieras en git — de ahí también que el mapa redacte automáticamente cualquier secreto que reconozca de tu `.env`.
+
+### Agente 2 — Intake (menú "Crear plan de pruebas desde un texto", dentro de `agente-qa chat`)
+
+- **Necesita**: el mapa que dejó Agente 1, y tu descripción en texto — o, si el mapa propuso escenarios candidatos durante el recorrido, puedes elegir uno de esos en vez de escribir el tuyo.
+- **Produce**: un `.feature` en Gherkin, siempre en **inglés** (la prosa de los pasos y los títulos de escenario, sea cual sea el idioma real de la interfaz de la aplicación — la antigua opción "idioma de la interfaz" de la configuración ya no influye en esto; se mantiene en el esquema solo para que los `config.json` ya existentes sigan cargando), con cada texto citado copiado carácter a carácter del mapa. Si el modelo propone un texto que la aplicación real no tiene, Intake lo detecta y regenera el plan en vez de dejarlo pasar.
+- Pide tu aprobación explícita del plan antes de escribirlo a disco.
+
+### Agente 3 — Generador (menú "Generar tests Playwright desde un plan aprobado", dentro de `agente-qa chat`)
+
+- **Necesita**: el `.feature` aprobado por Agente 2 y el mapa de Agente 1. Antes de generar nada, revalida contra la aplicación real (con un navegador headless) que los localizadores que ese escenario usa siguen resolviendo a exactamente un elemento; si alguno ha dejado de serlo, te ofrece dos salidas: volver a mapear con `agente-qa map`, o escribir tú mismo la expresión Playwright correcta para ese localizador.
+- **Produce**: únicamente el step definition Python (`pytest-bdd`) del escenario, bajo `tests/`. **Nunca** un Page Object — los localizadores ya viven en los `pages/*.py` que dejó Agente 1, y un lint dedicado rechaza cualquier step que intente construirse su propio localizador en vez de llamar a un método del Page Object.
+- Autochequeo de compilación/lint (`ruff` + `py_compile`) antes de escribir nada al proyecto, con reintentos si falla.
+
+### Agente 4 — Ejecutor (menú "Ejecutar tests", dentro de `agente-qa chat`)
+
+- **Necesita**: tests ya generados por Agente 3 bajo el `testsDir` del proyecto.
+- Selecciona (por tags Gherkin) y lanza los tests con `pytest`; pregunta capturas de pantalla y vídeo en cada ejecución (nativo de `pytest-playwright`, solo en fallo por defecto).
+- **Produce**: el `junit-xml` y el reporte extendido (`pytest-html`) que confirma Agente 5.
+
+### Agente 5 — Reportes (menú "Ver/generar reportes", dentro de `agente-qa chat`)
+
+- **Necesita**: el `junit-xml` que dejó Agente 4.
+- **Produce**: un resumen en Markdown (conteos, duración, listado de fallos), con nivel de detalle a elegir en cada generación, y confirma la ruta del reporte HTML extendido que ya dejó Agente 4.
+
+Todos los agentes informan de su progreso a través de un canal de eventos tipado que el CLI imprime en pantalla al vuelo — inicio y fin de cada paso, avisos, duración — no solo al terminar.
 
 ## Instalación — Plugin de Claude Code
 
@@ -77,6 +118,7 @@ proyecto, nada global:
 ```
 npm install agente-qa
 npx agente-qa init
+npx agente-qa map
 npx agente-qa chat
 ```
 
@@ -106,13 +148,16 @@ instalarlo por proyecto:
 ```
 npm install -g agente-qa
 agente-qa init
+agente-qa map
 agente-qa chat
 ```
 
 Funciona igual — `init` sigue creando `.agente-qa/` dentro del repo donde lo
 ejecutes; la única diferencia es dónde vive el propio paquete `agente-qa`.
 
-`init` pregunta en qué carpeta del proyecto guardar los tests, la URL de la aplicación que vas a probar, en qué idioma está su interfaz (español por defecto, o inglés) y las rutas conocidas del proyecto (página principal, login, y cualquier otra que quieras añadir) — todo se guarda en `<proyecto>/.agente-qa/config.json` (sí va a git, no son datos sensibles). Además crea (si no existe ya) una plantilla `.env` en `<proyecto>/.agente-qa/.env` — fuera de git (`.agente-qa/.gitignore` ya la excluye) — donde rellenas a mano, con un editor de texto, un usuario/contraseña de prueba (opcional, solo si vas a probar login) y el proveedor/API key/modelo del LLM. `init` nunca pide estos dos últimos valores por chat ni sobrescribe el `.env` si ya existe.
+`init` pregunta en qué carpeta del proyecto guardar los tests, la URL de la aplicación que vas a probar, en qué idioma está su interfaz (español por defecto, o inglés — este dato ya no lo consume ningún agente; se sigue guardando solo para no romper la carga de `config.json` de proyectos existentes) y las rutas conocidas del proyecto (página principal, login, y cualquier otra que quieras añadir) — todo se guarda en `<proyecto>/.agente-qa/config.json` (sí va a git, no son datos sensibles). Además crea (si no existe ya) una plantilla `.env` en `<proyecto>/.agente-qa/.env` — fuera de git (`.agente-qa/.gitignore` ya la excluye) — donde rellenas a mano, con un editor de texto, un usuario/contraseña de prueba (opcional, solo si vas a probar login) y el proveedor/API key/modelo del LLM. `init` nunca pide estos dos últimos valores por chat ni sobrescribe el `.env` si ya existe.
+
+Rellena el `.env` y ejecuta `agente-qa map` antes de cualquier otro comando: sin un mapa, "Crear plan de pruebas" y "Generar tests Playwright" se niegan a arrancar.
 
 ### Proveedor LLM — opciones y cómo conseguir cada API key
 
@@ -151,6 +196,7 @@ cd Agente_QA
 npm install
 npm run build
 node cli/dist/bin/agente-qa.js init
+node cli/dist/bin/agente-qa.js map
 node cli/dist/bin/agente-qa.js chat
 ```
 
@@ -177,6 +223,7 @@ carpeta, con la ruta absoluta al build:
 npm run build
 mkdir /tmp/agente-qa-smoke && cd /tmp/agente-qa-smoke
 node /ruta/absoluta/a/Agente_QA/cli/dist/bin/agente-qa.js init
+node /ruta/absoluta/a/Agente_QA/cli/dist/bin/agente-qa.js map
 node /ruta/absoluta/a/Agente_QA/cli/dist/bin/agente-qa.js chat
 ```
 
@@ -188,8 +235,8 @@ cuando termines.
 
 ## Uso
 
-Ambas formas se usan igual: la conversación siempre empieza con una presentación y un menú de opciones (crear plan de pruebas, generar tests, ejecutar tests, ver reportes, configurar).
+Ambas formas se usan igual: `agente-qa map` mapea la aplicación (hazlo primero, y cada vez que la aplicación cambie), y la conversación de `agente-qa chat` siempre empieza con una presentación y un menú de opciones (mapear aplicación, crear plan de pruebas, generar tests, ejecutar tests, ver reportes, configurar) — el propio menú también ofrece "Mapear aplicación" como primera opción, así que no hace falta salir a la terminal para volver a mapear.
 
 ## Estado del proyecto
 
-El pipeline de 4 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.6`. La suite pasa 250 passed, 3 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El pipeline de 5 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.6`. La suite pasa 585 passed, 3 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
