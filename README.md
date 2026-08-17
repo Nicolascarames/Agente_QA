@@ -239,4 +239,16 @@ Ambas formas se usan igual: `agente-qa map` mapea la aplicación (hazlo primero,
 
 ## Estado del proyecto
 
-El pipeline de 5 agentes (motor core + CLI) está implementado y **publicado en npm**: [`agente-qa`](https://www.npmjs.com/package/agente-qa) y [`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), versión `0.1.6`. La suite pasa 585 passed, 3 skipped tests (los `skipped` dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`, `pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin de Claude Code queda pendiente como plan futuro independiente. Cada decisión de arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
+El pipeline de 5 agentes (motor core + CLI), incluido el Agente Explorador y el mapa de
+la aplicación, está **implementado en este repositorio y todavía no publicado en npm**.
+Los paquetes publicados, [`agente-qa`](https://www.npmjs.com/package/agente-qa) y
+[`@agente-qa/core`](https://www.npmjs.com/package/@agente-qa/core), siguen en la versión
+`0.1.6` anterior a este pipeline (sin Explorador ni mapa de la aplicación) — instalar
+desde npm hoy y ejecutar `agente-qa map` da "unknown command". Para usar lo descrito en
+este README, clona y compila el propio repositorio (ver "Desarrollar sobre el propio
+Agente_QA" más abajo); publicar la versión con el pipeline completo es una decisión
+pendiente del mantenedor. La suite pasa 610 passed, 3 skipped tests (los `skipped`
+dependen de tener `ruff` y el stack completo de Python — `pytest`, `pytest-bdd`,
+`pytest-playwright`, `pytest-html` — instalados en la máquina). La superficie de plugin
+de Claude Code queda pendiente como plan futuro independiente. Cada decisión de
+arquitectura se documenta en [`docs/superpowers/specs/`](docs/superpowers/specs/).
