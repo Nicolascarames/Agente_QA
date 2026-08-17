@@ -77,10 +77,15 @@ Convención de cada método, según su prefijo: "get_*" devuelve un "Locator" y 
 sobre él; "fill_*" y "select_*" reciben un único argumento "value: str"; "click_*" y
 "goto" no reciben ningún argumento.
 
-Un step definition NUNCA construye su propio localizador: nada de "page.get_by_...(...)"
-ni "page.locator(...)" directamente sobre "page". Todo elemento de la pantalla se obtiene
-a través de uno de los métodos de arriba. Las aserciones sobre la propia página (no sobre
-un elemento concreto) siguen permitidas, por ejemplo "expect(page).to_have_url(...)".
+Un step definition NUNCA construye su propio localizador ni resuelve un elemento de la
+pantalla llamando directamente a un método de "page" con un selector, un rol o un texto:
+nada de "page.get_by_...(...)", "page.locator(...)", "page.click(...)", "page.fill(...)",
+"page.wait_for_selector(...)", "page.query_selector(...)" ni ningún otro método de "page"
+que localice o interactúe con un elemento concreto de la pantalla. Todo elemento se
+obtiene SIEMPRE a través de uno de los métodos de arriba. Lo único que sigue permitido
+directamente sobre "page" es lo que no localiza ningún elemento: navegar ("page.goto(...)"),
+leer la propia página ("page.url") y las aserciones sobre la página en sí, por ejemplo
+"expect(page).to_have_url(...)".
 
 El proyecto ya tiene instalado el plugin "pytest-playwright": el fixture "page" (una página de navegador ya lista) está disponible automáticamente en cualquier test, no lo definas tú ni escribas ningún conftest.py.
 

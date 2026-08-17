@@ -54,6 +54,27 @@ describe("codeGenerationPrompt", () => {
     expect(prompt).toContain("expect(page).to_have_url(");
   });
 
+  // The lint (checkNoDirectPageUse, core/src/codeCheck/pageFixtureLint.ts) rejects
+  // far more than these two spellings — page.click, page.fill,
+  // page.wait_for_selector, page.query_selector, and other selector-taking
+  // methods. The old prompt only named the two the lint used to check, so a
+  // fully prompt-obedient model could still write `page.click("...")` and pass
+  // the prompt's own stated rule while failing the lint. The prompt must widen
+  // together with the lint so the two describe the same rule.
+  it("names selector-taking page methods beyond get_by_*/locator(...) as forbidden too, matching the widened lint", () => {
+    const prompt = codeGenerationPrompt(featureText, map, "login", naming);
+    expect(prompt).toContain("page.click(");
+    expect(prompt).toContain("page.fill(");
+    expect(prompt).toContain("page.wait_for_selector(");
+    expect(prompt).toContain("page.query_selector(");
+  });
+
+  it("keeps page.goto and page.url explicitly legal, next to the widened prohibition", () => {
+    const prompt = codeGenerationPrompt(featureText, map, "login", naming);
+    expect(prompt).toContain("page.goto(");
+    expect(prompt).toContain("page.url");
+  });
+
   it("names the exact module and class to import the Page Object from", () => {
     const prompt = codeGenerationPrompt(featureText, map, "login", naming);
     expect(prompt).toContain("from pages.login_page import LoginPage");
