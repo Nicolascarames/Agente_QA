@@ -34,6 +34,13 @@ function parseGeneratedFiles(raw: string): GeneratedFile[] {
     );
   }
 
+  const [file] = files;
+  if (!file.path.startsWith("tests/")) {
+    throw new Error(
+      `La respuesta del modelo generó el archivo "${file.path}" fuera de "tests/" en vez del único esperado (step definitions bajo "tests/"): ${cleaned.slice(0, 80)}...`
+    );
+  }
+
   return files;
 }
 

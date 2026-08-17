@@ -6,6 +6,7 @@ import type { LocatorVerifier, ExplorationCredentials } from "../../locatorVerif
 import type { EmitEvent } from "../../events/agentEvent.js";
 import { loadAppMap } from "../../appMap/mapStore.js";
 import { saveOverride } from "../../appMap/overrides.js";
+import { findScreen } from "../../appMap/mapQuery.js";
 import { locatorsUsedBy, checkMapFreshness } from "../../locatorVerify/mapFreshness.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
 import { testFileExists, testFilePath, writeTestFiles } from "./writeTestFiles.js";
@@ -66,18 +67,29 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
       'El archivo .feature no incluye ninguna etiqueta "@screen:", así que no se puede saber a qué pantalla del mapa pertenece. Vuelve a generar el plan de pruebas, o ejecuta "agente-qa map" si el mapa está desactualizado.'
     );
   }
+  if (!findScreen(map, screenId)) {
+    throw new Error(
+      `La etiqueta "@screen:${screenId}" no corresponde a ninguna pantalla del mapa. Vuelve a generar el plan de pruebas, o ejecuta "agente-qa map" si el mapa está desactualizado.`
+    );
+  }
 
   const used = locatorsUsedBy(featureText, map);
   const freshness = await checkMapFreshness(used, verifier, baseUrl, credentials);
   if (!freshness.ok) {
-    const decision = await callbacks.onStaleLocator(freshness.stale);
-    if (decision.action === "remap") {
+    if (freshness.stale.length === 0) {
       throw new Error(
-        'Uno o más localizadores ya no coinciden con la aplicación real. Ejecuta "agente-qa map" para volver a mapear la aplicación antes de generar código.'
+        'La verificación de los localizadores contra la aplicación real ha fallado sin poder identificar qué localizador falló (por ejemplo, un fallo de navegación o que la aplicación no esté disponible en la URL configurada). Comprueba que la aplicación es accesible e inténtalo de nuevo.'
       );
     }
-    const stale = freshness.stale[0];
-    await saveOverride(projectRoot, { screenId: stale.screenId, name: stale.name, python: decision.python });
+    for (const stale of freshness.stale) {
+      const decision = await callbacks.onStaleLocator([stale]);
+      if (decision.action === "remap") {
+        throw new Error(
+          'Uno o más localizadores ya no coinciden con la aplicación real. Ejecuta "agente-qa map" para volver a mapear la aplicación antes de generar código.'
+        );
+      }
+      await saveOverride(projectRoot, { screenId: stale.screenId, name: stale.name, python: decision.python });
+    }
   } else if (freshness.warnings) {
     emit({ agent: "generador", status: "warn", depth: 1, message: freshness.warnings });
   }

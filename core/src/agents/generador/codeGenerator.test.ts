@@ -79,6 +79,15 @@ class LoginPage:
     await expect(generateCode(featureText, llm, map, "login", naming)).rejects.toThrow(/único esperado/);
   });
 
+  it("throws a clear error when the generated file's path is not under tests/", async () => {
+    const badPathResponse = `# FILE: pages/login_page.py
+class LoginPage:
+    pass
+`;
+    const llm = new FakeLLMProvider([badPathResponse]);
+    await expect(generateCode(featureText, llm, map, "login", naming)).rejects.toThrow(/tests\//);
+  });
+
   it("propagates codeGenerationPrompt's error when the screen doesn't exist in the map", async () => {
     const llm = new FakeLLMProvider([scriptedResponse]);
     await expect(generateCode(featureText, llm, map, "ghost", naming)).rejects.toThrow(/ghost/);

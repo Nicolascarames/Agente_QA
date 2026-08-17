@@ -21,6 +21,10 @@ const loginScreen: Screen = {
       name: "log_in_button", kind: "button", accessibleName: "Log in",
       python: 'page.get_by_role("button", name="Log in", exact=True)', count: 1, verifiedAt: "t",
     },
+    {
+      name: "email_input", kind: "input", accessibleName: "Email",
+      python: 'page.get_by_label("Email")', count: 1, verifiedAt: "t",
+    },
   ],
 };
 
@@ -37,6 +41,10 @@ const simpleFeature = "Feature: Login\n\n  @screen:login\n  Scenario: x\n    Giv
 
 // Names the map's one locator via a step mapFreshness.locatorsUsedBy recognizes.
 const featureWithClick = 'Feature: Login\n\n  @screen:login\n  Scenario: x\n    When I click "Log in"\n    Then I see "Welcome back"\n';
+
+// Names both of the map's locators, so checkMapFreshness can report two stale entries.
+const featureWithTwoLocators =
+  'Feature: Login\n\n  @screen:login\n  Scenario: x\n    When I fill "Email" with "a@b.com"\n    And I click "Log in"\n    Then I see "Welcome back"\n';
 
 const scriptedResponse = `# FILE: tests/test_login.py
 from pytest_bdd import scenarios, given, when, then
@@ -115,6 +123,28 @@ describe("runGenerador", () => {
     ).rejects.toThrow(/@screen:/);
   });
 
+  it("throws an actionable error naming 'agente-qa map' when the @screen: tag names a screen absent from the map", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(
+      "Feature: Login\n\n  @screen:ghost\n  Scenario: x\n    Given a\n    When b\n    Then c\n"
+    );
+
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm: new FakeLLMProvider([]),
+        checker: new FakeCodeChecker([]),
+        verifier: new FakeLocatorVerifier([]),
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: callbacks(),
+        emit: () => {},
+      })
+    ).rejects.toThrow(/agente-qa map/);
+  });
+
   it("generates and writes only tests/*.py, never a file under pages/", async () => {
     await saveAppMap(tmpProject, baseMap);
     const featureFilePath = await writeFeature(simpleFeature);
@@ -137,9 +167,42 @@ describe("runGenerador", () => {
     });
 
     expect(writtenPaths).toHaveLength(1);
-    expect(writtenPaths.some((p) => /pages[\\/]/.test(p))).toBe(false);
     expect(writtenPaths[0]).toMatch(/tests[\\/]test_login\.py$/);
     expect(await fs.readFile(writtenPaths[0], "utf-8")).toContain("scenarios(");
+  });
+
+  it("rejects a generated file whose path is not under tests/, and never writes it to disk", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(simpleFeature);
+    const badPathResponse = `# FILE: pages/login_page.py
+class LoginPage:
+    pass
+`;
+    const llm = new FakeLLMProvider([badPathResponse]);
+    const checker = new FakeCodeChecker([]);
+    const verifier = new FakeLocatorVerifier([]);
+    const cb = callbacks();
+
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm,
+        checker,
+        verifier,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+        emit: () => {},
+      })
+    ).rejects.toThrow(/tests\//);
+
+    const exists = await fs
+      .access(path.join(tmpProject, "tests", "pages", "login_page.py"))
+      .then(() => true, () => false);
+    expect(exists).toBe(false);
+    expect(checker.receivedCalls).toHaveLength(0);
   });
 
   it("routes a stale locator through onStaleLocator, and persists an override answer via saveOverride", async () => {
@@ -196,6 +259,119 @@ describe("runGenerador", () => {
     ).rejects.toThrow(/agente-qa map/);
 
     expect(llm.receivedCalls).toHaveLength(0);
+  });
+
+  it("throws an actionable error, without calling onStaleLocator, when the verifier fails without naming any locator", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(featureWithClick);
+    const llm = new FakeLLMProvider([]);
+    const checker = new FakeCodeChecker([]);
+    // A navigation timeout, a Playwright traceback, the app being down: none of
+    // these name the locator, so checkMapFreshness computes an empty `stale`.
+    const verifier = new FakeLocatorVerifier([{ ok: false, errors: "Navigation timeout of 30000ms exceeded." }]);
+    const cb = callbacks();
+
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm,
+        checker,
+        verifier,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+        emit: () => {},
+      })
+    ).rejects.toThrow(/verificaci/i);
+
+    expect(cb.onStaleLocator).not.toHaveBeenCalled();
+  });
+
+  it("calls onStaleLocator once per stale entry, and persists an override for each", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(featureWithTwoLocators);
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: false, errors: "email_input: 0 coincidencias\n\nlog_in_button: 0 coincidencias" },
+    ]);
+    const overridesByName: Record<string, string> = {
+      email_input: 'page.get_by_test_id("email")',
+      log_in_button: 'page.get_by_test_id("login-btn")',
+    };
+    const onStaleLocator = vi.fn(
+      async (stale: { screenId: string; name: string; count: number }[]) =>
+        ({ action: "override" as const, python: overridesByName[stale[0].name] })
+    );
+    const cb = callbacks({ onStaleLocator });
+
+    await runGenerador({
+      featureFilePath,
+      llm,
+      checker,
+      verifier,
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: cb,
+      emit: () => {},
+    });
+
+    expect(onStaleLocator).toHaveBeenCalledTimes(2);
+    expect(onStaleLocator).toHaveBeenNthCalledWith(1, [{ screenId: "login", name: "email_input", count: 0 }]);
+    expect(onStaleLocator).toHaveBeenNthCalledWith(2, [{ screenId: "login", name: "log_in_button", count: 0 }]);
+
+    const overrides = await loadOverrides(tmpProject);
+    expect(overrides.locators).toEqual(
+      expect.arrayContaining([
+        { screenId: "login", name: "email_input", python: overridesByName.email_input },
+        { screenId: "login", name: "log_in_button", python: overridesByName.log_in_button },
+      ])
+    );
+    expect(overrides.locators).toHaveLength(2);
+  });
+
+  it("aborts on a remap answer to the second of two stale locators, having already persisted the first's override", async () => {
+    await saveAppMap(tmpProject, baseMap);
+    const featureFilePath = await writeFeature(featureWithTwoLocators);
+    const llm = new FakeLLMProvider([scriptedResponse]);
+    const checker = new FakeCodeChecker([{ ok: true }]);
+    const verifier = new FakeLocatorVerifier([
+      { ok: false, errors: "email_input: 0 coincidencias\n\nlog_in_button: 0 coincidencias" },
+    ]);
+    let call = 0;
+    const onStaleLocator = vi.fn(async () => {
+      call += 1;
+      if (call === 1) return { action: "override" as const, python: 'page.get_by_test_id("email")' };
+      return { action: "remap" as const };
+    });
+    const cb = callbacks({ onStaleLocator });
+
+    await expect(
+      runGenerador({
+        featureFilePath,
+        llm,
+        checker,
+        verifier,
+        projectRoot: tmpProject,
+        testsDir: "tests",
+        baseUrl: "https://example.com",
+        credentials: undefined,
+        callbacks: cb,
+        emit: () => {},
+      })
+    ).rejects.toThrow(/agente-qa map/);
+
+    expect(onStaleLocator).toHaveBeenCalledTimes(2);
+    expect(llm.receivedCalls).toHaveLength(0);
+
+    const overrides = await loadOverrides(tmpProject);
+    expect(overrides.locators).toEqual([
+      { screenId: "login", name: "email_input", python: 'page.get_by_test_id("email")' },
+    ]);
   });
 
   it("retries generation when the checker reports a compilation failure, feeding the error back as feedback", async () => {
