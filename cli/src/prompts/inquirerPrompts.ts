@@ -162,9 +162,16 @@ export function buildRealGeneratorPrompts(): GeneratorPrompts {
     },
     async onStaleLocator(stale) {
       const [item] = stale;
-      console.log(
-        `\n⚠ El localizador "${item.name}" de la pantalla "${item.screenId}" ya no es único en la aplicación real: ahora coincide con ${item.count} elemento(s).`
-      );
+      // count === 0 here is never "matches 0 elements" (that is a WARNING, not
+      // a stale-locator failure — see checkMapFreshness) — it means the
+      // verifier's failure text carried no count at all (a navigation error, a
+      // traceback), so "ya no es único: coincide con 0 elementos" would be
+      // self-contradictory. Word the zero case as what it actually is.
+      const description =
+        item.count === 0
+          ? "ya no se ha podido resolver en la aplicación real"
+          : `ya no es único en la aplicación real: ahora coincide con ${item.count} elemento(s)`;
+      console.log(`\n⚠ El localizador "${item.name}" de la pantalla "${item.screenId}" ${description}.`);
       const action = await select<"remap" | "override">({
         message: "¿Cómo lo solucionamos?",
         choices: [

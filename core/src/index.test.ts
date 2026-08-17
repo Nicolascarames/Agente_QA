@@ -37,7 +37,7 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.runIntake).toBe("function");
   });
 
-  it("exports the Agente 2 (generador) surface", () => {
+  it("exports the Agente 3 (generador) surface", () => {
     expect(typeof core.parseFeatureHeader).toBe("function");
     expect(typeof core.generateCode).toBe("function");
     expect(typeof core.writeTestFiles).toBe("function");
@@ -81,7 +81,7 @@ describe("@agente-qa/core public API", () => {
     expect((core as Record<string, unknown>).checkExpectedLiterals).toBeUndefined();
   });
 
-  it("exports the Agente 3 (ejecutor) surface", () => {
+  it("exports the Agente 4 (ejecutor) surface", () => {
     expect(typeof core.listAvailableTags).toBe("function");
     expect(typeof core.runEjecutor).toBe("function");
     expect(typeof core.FakeTestRunner).toBe("function");
@@ -90,7 +90,7 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.MissingTestToolError).toBe("function");
   });
 
-  it("exports the Agente 4 (reportes) surface", () => {
+  it("exports the Agente 5 (reportes) surface", () => {
     expect(typeof core.parseJunitResults).toBe("function");
     expect(typeof core.generateSummaryMarkdown).toBe("function");
     expect(typeof core.runReportes).toBe("function");
