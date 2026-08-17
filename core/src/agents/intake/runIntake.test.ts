@@ -102,6 +102,47 @@ describe("runIntake", () => {
     expect(offered).toBe(1);
   });
 
+  it("skips a map scenario candidate whose screenId does not resolve, instead of crashing when the user picks it", async () => {
+    // ScenarioCandidateSchema validates shape, never that screenId actually
+    // resolves — a hallucinated screenId from generateScenarioCandidates would
+    // otherwise reach gherkinGenerationPrompt verbatim and throw the bare
+    // `La pantalla "X" no existe en el mapa.` with no recovery.
+    const hallucinatedScenario: ScenarioCandidate = {
+      id: "hallucinated", title: "Some ghost flow", screenId: "ghost",
+      involvedScreens: ["ghost"], rationale: "Invented by a bad LLM response",
+    };
+    const mapWithBadScenario: AppMap = { ...baseMap, scenarios: [hallucinatedScenario, scenarioCandidate] };
+    await saveAppMap(projectRoot, mapWithBadScenario);
+
+    let offered: ScenarioCandidate[] = [];
+    await runIntake({
+      initialText: "", llm: new FakeLLMProvider([validPlanJson]),
+      projectRoot, testsDir: "tests", emit: () => {},
+      callbacks: { ...callbacks, chooseScenario: async (list) => { offered = list; return list[0] ?? null; } },
+    });
+
+    expect(offered).toEqual([scenarioCandidate]);
+  });
+
+  it("falls back to the freeform flow, without ever calling chooseScenario, when every map scenario candidate has a hallucinated screenId", async () => {
+    const hallucinatedScenario: ScenarioCandidate = {
+      id: "hallucinated", title: "Ghost flow", screenId: "ghost",
+      involvedScreens: ["ghost"], rationale: "Invented",
+    };
+    const mapWithOnlyBadScenarios: AppMap = { ...baseMap, scenarios: [hallucinatedScenario] };
+    await saveAppMap(projectRoot, mapWithOnlyBadScenarios);
+    const llm = new FakeLLMProvider([ambiguityResolved(), validPlanJson]);
+    const chooseScenario = vi.fn();
+
+    await runIntake({
+      initialText: "probar login", llm, projectRoot, testsDir: "tests",
+      callbacks: { ...callbacks, chooseScenario },
+      emit: () => {},
+    });
+
+    expect(chooseScenario).not.toHaveBeenCalled();
+  });
+
   it("regenerates instead of presenting a plan whose literal is not in the map", async () => {
     await saveAppMap(projectRoot, mapWithScenario);
     const llm = new FakeLLMProvider([invented, grounded]);
@@ -139,6 +180,30 @@ describe("runIntake", () => {
     await expect(runIntake({
       initialText: "probar login", llm, projectRoot, testsDir: "tests", callbacks, emit: () => {},
     })).rejects.toThrow(/Invalid email or password/);
+  });
+
+  it("falls back instead of ending with a dangling list when the exhausted plan's tag names a screen absent from the map", async () => {
+    await saveAppMap(projectRoot, mapWithScenario);
+    // The model can go rogue and tag a screen the map doesn't have — when that
+    // happens, checkFeatureLiterals's `candidates` (real texts of THAT screen)
+    // comes back empty, and the message must not end with a dangling
+    // "Textos reales de esa pantalla: " with nothing after the colon.
+    const ghostPlan = gherkinResponse(
+      'Feature: Ghost\n\n  @screen:ghost\n  Scenario: X\n    Then I see "Anything"\n'
+    );
+    const llm = new FakeLLMProvider([ghostPlan, ghostPlan, ghostPlan]);
+
+    let thrown: Error | undefined;
+    try {
+      await runIntake({
+        initialText: "probar login", llm, projectRoot, testsDir: "tests", callbacks, emit: () => {},
+      });
+    } catch (err) {
+      thrown = err as Error;
+    }
+
+    expect(thrown).toBeDefined();
+    expect(thrown?.message.trimEnd()).not.toMatch(/Textos reales de esa pantalla:$/);
   });
 
   it("emits a warn event while regenerating and an ok event once the plan is written", async () => {

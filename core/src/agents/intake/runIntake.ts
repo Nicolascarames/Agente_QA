@@ -67,10 +67,14 @@ async function generateGroundedPlan(
         detail: missing.map((m) => `"${m.literal}"`).join(", "),
       });
       if (isLastAttempt) {
+        const realTexts =
+          candidates.length > 0
+            ? candidates.slice(0, 20).join(" · ")
+            : "(ninguno — la etiqueta @screen: del plan no nombra una pantalla que exista en el mapa)";
         throw new Error(
           `El plan sigue esperando textos que no existen en la aplicación: ${missing
             .map((m) => `"${m.literal}"`)
-            .join(", ")}.\nTextos reales de esa pantalla: ${candidates.slice(0, 20).join(" · ")}`
+            .join(", ")}.\nTextos reales de esa pantalla: ${realTexts}`
         );
       }
       text = `${text}\n\nEstos textos NO existen en la aplicación y no debes usarlos: ${missing
@@ -104,8 +108,14 @@ export async function runIntake(options: RunIntakeOptions): Promise<{ plan: Gher
   let screenId = map.screens[0].id;
   let usingMapScenario = false;
 
-  if (map.scenarios.length > 0) {
-    const chosen = await callbacks.chooseScenario(map.scenarios);
+  // ScenarioCandidateSchema validates a candidate's shape but never that its
+  // screenId actually resolves in this map — generateScenarioCandidates is an
+  // LLM step and can hallucinate one. Presenting a candidate the user could
+  // pick and then crash on (a bare "La pantalla "X" no existe en el mapa.",
+  // with no recovery) is worse than just not offering it.
+  const resolvableScenarios = map.scenarios.filter((scenario) => findScreen(map, scenario.screenId) !== null);
+  if (resolvableScenarios.length > 0) {
+    const chosen = await callbacks.chooseScenario(resolvableScenarios);
     if (chosen) {
       text = chosen.title;
       screenId = chosen.screenId;
