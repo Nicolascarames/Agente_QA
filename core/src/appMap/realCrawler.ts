@@ -4,7 +4,7 @@ import type { EmitEvent } from "../events/agentEvent.js";
 import type { AmbiguousCandidate, AppMap, LocatorEntry, Screen, WriteAction } from "./schema.js";
 import { screenSignature, isSuspectedLoop } from "./signature.js";
 import { toUrlTemplate, siblingTemplate, matchesTemplate } from "./urlTemplate.js";
-import { pythonIdentifier, uniqueName } from "./naming.js";
+import { disambiguatedName, pythonIdentifier, uniqueName } from "./naming.js";
 import { pythonLiteral } from "./pythonLiteral.js";
 import { redactText } from "./redact.js";
 import { elementKey, mergeScreenState } from "./elementIdentity.js";
@@ -701,11 +701,13 @@ export async function captureScreen(page: Page, context: CaptureContext): Promis
     const suffix = candidate.kind === "input" ? "_input" : candidate.kind === "button" ? "_button" : "";
     // Usually one. Several when an attribute separated twins that share an
     // accessible name, in which case they also share the identifier the name
-    // normalises to — and `uniqueName` is exactly the helper that already
-    // settles that, so the second becomes `log_in_button_2` rather than
-    // overwriting the first.
+    // normalises to — and `disambiguatedName` is exactly the helper that
+    // already settles that, naming the second after what distinguishes it
+    // (`log_in_button_submit`) instead of after a counter that would encode
+    // crawl order and silently move when the app changes.
     for (const resolution of resolved.resolutions) {
-      const name = uniqueName(`${prefix}${pythonIdentifier(cleanName)}${suffix}`, taken);
+      const base = `${prefix}${pythonIdentifier(cleanName)}${suffix}`;
+      const name = disambiguatedName(base, resolution.disambiguatedBy, resolution.python, taken);
       taken.add(name);
       const rawAttributes = await semanticAttributes(resolution.handle);
       // Every string that reaches a Screen passes through the capture's

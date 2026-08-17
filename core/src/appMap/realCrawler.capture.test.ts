@@ -162,9 +162,22 @@ describe.skipIf(!process.env.CI && !chromium.executablePath())("captureScreen", 
       const logIn = screen.locators.filter((l) => l.accessibleName === "Log in" && l.kind === "button");
       expect(logIn).toHaveLength(2);
       expect(logIn.map((l) => l.disambiguatedBy)).toEqual(["attribute:[type='button']", "attribute:[type='submit']"]);
-      // Same accessible name, so the same identifier — `uniqueName` is what
-      // keeps the second from overwriting the first.
-      expect(logIn.map((l) => l.name)).toEqual(["log_in_button", "log_in_button_2"]);
+      // Same accessible name, so the same identifier — `disambiguatedName` is
+      // what keeps the second from overwriting the first, naming it after
+      // what distinguishes it rather than after a counter.
+      expect(logIn.map((l) => l.name)).toEqual(["log_in_button", "log_in_button_submit"]);
+      await page.close();
+    });
+
+    // The whole point of `disambiguatedName`: the suffix comes from what
+    // distinguishes the element — its `type` here — never from a counter that
+    // would encode crawl order and silently move when the app changes.
+    it("names a disambiguated locator after what distinguishes it, never after crawl order", async () => {
+      const { page, screen } = await siblingsScreen();
+      const names = screen.locators.filter((l) => l.accessibleName === "Log in").map((l) => l.name).sort();
+      // The submit says so in its name; neither name encodes crawl order.
+      expect(names).toEqual(["log_in_button", "log_in_button_submit"]);
+      expect(names.some((n) => /_\d+$/.test(n))).toBe(false);
       await page.close();
     });
 
