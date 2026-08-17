@@ -11,7 +11,15 @@ import type {
 
 export const realInitPrompts: InitPrompts = {
   async inputTestsDir() {
-    return input({ message: "¿En qué carpeta guardamos los tests? (relativa al proyecto)", default: "tests" });
+    return input({
+      message: "¿En qué carpeta guardamos los tests? (relativa al proyecto)",
+      // Default inside .agente-qa/ so everything this tool owns lives in one
+      // folder: config, credentials, the map, the emitted Page Objects and the
+      // generated tests. pytest never sees the leading dot — runEjecutor runs
+      // with cwd set to this directory, so the dotted segment is above cwd and
+      // `norecursedirs` (which skips `.*`) does not apply.
+      default: ".agente-qa/tests",
+    });
   },
   async confirmHeadedMode() {
     return select<boolean>({
