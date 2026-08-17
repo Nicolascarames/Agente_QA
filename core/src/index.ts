@@ -61,6 +61,7 @@ export type { GeneratedFile } from "./agents/generador/codeGenerator.js";
 export type { CodeGenerationEvidence } from "./prompts/generador.js";
 export { writeTestFiles, testFileExists, testFilePath } from "./agents/generador/writeTestFiles.js";
 export { listFeatureFiles } from "./agents/generador/listFeatureFiles.js";
+export { rewriteStepLocator } from "./agents/generador/rewriteStepLocator.js";
 export { runGenerador } from "./agents/generador/runGenerador.js";
 export type { GeneratorCallbacks, RunGeneradorOptions } from "./agents/generador/runGenerador.js";
 
