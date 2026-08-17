@@ -9,3 +9,5 @@ Pruebas/
 # SÍ se versionan (son la fuente de verdad del mapa); aquí no, son pruebas.
 .agente-qa/
 tests/
+.agente-qa/tests/results
+.agente-qa/tests/test-results
