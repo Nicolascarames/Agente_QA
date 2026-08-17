@@ -5,8 +5,12 @@ import { spawn } from "node:child_process";
 import { assertSafeRelativePath } from "../util/assertSafeRelativePath.js";
 import { buildVerificationScript } from "./buildVerificationScript.js";
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
-import type { LocatorCheck, LocatorVerifier, LocatorVerificationResult } from "./locatorVerifier.js";
-import type { ExplorationCredentials } from "../siteExplorer/siteExplorer.js";
+import type {
+  LocatorCheck,
+  LocatorVerifier,
+  LocatorVerificationResult,
+  ExplorationCredentials,
+} from "./locatorVerifier.js";
 
 export class MissingLocatorVerifierToolError extends Error {
   constructor(detail: string) {

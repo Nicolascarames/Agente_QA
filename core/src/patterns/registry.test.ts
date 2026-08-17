@@ -37,7 +37,6 @@ describe("pattern registry", () => {
       name: "checkout",
       description: "Flujo de compra completo",
       gherkinTemplate: "Feature: Checkout\n  Scenario: x\n    Given a\n",
-      pageObjectTemplate: "class CheckoutPage:\n    pass\n",
     };
     await saveProjectPattern(tmpProject, custom);
     const projectPatterns = await loadProjectPatterns(tmpProject);
@@ -49,7 +48,6 @@ describe("pattern registry", () => {
       name: "checkout",
       description: "Flujo de compra completo",
       gherkinTemplate: "Feature: Checkout\n  Scenario: x\n    Given a\n",
-      pageObjectTemplate: "",
     };
     await saveProjectPattern(tmpProject, custom);
     const all = await loadAllPatterns(tmpProject);

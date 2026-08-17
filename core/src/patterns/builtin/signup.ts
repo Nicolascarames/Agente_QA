@@ -23,24 +23,4 @@ export const signupPattern: Pattern = {
     And pulso el botón de crear cuenta
     Then veo un mensaje de error indicando que el email ya existe
 `,
-  pageObjectTemplate: `class SignupPage:
-    def __init__(self, page):
-        self.page = page
-        self.email_input = page.get_by_label("Email")
-        self.password_input = page.get_by_label("Contraseña")
-        self.submit_button = page.get_by_role("button", name="Crear cuenta")
-        self.error_message = page.get_by_role("alert")
-
-    def goto(self, base_url: str):
-        self.page.goto(f"{base_url}/signup")
-
-    def signup(self, email: str, password: str):
-        self.email_input.fill(email)
-        self.password_input.fill(password)
-        self.submit_button.click()
-`,
-  navigationHints: {
-    routeCandidates: ["/signup", "/register", "/sign-up"],
-    requiresLogin: false,
-  },
 };

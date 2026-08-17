@@ -1,6 +1,10 @@
-import type { LocatorVerifier, LocatorCheck, LocatorVerificationResult } from "./locatorVerifier.js";
+import type {
+  LocatorVerifier,
+  LocatorCheck,
+  LocatorVerificationResult,
+  ExplorationCredentials,
+} from "./locatorVerifier.js";
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
-import type { ExplorationCredentials } from "../siteExplorer/siteExplorer.js";
 
 export interface FakeLocatorVerifierCall {
   files: GeneratedFile[];

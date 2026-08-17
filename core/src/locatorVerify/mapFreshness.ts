@@ -1,8 +1,7 @@
 import type { AppMap, LocatorEntry } from "../appMap/schema.js";
 import { findScreen } from "../appMap/mapQuery.js";
-import type { LocatorCheck, LocatorVerifier } from "./locatorVerifier.js";
+import type { LocatorCheck, LocatorVerifier, ExplorationCredentials } from "./locatorVerifier.js";
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
-import type { ExplorationCredentials } from "../siteExplorer/siteExplorer.js";
 
 export interface UsedLocator {
   screenId: string;

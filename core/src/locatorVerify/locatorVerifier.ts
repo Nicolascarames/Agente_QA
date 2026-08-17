@@ -1,5 +1,9 @@
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
-import type { ExplorationCredentials } from "../siteExplorer/siteExplorer.js";
+
+export interface ExplorationCredentials {
+  username: string;
+  password: string;
+}
 
 export interface LocatorCheck {
   method: string;

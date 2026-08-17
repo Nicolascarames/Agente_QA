@@ -4,8 +4,8 @@ import { matchPattern } from "./matcher.js";
 import type { Pattern } from "../schemas/pattern.js";
 
 const patterns: Pattern[] = [
-  { name: "login", description: "Inicio de sesión", gherkinTemplate: "Feature: x\n", pageObjectTemplate: "" },
-  { name: "signup", description: "Registro", gherkinTemplate: "Feature: y\n", pageObjectTemplate: "" },
+  { name: "login", description: "Inicio de sesión", gherkinTemplate: "Feature: x\n" },
+  { name: "signup", description: "Registro", gherkinTemplate: "Feature: y\n" },
 ];
 
 describe("matchPattern", () => {

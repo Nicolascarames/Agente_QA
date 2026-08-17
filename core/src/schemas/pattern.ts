@@ -1,22 +1,15 @@
 import { z } from "zod";
 
-export const NegativeProbeSchema = z.object({
-  kind: z.literal("invalid-credentials"),
-});
-export type NegativeProbe = z.infer<typeof NegativeProbeSchema>;
-
-export const NavigationHintsSchema = z.object({
-  routeCandidates: z.array(z.string()).min(1),
-  requiresLogin: z.boolean(),
-  negativeProbe: NegativeProbeSchema.optional(),
-});
-export type NavigationHints = z.infer<typeof NavigationHintsSchema>;
-
-export const PatternSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  gherkinTemplate: z.string().min(1),
-  pageObjectTemplate: z.string(),
-  navigationHints: NavigationHintsSchema.optional(),
-});
+// .strict(): a saved pattern still carrying the retired pageObjectTemplate/
+// navigationHints fields (from before the app-map pipeline replaced the site
+// explorer) must fail to parse, loudly, instead of silently having those
+// fields stripped — that silence is exactly what would let the explorer-era
+// shape wire itself back in unnoticed.
+export const PatternSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    gherkinTemplate: z.string().min(1),
+  })
+  .strict();
 export type Pattern = z.infer<typeof PatternSchema>;

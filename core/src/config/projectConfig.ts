@@ -24,6 +24,9 @@ export const ProjectConfigSchema = z.object({
           'La URL no puede incluir usuario/contraseña (ej. "https://usuario:clave@host"). config.json se sube a git: guarda las credenciales de test en .agente-qa/.env, no en la URL.',
       }
     ),
+  // @deprecated Read by no consumer since the app-map pipeline replaced the site
+  // explorer (which used to thread it into exploration/generation). Kept in the
+  // schema, defaulted, so existing projects' config.json keep parsing.
   appLanguage: z.enum(["es", "en"]).default("es"),
   routes: z.record(z.string(), z.string()).default({}),
   crawl: z

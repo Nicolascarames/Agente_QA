@@ -51,14 +51,34 @@ describe("@agente-qa/core public API", () => {
     expect(typeof core.MissingCodeToolError).toBe("function");
   });
 
-  it("exports the schema's navigation hints", () => {
-    expect(typeof core.NavigationHintsSchema.parse).toBe("function");
+  it("PatternSchema rejects an object carrying navigationHints", () => {
+    // Includes every field the OLD schema required (pageObjectTemplate) so the
+    // only reason this can fail is the presence of navigationHints itself —
+    // not an unrelated missing-field error that would reject it for free.
+    const result = core.PatternSchema.safeParse({
+      name: "login",
+      description: "Login",
+      gherkinTemplate: "Feature: Login\n",
+      pageObjectTemplate: "class LoginPage:\n    pass\n",
+      navigationHints: { routeCandidates: ["/login"], requiresLogin: true },
+    });
+    expect(result.success).toBe(false);
   });
 
-  it("exports the site explorer surface", () => {
-    expect(typeof core.FakeSiteExplorer).toBe("function");
-    expect(typeof core.createRealSiteExplorer).toBe("function");
-    expect(typeof core.MissingExplorerToolError).toBe("function");
+  it("no longer exports FakeSiteExplorer", () => {
+    expect((core as Record<string, unknown>).FakeSiteExplorer).toBeUndefined();
+  });
+
+  it("no longer exports createRealSiteExplorer", () => {
+    expect((core as Record<string, unknown>).createRealSiteExplorer).toBeUndefined();
+  });
+
+  it("no longer exports extractLocatorChecks", () => {
+    expect((core as Record<string, unknown>).extractLocatorChecks).toBeUndefined();
+  });
+
+  it("no longer exports checkExpectedLiterals", () => {
+    expect((core as Record<string, unknown>).checkExpectedLiterals).toBeUndefined();
   });
 
   it("exports the Agente 3 (ejecutor) surface", () => {
@@ -78,7 +98,6 @@ describe("@agente-qa/core public API", () => {
 
   it("exports the locator verification surface", () => {
     expect(typeof core.FakeLocatorVerifier).toBe("function");
-    expect(typeof core.extractLocatorChecks).toBe("function");
     expect(typeof core.buildVerificationScript).toBe("function");
     expect(typeof core.createRealLocatorVerifier).toBe("function");
     expect(typeof core.realLocatorVerifier.verify).toBe("function");
