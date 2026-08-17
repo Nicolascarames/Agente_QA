@@ -111,9 +111,28 @@ function resolveUrl(baseUrl: string, urlTemplate: string): string {
   return baseUrl.replace(/\/+$/, "") + urlTemplate;
 }
 
+/**
+ * Index of `name` in `errors` where the match is the WHOLE locator name, not
+ * merely a substring of a longer one — `uniqueName()` (appMap/naming.ts)
+ * produces sibling names like `submit` and `submit_2`, and a plain substring
+ * test would let `submit` match inside `get_submit_2(...)`. The character
+ * immediately following a genuine match is never a word character (it is a
+ * `(`, end of string, etc.). Returns -1 when no such occurrence exists.
+ */
+function indexOfLocatorName(errors: string, name: string): number {
+  let from = 0;
+  for (;;) {
+    const idx = errors.indexOf(name, from);
+    if (idx === -1) return -1;
+    const next = errors[idx + name.length];
+    if (next === undefined || !/\w/.test(next)) return idx;
+    from = idx + 1;
+  }
+}
+
 /** Extracts the "resolvió a N elementos" count for one locator's segment of the verifier's error text; 0 when the failure text carries no count (e.g. an exception). */
 function staleCountFor(errors: string, locatorName: string): number {
-  const idx = errors.indexOf(locatorName);
+  const idx = indexOfLocatorName(errors, locatorName);
   if (idx === -1) return 0;
   const tail = errors.slice(idx);
   const boundary = tail.indexOf("\n\n");
@@ -142,10 +161,14 @@ export async function checkMapFreshness(
 
   const { file, checks } = buildPageObject(used);
 
+  // Same detection `pageObjectEmitter.ts`'s `pageObjectMethodNames`/`emitPageObject`
+  // use for a parameterised route (":" — see appMap/urlTemplate.ts's VARIABLE):
+  // a screen behind `/item/:id` has no single concrete URL to visit, so it
+  // falls back to baseUrl rather than requesting a literal, non-navigable URL.
   const urls = Array.from(
     new Set(
       used.map((entry) =>
-        entry.urlTemplate.includes("{") ? baseUrl : resolveUrl(baseUrl, entry.urlTemplate)
+        entry.urlTemplate.includes(":") ? baseUrl : resolveUrl(baseUrl, entry.urlTemplate)
       )
     )
   );
@@ -164,7 +187,7 @@ export async function checkMapFreshness(
 
   const stale: { screenId: string; name: string; count: number }[] = [];
   for (const [name, entry] of byName) {
-    if (!errors.includes(name)) continue;
+    if (indexOfLocatorName(errors, name) === -1) continue;
     stale.push({ screenId: entry.screenId, name, count: staleCountFor(errors, name) });
   }
 

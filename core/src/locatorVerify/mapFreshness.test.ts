@@ -120,7 +120,7 @@ describe("checkMapFreshness", () => {
           ],
         },
         {
-          id: "item", name: "Item", className: "ItemPage", urlTemplate: "/item/{id}",
+          id: "item", name: "Item", className: "ItemPage", urlTemplate: "/item/:id",
           signature: "sha256:c", requiresAuth: false,
           texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
           locators: [
@@ -138,12 +138,53 @@ describe("checkMapFreshness", () => {
 
     const verifier = new FakeLocatorVerifier([{ ok: true }]);
     await checkMapFreshness(locatorsUsedBy(threeScreenFeature, twoScreenMap), verifier, "https://example.test/", undefined);
-    // The templated /item/{id} screen cannot resolve to a concrete URL, so it
+    // The templated /item/:id screen cannot resolve to a concrete URL, so it
     // falls back to baseUrl — which is already the login screen's resolved
     // URL, so deduping collapses them into one entry rather than three.
+    // Detection must use the project's real templating marker (":" — see
+    // appMap/urlTemplate.ts and pageObjectEmitter.ts's own `.includes(":")`
+    // check), not a "{" that no AppMap in this codebase ever produces.
     expect(verifier.receivedCalls[0].urls.sort()).toEqual([
       "https://example.test/",
       "https://example.test/checkout",
     ]);
+  });
+
+  it("does not report a healthy locator whose name is a substring of another used locator's name", async () => {
+    // uniqueName() in appMap/naming.ts produces exactly this shape when two
+    // elements on one screen share a base name: `submit` and `submit_2`.
+    // Only `submit_2` is genuinely ambiguous here; `submit` must stay clean.
+    const formMap: AppMap = {
+      ...map,
+      screens: [{
+        id: "form", name: "Form", className: "FormPage", urlTemplate: "/",
+        signature: "sha256:d", requiresAuth: false,
+        texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+        locators: [
+          { name: "submit", kind: "button", accessibleName: "Submit",
+            python: 'page.get_by_role("button", name="Submit", exact=True)', count: 1, verifiedAt: "t" },
+          { name: "submit_2", kind: "button", accessibleName: "Submit now",
+            python: 'page.get_by_role("button", name="Submit now", exact=True)', count: 1, verifiedAt: "t" },
+        ],
+      }],
+    };
+    const formFeature =
+      `Feature: F\n\n  @screen:form\n  Scenario: S\n    When I click "Submit"\n    And I click "Submit now"\n`;
+    const verifier = new FakeLocatorVerifier([{
+      ok: false,
+      errors:
+        'El locator get_submit_2("") resolvió a 2 elementos reales:\n' +
+        "1) <button>Submit now</button>\n" +
+        "2) <button>Submit now</button>\n" +
+        "Hazlo más específico para que resuelva exactamente a 1 elemento.",
+    }]);
+    const result = await checkMapFreshness(locatorsUsedBy(formFeature, formMap), verifier, "https://example.test/", undefined);
+    expect(result.ok).toBe(false);
+    // If the match stayed a plain substring test, "submit" would also match
+    // inside "get_submit_2(...)" and get reported stale with submit_2's
+    // count — a healthy locator flagged for a failure that isn't its own.
+    if (!result.ok) {
+      expect(result.stale).toEqual([{ screenId: "form", name: "submit_2", count: 2 }]);
+    }
   });
 });
