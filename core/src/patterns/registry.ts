@@ -25,10 +25,19 @@ export async function loadProjectPatterns(projectRoot: string): Promise<Pattern[
     throw err;
   }
 
+  // One malformed file must not cost the project every OTHER pattern it has
+  // saved — before this, a single invalid JSON file (or one still carrying the
+  // pre-app-map pageObjectTemplate/navigationHints shape .strict() now rejects)
+  // threw out of the whole function and `loadProjectPatterns` returned nothing
+  // at all instead of just skipping the one file that failed to parse.
   const patterns: Pattern[] = [];
   for (const file of files.filter((f) => f.endsWith(".json"))) {
-    const raw = await fs.readFile(path.join(dir, file), "utf-8");
-    patterns.push(PatternSchema.parse(JSON.parse(raw)));
+    try {
+      const raw = await fs.readFile(path.join(dir, file), "utf-8");
+      patterns.push(PatternSchema.parse(JSON.parse(raw)));
+    } catch {
+      continue;
+    }
   }
   return patterns;
 }

@@ -32,6 +32,28 @@ describe("pattern registry", () => {
     expect(await loadProjectPatterns(tmpProject)).toEqual([]);
   });
 
+  it("skips a single invalid pattern file instead of losing every pattern in the project", async () => {
+    const dir = path.join(tmpProject, ".agente-qa", "templates");
+    await fs.mkdir(dir, { recursive: true });
+    const valid: Pattern = {
+      name: "checkout",
+      description: "Flujo de compra completo",
+      gherkinTemplate: "Feature: Checkout\n  Scenario: x\n    Given a\n",
+    };
+    await fs.writeFile(path.join(dir, "checkout.json"), JSON.stringify(valid), "utf-8");
+    // .strict() rejects the retired pageObjectTemplate/navigationHints shape —
+    // a plausible way for a real invalid file to show up on disk.
+    await fs.writeFile(
+      path.join(dir, "broken.json"),
+      JSON.stringify({ name: "broken", pageObjectTemplate: "class X:\n    pass\n" }),
+      "utf-8"
+    );
+
+    const patterns = await loadProjectPatterns(tmpProject);
+
+    expect(patterns).toEqual([valid]);
+  });
+
   it("saves and reloads a project pattern", async () => {
     const custom: Pattern = {
       name: "checkout",
