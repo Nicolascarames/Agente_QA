@@ -33,3 +33,61 @@ describe("uniqueName", () => {
     expect(uniqueName("log_in", new Set(["log_in", "log_in_2"]))).toBe("log_in_3");
   });
 });
+
+import { disambiguatorToken, disambiguatedName } from "./naming.js";
+
+describe("disambiguatorToken", () => {
+  it("takes the value out of an attribute condition", () => {
+    expect(disambiguatorToken("attribute:[type='submit']")).toBe("submit");
+    expect(disambiguatorToken("attribute:[data-testid='login-submit']")).toBe("login_submit");
+  });
+
+  it("falls back to the whole condition when the attribute has no value", () => {
+    expect(disambiguatorToken("attribute:[disabled]")).toBe("disabled");
+  });
+
+  it("takes the role from a region scope and the selector from a css scope", () => {
+    expect(disambiguatorToken("region:banner")).toBe("banner");
+    expect(disambiguatorToken("selector:form")).toBe("form");
+  });
+
+  it("gives nothing when there was no disambiguator", () => {
+    expect(disambiguatorToken(undefined)).toBe("");
+  });
+});
+
+describe("disambiguatedName", () => {
+  it("appends the token that tells the two apart", () => {
+    expect(disambiguatedName("log_in_button", "attribute:[type='submit']", "p1", new Set())).toBe(
+      "log_in_button_submit"
+    );
+  });
+
+  it("suppresses a token that only repeats the tail of the base name", () => {
+    expect(disambiguatedName("log_in_button", "attribute:[type='button']", "p1", new Set())).toBe(
+      "log_in_button"
+    );
+  });
+
+  it("keeps the redundant token rather than colliding", () => {
+    const taken = new Set(["log_in_button"]);
+    expect(disambiguatedName("log_in_button", "attribute:[type='button']", "p1", taken)).toBe(
+      "log_in_button_button"
+    );
+  });
+
+  it("never appends a counter: a collision falls back to a fingerprint suffix", () => {
+    const taken = new Set(["log_in_button", "log_in_button_submit"]);
+    const name = disambiguatedName("log_in_button", "attribute:[type='submit']", "python-expr", taken);
+    expect(name).not.toBe("log_in_button_2");
+    expect(name.startsWith("log_in_button_submit_")).toBe(true);
+  });
+
+  it("is stable: the same element yields the same name regardless of when it was seen", () => {
+    // The property the whole task exists for. `taken` differs (a different
+    // crawl order), the element does not, so the name must not move.
+    const first = disambiguatedName("log_in_button", "attribute:[type='submit']", "p1", new Set());
+    const later = disambiguatedName("log_in_button", "attribute:[type='submit']", "p1", new Set(["other_button"]));
+    expect(later).toBe(first);
+  });
+});

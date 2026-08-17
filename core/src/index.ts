@@ -108,6 +108,8 @@ export { appMapDir, appMapPath, saveAppMap, loadAppMap } from "./appMap/mapStore
 
 export { overridesPath, loadOverrides, saveOverride, applyOverrides } from "./appMap/overrides.js";
 
+export { disambiguatorToken, disambiguatedName } from "./appMap/naming.js";
+
 export type {
   CrawlCredentials, CrawlLimits, CrawlCallbacks, CrawlInput, CrawlResult, Crawler,
 } from "./appMap/crawler.js";
