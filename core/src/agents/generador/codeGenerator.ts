@@ -1,9 +1,8 @@
 import type { LLMProvider } from "../../llm/provider.js";
-import type { Pattern } from "../../schemas/pattern.js";
+import type { AppMap } from "../../appMap/schema.js";
 import {
   codeGenerationPrompt,
   type CodeGenerationNaming,
-  type CodeGenerationEvidence,
   type CodeGenerationRetry,
 } from "../../prompts/generador.js";
 
@@ -29,9 +28,9 @@ function parseGeneratedFiles(raw: string): GeneratedFile[] {
     );
   }
 
-  if (files.length !== 2) {
+  if (files.length !== 1) {
     throw new Error(
-      `La respuesta del modelo generó ${files.length} archivo(s) en vez de los 2 esperados (step definitions y Page Object): ${cleaned.slice(0, 80)}...`
+      `La respuesta del modelo generó ${files.length} archivo(s) en vez del único esperado (step definitions bajo "tests/"): ${cleaned.slice(0, 80)}...`
     );
   }
 
@@ -41,19 +40,17 @@ function parseGeneratedFiles(raw: string): GeneratedFile[] {
 export async function generateCode(
   featureText: string,
   llm: LLMProvider,
-  matchedPattern: Pattern | null,
+  map: AppMap,
+  screenId: string,
   naming: CodeGenerationNaming,
-  evidence: CodeGenerationEvidence[],
-  appLanguage: "es" | "en",
-  routes: Record<string, string>,
   retry?: CodeGenerationRetry
 ): Promise<GeneratedFile[]> {
   const raw = await llm.generate([
     {
       role: "system",
-      content: "Eres un ingeniero de QA experto en Playwright, Python, pytest-bdd y Page Object Model.",
+      content: "Eres un ingeniero de QA experto en Playwright, Python y pytest-bdd.",
     },
-    { role: "user", content: codeGenerationPrompt(featureText, matchedPattern, naming, evidence, appLanguage, routes, retry) },
+    { role: "user", content: codeGenerationPrompt(featureText, map, screenId, naming, retry) },
   ]);
 
   return parseGeneratedFiles(raw);

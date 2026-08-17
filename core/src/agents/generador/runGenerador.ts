@@ -1,16 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { LLMProvider } from "../../llm/provider.js";
-import type { Pattern } from "../../schemas/pattern.js";
 import type { CodeChecker } from "../../codeCheck/codeChecker.js";
-import type { SiteExplorer, ExplorationCredentials, ScreenEvidence } from "../../siteExplorer/siteExplorer.js";
 import type { LocatorVerifier } from "../../locatorVerify/locatorVerifier.js";
-import { extractLocatorChecks } from "../../locatorVerify/extractLocatorChecks.js";
-import { checkExpectedLiterals, formatMissingLiterals, candidateTexts } from "../../locatorVerify/checkExpectedLiterals.js";
-import { saveProjectPattern } from "../../patterns/registry.js";
-import { applyProjectRoute } from "../../patterns/applyProjectRoute.js";
-import { evidenceCacheKey, readCachedEvidence, writeCachedEvidence } from "../../siteExplorer/evidenceCache.js";
-import { parseFeatureHeader } from "./parseFeatureHeader.js";
+import type { ExplorationCredentials } from "../../siteExplorer/siteExplorer.js";
+import type { EmitEvent } from "../../events/agentEvent.js";
+import { loadAppMap } from "../../appMap/mapStore.js";
+import { saveOverride } from "../../appMap/overrides.js";
+import { locatorsUsedBy, checkMapFreshness } from "../../locatorVerify/mapFreshness.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
 import { testFileExists, testFilePath, writeTestFiles } from "./writeTestFiles.js";
 
@@ -20,135 +17,89 @@ function toPythonModuleSlug(rawSlug: string): string {
 }
 
 const MAX_ATTEMPTS = 4; // 1 initial generation + up to 3 corrections
+const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
+
+/** The first `@screen:` tag anywhere in the feature — the screen the scenario belongs to. */
+function extractScreenTag(featureText: string): string | null {
+  for (const rawLine of featureText.split(/\r?\n/)) {
+    const match = rawLine.trim().match(SCREEN_TAG);
+    if (match) return match[1];
+  }
+  return null;
+}
 
 export interface GeneratorCallbacks {
-  offerSavePattern(featureText: string): Promise<{ save: boolean; name?: string; description?: string }>;
   confirmOverwrite(filePath: string): Promise<boolean>;
-  onExplorationStep(message: string): void;
-  onVerificationStep(message: string): void;
+  onStaleLocator(
+    stale: { screenId: string; name: string; count: number }[]
+  ): Promise<{ action: "remap" } | { action: "override"; python: string }>;
 }
 
 export interface RunGeneradorOptions {
   featureFilePath: string;
   llm: LLMProvider;
-  patterns: Pattern[];
   checker: CodeChecker;
-  explorer: SiteExplorer;
   verifier: LocatorVerifier;
   projectRoot: string;
   testsDir: string;
   baseUrl: string;
-  appLanguage: "es" | "en";
-  routes: Record<string, string>;
   credentials: ExplorationCredentials | undefined;
   callbacks: GeneratorCallbacks;
+  emit: EmitEvent;
 }
 
 export async function runGenerador(options: RunGeneradorOptions): Promise<{ writtenPaths: string[] }> {
-  const {
-    featureFilePath,
-    llm,
-    patterns,
-    checker,
-    explorer,
-    verifier,
-    projectRoot,
-    testsDir,
-    baseUrl,
-    appLanguage,
-    routes,
-    credentials,
-    callbacks,
-  } = options;
+  const { featureFilePath, llm, checker, verifier, projectRoot, testsDir, baseUrl, credentials, callbacks, emit } =
+    options;
+
+  const map = await loadAppMap(projectRoot);
+  if (!map) {
+    throw new Error(
+      'No hay mapa de la aplicación. Ejecuta "agente-qa map" antes de generar código: sin él, los localizadores no estarían validados contra la aplicación real.'
+    );
+  }
 
   const featureText = await fs.readFile(featureFilePath, "utf-8");
-  const matchedPatternName = parseFeatureHeader(featureText);
-  const basePattern = matchedPatternName
-    ? (patterns.find((p) => p.name === matchedPatternName) ?? null)
-    : null;
 
-  const matchedPattern = applyProjectRoute(basePattern, routes);
+  const screenId = extractScreenTag(featureText);
+  if (!screenId) {
+    throw new Error(
+      'El archivo .feature no incluye ninguna etiqueta "@screen:", así que no se puede saber a qué pantalla del mapa pertenece. Vuelve a generar el plan de pruebas, o ejecuta "agente-qa map" si el mapa está desactualizado.'
+    );
+  }
+
+  const used = locatorsUsedBy(featureText, map);
+  const freshness = await checkMapFreshness(used, verifier, baseUrl, credentials);
+  if (!freshness.ok) {
+    const decision = await callbacks.onStaleLocator(freshness.stale);
+    if (decision.action === "remap") {
+      throw new Error(
+        'Uno o más localizadores ya no coinciden con la aplicación real. Ejecuta "agente-qa map" para volver a mapear la aplicación antes de generar código.'
+      );
+    }
+    const stale = freshness.stale[0];
+    await saveOverride(projectRoot, { screenId: stale.screenId, name: stale.name, python: decision.python });
+  } else if (freshness.warnings) {
+    emit({ agent: "generador", status: "warn", depth: 1, message: freshness.warnings });
+  }
 
   const featureFileName = path.basename(featureFilePath);
   const naming = { slug: toPythonModuleSlug(featureFileName.replace(/\.feature$/, "")), featureFileName };
-
-  const cacheKey = evidenceCacheKey({ appUrl: baseUrl, patternName: basePattern?.name ?? null, routes });
-  let evidence: ScreenEvidence[] = (await readCachedEvidence(projectRoot, cacheKey)) ?? [];
-  if (evidence.length === 0) {
-    const exploration = await explorer.explore(
-      { featureText, matchedPattern, baseUrl, credentials, headed: true },
-      callbacks.onExplorationStep
-    );
-    if (!exploration.ok) {
-      throw new Error(`No se pudo verificar la aplicación real antes de generar el código: ${exploration.error}`);
-    }
-    evidence = exploration.screens;
-    // Only a hints-driven result is safe to cache — see the "source" doc
-    // comment on ExplorationResult in siteExplorer.ts. An agentic result is
-    // specific to this feature's own text and must never be reused by a later,
-    // unrelated feature request that happens to share the same cache key.
-    if (exploration.source === "hints") {
-      await writeCachedEvidence(projectRoot, cacheKey, evidence);
-    }
-  }
-  // De-duplicated, order-preserving: the login pattern's initial screen and its
-  // negative-probe screen commonly share a URL (both captured on the login
-  // route before/after the probe), which would otherwise make the verification
-  // script navigate to and re-check the identical page twice.
-  const verificationUrls =
-    evidence.length > 0 ? Array.from(new Set(evidence.map((screen) => screen.url))) : [baseUrl];
 
   let retry: { previousFiles: GeneratedFile[]; feedback: string } | undefined;
   let files: GeneratedFile[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    files = await generateCode(featureText, llm, matchedPattern, naming, evidence, appLanguage, routes, retry);
+    files = await generateCode(featureText, llm, map, screenId, naming, retry);
 
     const checkResult = await checker.check(files);
-    if (!checkResult.ok) {
-      const errors = checkResult.errors ?? "Error desconocido de verificación de código.";
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error(`El código generado no pasó la verificación tras ${MAX_ATTEMPTS} intentos. Último error:\n${errors}`);
-      }
-      retry = { previousFiles: files, feedback: errors };
-      continue;
-    }
+    if (checkResult.ok) break;
 
-    const { checks, skipped } = extractLocatorChecks(featureText, files);
-    if (skipped.length > 0) {
-      callbacks.onVerificationStep(
-        `${skipped.length} literal(es) no se pudieron verificar automáticamente:\n${skipped.join("\n")}`
-      );
-    }
-
-    // A missing literal is never retryable: the value comes from the .feature,
-    // so all four attempts would produce the identical check. The only way the
-    // model could "pass" is by no longer passing the literal to a get_* method
-    // — weakening the assertion to satisfy the verifier. Fail fast instead.
-    const missingLiterals = checkExpectedLiterals(checks, evidence);
-    if (missingLiterals.length > 0) {
-      throw new Error(
-        `El archivo .feature espera textos que no existen en la aplicación real:\n\n${formatMissingLiterals(
-          missingLiterals,
-          candidateTexts(evidence)
-        )}\n\nCorrige el archivo .feature (o vuelve a crear el plan de pruebas, que ahora se genera a partir de la aplicación real) y repite la generación.`
-      );
-    }
-
-    if (checks.length === 0) break;
-
-    callbacks.onVerificationStep(`Verificando ${checks.length} locator(s) contra la aplicación real...`);
-    const verification = await verifier.verify(files, checks, verificationUrls, credentials);
-    if (verification.warnings) callbacks.onVerificationStep(verification.warnings);
-    if (verification.ok) break;
-
-    const verifyErrors = verification.errors ?? "Error desconocido de verificación de locators.";
+    const errors = checkResult.errors ?? "Error desconocido de verificación de código.";
     if (attempt === MAX_ATTEMPTS) {
-      throw new Error(
-        `El código generado no pasó la verificación de locators tras ${MAX_ATTEMPTS} intentos. Último error:\n${verifyErrors}`
-      );
+      throw new Error(`El código generado no pasó la verificación tras ${MAX_ATTEMPTS} intentos. Último error:\n${errors}`);
     }
-    retry = { previousFiles: files, feedback: verifyErrors };
+    retry = { previousFiles: files, feedback: errors };
   }
 
   for (const file of files) {
@@ -162,19 +113,6 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
   }
 
   const writtenPaths = await writeTestFiles(projectRoot, testsDir, files);
-
-  if (!matchedPattern) {
-    const pageObjectFile = files.find((f) => f.path.startsWith("pages/"));
-    const saveDecision = await callbacks.offerSavePattern(featureText);
-    if (saveDecision.save && saveDecision.name && saveDecision.description) {
-      await saveProjectPattern(projectRoot, {
-        name: saveDecision.name,
-        description: saveDecision.description,
-        gherkinTemplate: featureText,
-        pageObjectTemplate: pageObjectFile?.content ?? "",
-      });
-    }
-  }
 
   return { writtenPaths };
 }
