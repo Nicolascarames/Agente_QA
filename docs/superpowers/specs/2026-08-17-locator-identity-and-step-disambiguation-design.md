@@ -223,6 +223,7 @@ recién generados. Nada vuelve a lintear el `.feature` después de la reescritur
 | `core/src/locatorVerify/mapFreshness.ts` | Consume la función compartida; `locatorsUsedBy` reporta la ambigüedad |
 | `core/src/appMap/naming.ts` | Derivación del sufijo desde el desambiguador; fuera el contador |
 | `core/src/appMap/realCrawler.ts` | Pasa el desambiguador al nombrar |
+| `core/src/agents/generador/rewriteStepLocator.ts` (nuevo) | Cirugía pura sobre el Gherkin: sustituir el literal entrecomillado de un paso bajo una `@screen:` |
 | `core/src/agents/generador/runGenerador.ts` | Pregunta, reescribe el paso, emite el aviso |
 | `cli/src/prompts/types.ts`, `inquirerPrompts.ts` | Prompt nuevo con el volcado del mapa |
 
