@@ -3,3 +3,9 @@ node_modules/
 dist/
 *.log
 Pruebas/
+
+# Artefactos de probar agente-qa contra este mismo repo. Nada de esto se sube.
+# En un proyecto consumidor de verdad, `.agente-qa/map/` y los tests generados
+# SÍ se versionan (son la fuente de verdad del mapa); aquí no, son pruebas.
+.agente-qa/
+tests/
