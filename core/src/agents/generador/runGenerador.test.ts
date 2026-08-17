@@ -7,8 +7,9 @@ import { FakeCodeChecker } from "../../codeCheck/testUtils.js";
 import { FakeLocatorVerifier } from "../../locatorVerify/testUtils.js";
 import { saveAppMap } from "../../appMap/mapStore.js";
 import { loadOverrides } from "../../appMap/overrides.js";
-import { runGenerador, type GeneratorCallbacks } from "./runGenerador.js";
+import { runGenerador, type GeneratorCallbacks, type RunGeneradorOptions } from "./runGenerador.js";
 import type { AppMap, Screen } from "../../appMap/schema.js";
+import type { AmbiguousStep } from "../../locatorVerify/mapFreshness.js";
 import type { AgentEvent } from "../../events/agentEvent.js";
 
 const loginScreen: Screen = {
@@ -46,6 +47,25 @@ const featureWithClick = 'Feature: Login\n\n  @screen:login\n  Scenario: x\n    
 const featureWithTwoLocators =
   'Feature: Login\n\n  @screen:login\n  Scenario: x\n    When I fill "Email" with "a@b.com"\n    And I click "Log in"\n    Then I see "Welcome back"\n';
 
+// Same twins fixture as mapFreshness.test.ts: two buttons sharing the accessible
+// name "Log in", only one of which submits — the ambiguity a step's quoted text
+// alone cannot resolve.
+const homeScreenWithTwins: Screen = {
+  id: "home", name: "home", className: "HomePage", urlTemplate: "/",
+  signature: "sha256:t", requiresAuth: false,
+  texts: ["Log in"], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+  locators: [
+    { name: "log_in_button", kind: "button", accessibleName: "Log in",
+      python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'button\']"))',
+      count: 1, verifiedAt: "t" },
+    { name: "log_in_button_submit", kind: "button", accessibleName: "Log in",
+      python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'submit\']"))',
+      count: 1, verifiedAt: "t" },
+  ],
+};
+
+const mapWithTwins: AppMap = { ...baseMap, screens: [homeScreenWithTwins] };
+
 const scriptedResponse = `# FILE: tests/test_login.py
 from pytest_bdd import scenarios, given, when, then
 
@@ -61,6 +81,7 @@ function callbacks(overrides: Partial<GeneratorCallbacks> = {}): GeneratorCallba
   return {
     confirmOverwrite: vi.fn().mockResolvedValue(true),
     onStaleLocator: vi.fn().mockRejectedValue(new Error("onStaleLocator no debería haberse llamado")),
+    onAmbiguousLocator: vi.fn().mockRejectedValue(new Error("onAmbiguousLocator no debería haberse llamado")),
     ...overrides,
   };
 }
@@ -82,6 +103,39 @@ describe("runGenerador", () => {
     const filePath = path.join(dir, "login.feature");
     await fs.writeFile(filePath, content, "utf-8");
     return filePath;
+  }
+
+  /**
+   * A temp project whose map's `home` screen carries Task 4's twins fixture
+   * (two "Log in" buttons, only one of which submits), with `featureText`
+   * written to disk under it. Returns a fresh `FakeLocatorVerifier` scripted
+   * to pass, since these tests are about locator resolution, not freshness.
+   */
+  async function projectWithTwins(
+    featureText: string
+  ): Promise<{ projectRoot: string; featureFilePath: string; verifier: FakeLocatorVerifier }> {
+    await saveAppMap(tmpProject, mapWithTwins);
+    const dir = path.join(tmpProject, "tests", "features");
+    await fs.mkdir(dir, { recursive: true });
+    const featureFilePath = path.join(dir, "twins.feature");
+    await fs.writeFile(featureFilePath, featureText, "utf-8");
+    return { projectRoot: tmpProject, featureFilePath, verifier: new FakeLocatorVerifier([{ ok: true }]) };
+  }
+
+  /** The common options shape, so each test only overrides what it's testing. */
+  function baseOptions(projectRoot: string, featureFilePath: string): RunGeneradorOptions {
+    return {
+      featureFilePath,
+      llm: new FakeLLMProvider([scriptedResponse]),
+      checker: new FakeCodeChecker([{ ok: true }]),
+      verifier: new FakeLocatorVerifier([{ ok: true }]),
+      projectRoot,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: callbacks(),
+      emit: () => {},
+    };
   }
 
   it("throws with an actionable message naming 'agente-qa map' when there is no map", async () => {
@@ -602,5 +656,54 @@ class LoginPage:
     expect(
       attemptEvents.some((e) => e.status === "ok" && e.message.includes("intento 2 de 4"))
     ).toBe(true);
+  });
+
+  it("asks which locator an ambiguous step means, and writes the answer into the .feature", async () => {
+    // Two buttons share the accessible name "Log in"; only one submits.
+    const { projectRoot, featureFilePath } = await projectWithTwins(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "Log in"\n`
+    );
+    const onAmbiguousLocator = vi.fn(async (step: AmbiguousStep) =>
+      step.candidates.find((c) => c.name === "log_in_button_submit")!
+    );
+
+    await runGenerador({ ...baseOptions(projectRoot, featureFilePath), callbacks: { ...callbacks(), onAmbiguousLocator } });
+
+    expect(onAmbiguousLocator).toHaveBeenCalledTimes(1);
+    const [step] = onAmbiguousLocator.mock.calls[0];
+    expect(step.quoted).toBe("Log in");
+    expect(step.candidates.map((c) => c.name)).toEqual(["log_in_button", "log_in_button_submit"]);
+
+    // The answer lands in the artifact the user versions, not just in memory.
+    const rewritten = await fs.readFile(featureFilePath, "utf-8");
+    expect(rewritten).toContain('When I click "log_in_button_submit"');
+    expect(rewritten).not.toContain('When I click "Log in"');
+  });
+
+  it("does not ask again once the .feature names the locator", async () => {
+    const { projectRoot, featureFilePath } = await projectWithTwins(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "log_in_button_submit"\n`
+    );
+    const onAmbiguousLocator = vi.fn();
+
+    await runGenerador({ ...baseOptions(projectRoot, featureFilePath), callbacks: { ...callbacks(), onAmbiguousLocator } });
+
+    expect(onAmbiguousLocator).not.toHaveBeenCalled();
+  });
+
+  it("verifies the locator the user chose, not the one that came first", async () => {
+    const { projectRoot, featureFilePath, verifier } = await projectWithTwins(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "Log in"\n`
+    );
+    const onAmbiguousLocator = vi.fn(async (step: AmbiguousStep) =>
+      step.candidates.find((c) => c.name === "log_in_button_submit")!
+    );
+
+    await runGenerador({ ...baseOptions(projectRoot, featureFilePath), verifier, callbacks: { ...callbacks(), onAmbiguousLocator } });
+
+    // The freshness check must run against the chosen locator's method.
+    const checks = verifier.receivedCalls[0].checks.map((c) => c.method);
+    expect(checks).toContain("get_log_in_button_submit");
+    expect(checks).not.toContain("get_log_in_button");
   });
 });
