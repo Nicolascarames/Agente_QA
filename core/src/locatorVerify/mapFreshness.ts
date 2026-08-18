@@ -1,4 +1,5 @@
 import type { AppMap, LocatorEntry } from "../appMap/schema.js";
+import { SCREEN_TAG } from "../appMap/schema.js";
 import { findScreen } from "../appMap/mapQuery.js";
 import { toSelfPageExpression } from "../appMap/pythonExpression.js";
 import type { LocatorCheck, LocatorVerifier, ExplorationCredentials } from "./locatorVerifier.js";
@@ -29,8 +30,6 @@ export interface UsedLocatorsResult {
   used: UsedLocator[];
   ambiguous: AmbiguousStep[];
 }
-
-const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
 
 /**
  * A `fill` step's second quoted group is test DATA the tester invented (an

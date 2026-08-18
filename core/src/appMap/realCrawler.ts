@@ -1229,6 +1229,24 @@ async function runWritePass(
     const action = screen.writeActions.find((a) => a.locator === locatorName);
     if (!action) continue;
 
+    // Una pantalla `reachedBy` (promocionada por clic desde su ancestro, sin
+    // URL propia) no puede recargarse: `concreteUrls` guarda la URL del
+    // ANCESTRO, no la de esta vista. Recargar esa URL y luego rellenar/pulsar
+    // deja el DOM equivocado bajo el formulario — 0 elementos resueltos casi
+    // siempre (y el aviso culparía, engañosamente, a la ambigüedad de
+    // locators), o peor, coincide por casualidad con un control del propio
+    // ancestro y ejecuta y fusiona SU envío como si fuera de esta vista.
+    // TODO(follow-up): runWritePass no reproduce reachedBy.path todavía —
+    // ningún task del plan SPA cubre esto aún. Cuando lo haga, esta guarda
+    // se sustituye por el replay real.
+    if (screen.reachedBy !== undefined) {
+      emit({
+        agent: "explorador", status: "warn", depth: 1,
+        message: `No se puede ejecutar todavía "${action.label}": ${screen.id} es una vista sin URL propia y el crawler aún no sabe reproducir su camino antes de escribir. Se ofrece para aprobación pero no se ejecuta.`,
+      });
+      continue;
+    }
+
     const isLoginAction = hasPasswordField(screen, action);
 
     // The concrete URL the walk really captured this screen at — never a URL
@@ -1586,7 +1604,13 @@ export function createRealCrawler(): Crawler {
       // merge or a promotion, includes controls a click loop that snapshotted
       // the list once, before any state existed, would never have seen.
       function enqueueChildren(node: Screen, pathSoFar: PathStep[], depth: number): void {
-        if (pathSoFar.length >= input.limits.maxViewDepth) return;
+        // El límite solo acota la exploración de vistas ANIDADAS (mismo route,
+        // click tras click sin navegación) — `pathSoFar` no vacío. La
+        // exploración ordinaria (`pathSoFar = []`, la que arranca desde una
+        // pantalla recién capturada por URL) nunca debe frenarse aquí, o
+        // `maxViewDepth: 0` apagaría TODA la exploración por clic, no solo la
+        // anidada.
+        if (pathSoFar.length > 0 && pathSoFar.length >= input.limits.maxViewDepth) return;
         const entryScreenId = node.reachedBy?.entryScreenId ?? node.id;
 
         // Misma lógica que la captura de arriba: qué copia es esta, de entre
@@ -1660,7 +1684,17 @@ export function createRealCrawler(): Crawler {
 
           const next = queue.shift()!;
           if (next.kind === "url" && next.depth > input.limits.maxDepth) { complete = false; continue; }
-          if (next.kind === "path" && next.path.length > input.limits.maxViewDepth) { complete = false; continue; }
+          // Redundant with `enqueueChildren`'s own bound in construction (it
+          // never pushes a path longer than that), kept here as a defensive
+          // duplicate — but it must apply the SAME "nested only" rule: a
+          // length-1 path is the ordinary first click off a normal screen,
+          // not yet known to be nested, and `maxViewDepth: 0` must not skip
+          // it (same bug as the one fixed in `enqueueChildren`, just hit from
+          // the other side of the queue).
+          if (next.kind === "path" && next.path.length > 1 && next.path.length > input.limits.maxViewDepth) {
+            complete = false;
+            continue;
+          }
 
           if (next.kind === "url") {
           // Excluded BEFORE navigating. A safety net whose whole promise is

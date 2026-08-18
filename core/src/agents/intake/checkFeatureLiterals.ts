@@ -1,4 +1,5 @@
 import type { AppMap } from "../../appMap/schema.js";
+import { SCREEN_TAG } from "../../appMap/schema.js";
 import { findScreen, screenLiterals } from "../../appMap/mapQuery.js";
 
 export interface MissingLiteral {
@@ -17,8 +18,6 @@ export interface FeatureLiteralCheck {
    */
   screenTagFound: boolean;
 }
-
-const SCREEN_TAG = /@screen:([\p{L}\p{N}_~-]+)/u;
 
 /**
  * A `fill` step's second quoted group is test DATA the tester invented (an

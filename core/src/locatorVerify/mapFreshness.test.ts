@@ -41,6 +41,33 @@ describe("locatorsUsedBy", () => {
     const result = locatorsUsedBy(fillFeature, map);
     expect(result.used.map((u) => u.locator.name)).toEqual(["email_input"]);
   });
+
+  // Final-review finding: this module's own `SCREEN_TAG` used to admit only
+  // `[\p{L}\p{N}_-]+`, truncating `@screen:login~crear-bebe` at the `~` and
+  // resolving `currentScreen` to the ancestor "login" — a nested screen tag
+  // would then be checked against the ANCESTOR's locators, not its own.
+  it("resolves a nested screen tag ('~') to the nested screen, not its ancestor", () => {
+    const nestedMap: AppMap = {
+      ...map,
+      screens: [
+        ...map.screens,
+        {
+          id: "login~crear-bebe", name: "Crear bebé", className: "CreateBabyPage", urlTemplate: "/crear-bebe",
+          signature: "sha256:b", requiresAuth: false,
+          texts: ["Crear bebé"], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+          locators: [
+            { name: "baby_name_input", kind: "input", accessibleName: "Nombre",
+              python: 'page.get_by_label("Nombre")', count: 1, verifiedAt: "t" },
+          ],
+        },
+      ],
+    };
+    const nestedFeature = `Feature: F\n\n  @screen:login~crear-bebe\n  Scenario: S\n    When I click "Nombre"\n`;
+    const result = locatorsUsedBy(nestedFeature, nestedMap);
+    expect(result.used).toHaveLength(1);
+    expect(result.used[0].screenId).toBe("login~crear-bebe");
+    expect(result.used[0].locator.name).toBe("baby_name_input");
+  });
 });
 
 describe("locatorsUsedBy with two locators sharing an accessible name", () => {

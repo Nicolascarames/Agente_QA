@@ -356,4 +356,44 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     if (!result.ok) throw new Error(result.error);
     expect(result.map.authenticated).toBe(true);
   }, 20000);
+
+  // Final-review finding: a write action approved on a screen reached via a
+  // same-route promotion (`reachedBy`, no URL of its own) must never be
+  // attempted — `concreteUrls` only holds its ANCESTOR's URL, so reloading it
+  // and filling/clicking either resolves nothing (and used to blame locator
+  // ambiguity, which is not what happened) or, worse, could hit the
+  // ancestor's own controls by accident. `spa-nested.html`'s "New baby" form
+  // is exactly that: promoted from the Dashboard by a click, no URL of its
+  // own — see the fixture's own comment for why its "Create" can never
+  // really run yet.
+  it("skips a write action on a screen reached by same-route promotion instead of running it against the ancestor's DOM", async () => {
+    const events: { status: string; message: string }[] = [];
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+      limits,
+      credentials: { username: "user@example.test", password: "secret" },
+      callbacks: {
+        confirmContinueOnLoop: async () => false,
+        approveWriteActions: async (pending) => pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator })),
+      },
+      emit: (event) => events.push({ status: event.status, message: event.message }),
+    });
+    if (!result.ok) throw new Error(result.error);
+
+    const babyScreen = result.map.screens.find((s) => s.reachedBy !== undefined);
+    expect(babyScreen).toBeDefined();
+    const createAction = babyScreen!.writeActions.find((a) => a.label === "Create");
+    expect(createAction).toBeDefined();
+
+    expect(
+      events.some(
+        (e) =>
+          e.status === "warn" &&
+          e.message.includes(babyScreen!.id) &&
+          e.message.includes("vista sin URL propia") &&
+          e.message.includes("Create")
+      )
+    ).toBe(true);
+    expect(events.some((e) => e.message.includes("ya no resuelve a un único elemento"))).toBe(false);
+  }, 20000);
 });

@@ -64,6 +64,17 @@ export const AmbiguousCandidateSchema = z.object({
   reason: z.string(),
 });
 
+/**
+ * Matches an `@screen:<id>` Gherkin tag. `~` is part of the character class
+ * because a promoted (nested-view) screen id is `<ancestorId>~<suffix>` — see
+ * `reachedBy` above. This regex used to be copy-pasted into four modules
+ * (`checkFeatureLiterals`, `runGenerador`, `rewriteStepLocator`,
+ * `mapFreshness`) and drifted: only one copy admitted `~`, so the other three
+ * truncated nested-screen tags at the `~` and silently resolved to the
+ * ancestor screen instead. Import this one instead of redefining it.
+ */
+export const SCREEN_TAG = /@screen:([\p{L}\p{N}_~-]+)/u;
+
 export const ScreenReachedBySchema = z.object({
   entryScreenId: z.string().min(1),
   path: z

@@ -5,6 +5,7 @@ import type { CodeChecker } from "../../codeCheck/codeChecker.js";
 import type { LocatorVerifier, ExplorationCredentials } from "../../locatorVerify/locatorVerifier.js";
 import type { EmitEvent } from "../../events/agentEvent.js";
 import type { LocatorEntry } from "../../appMap/schema.js";
+import { SCREEN_TAG } from "../../appMap/schema.js";
 import { loadAppMap } from "../../appMap/mapStore.js";
 import { saveOverride } from "../../appMap/overrides.js";
 import { findScreen } from "../../appMap/mapQuery.js";
@@ -19,7 +20,6 @@ function toPythonModuleSlug(rawSlug: string): string {
 }
 
 const MAX_ATTEMPTS = 4; // 1 initial generation + up to 3 corrections
-const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
 
 /** The first `@screen:` tag anywhere in the feature — the screen the scenario belongs to. */
 function extractScreenTag(featureText: string): string | null {

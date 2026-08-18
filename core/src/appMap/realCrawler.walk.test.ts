@@ -32,6 +32,28 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     expect(templates).toContain("/reset.html");
   }, 20000);
 
+  // Final-review finding: the depth bound used to apply to `pathSoFar.length`
+  // unconditionally, so `maxViewDepth: 0` made `0 >= 0` true even for the
+  // TOP-LEVEL call (`pathSoFar = []`, ordinary click/link exploration from a
+  // freshly captured screen) — silencing all click exploration on any site,
+  // not just nested same-route promotion. `maxViewDepth: 0` must reproduce
+  // today's by-level behaviour exactly; only nested (same-route) exploration
+  // is meant to stop at depth 0.
+  it("still discovers routes reachable by clicking when maxViewDepth is 0", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url,
+      limits: { ...limits, maxViewDepth: 0 },
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const templates = result.map.screens.map((s) => s.urlTemplate).sort();
+    expect(templates).toContain("/");
+    expect(templates).toContain("/reset.html");
+    expect(result.map.screens.length).toBeGreaterThan(1);
+  }, 20000);
+
   it("collapses /item/1 and /item/2 into a single templated screen", async () => {
     const result = await createRealCrawler().crawl({
       baseUrl: site.url, limits,
@@ -437,6 +459,25 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
       const created = nurseryScreen!.texts.includes("Baby created!")
         || nurseryScreen!.states.some((s) => s.addsTexts.includes("Baby created!"));
       expect(created).toBe(true);
+    }, 20000);
+
+    // Companion to the top-level "still discovers routes..." test above:
+    // `maxViewDepth: 0` must still stop NESTED same-route exploration — only
+    // the login screen is captured, the "Create baby" click is never queued.
+    it("stops same-route promotion at depth 0 while still discovering the login screen", async () => {
+      const result = await createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+        limits: { ...limits, maxViewDepth: 0 },
+        credentials: { username: "user@example.test", password: "secret" },
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (pending) => pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator })),
+        },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens.some((s) => s.reachedBy !== undefined)).toBe(false);
+      expect(result.map.screens).toHaveLength(1);
     }, 20000);
   });
 });

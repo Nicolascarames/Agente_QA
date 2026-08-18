@@ -31,6 +31,18 @@ describe("rewriteStepLocator", () => {
     expect(out).toContain(`@screen:other\n  Scenario: B\n    When I click "Log in"`);
   });
 
+  // Final-review finding: this module's own `SCREEN_TAG` used to admit only
+  // `[\p{L}\p{N}_-]+`, truncating `@screen:home~crear-bebe` at the `~` and
+  // resolving to the ancestor screen `home` — silently rewriting the wrong
+  // screen's steps for any scenario about a nested (same-route) view.
+  it("recognizes a nested screen tag containing '~' and scopes the rewrite to it, not its ancestor", () => {
+    const feature =
+      `Feature: F\n\n  @screen:home\n  Scenario: A\n    When I click "Log in"\n\n  @screen:home~crear-bebe\n  Scenario: B\n    When I click "Log in"\n`;
+    const out = rewriteStepLocator(feature, "home~crear-bebe", "Log in", "create_baby_button");
+    expect(out).toContain(`@screen:home\n  Scenario: A\n    When I click "Log in"`);
+    expect(out).toContain(`@screen:home~crear-bebe\n  Scenario: B\n    When I click "create_baby_button"`);
+  });
+
   it("leaves a Then step that merely asserts the same text alone", () => {
     const feature = `Feature: F\n\n  @screen:home\n  Scenario: S\n    Then I see "Log in"\n`;
     expect(rewriteStepLocator(feature, "home", "Log in", "log_in_button_submit")).toBe(feature);
