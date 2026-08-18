@@ -6,7 +6,7 @@ import type { CrawlLimits, CrawlResult } from "./crawler.js";
 
 const limits: CrawlLimits = {
   maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60,
-  loopSuspicionThreshold: 3, excludeRoutes: [],
+  loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4,
 };
 const credentials = { username: "user@example.test", password: "s3cr3t-pass" };
 

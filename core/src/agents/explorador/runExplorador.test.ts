@@ -33,7 +33,7 @@ function options(overrides: Partial<Parameters<typeof runExplorador>[0]> = {}) {
     projectRoot,
     testsDir: "tests",
     baseUrl: "https://example.test/",
-    limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] },
+    limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4 },
     callbacks: {
       confirmContinueOnLoop: async () => true,
       approveWriteActions: async () => [],

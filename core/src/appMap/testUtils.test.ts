@@ -13,7 +13,7 @@ describe("FakeCrawler", () => {
     const crawler = new FakeCrawler({ ok: true, map });
     const result = await crawler.crawl({
       baseUrl: "https://example.test/",
-      limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] },
+      limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4 },
       callbacks: { confirmContinueOnLoop: async () => true, approveWriteActions: async () => [] },
       emit: () => {},
     });
@@ -24,7 +24,7 @@ describe("FakeCrawler", () => {
     const crawler = new FakeCrawler({ ok: true, map });
     await crawler.crawl({
       baseUrl: "https://example.test/",
-      limits: { maxScreens: 1, maxDepth: 1, maxDurationMinutes: 1, loopSuspicionThreshold: 3, excludeRoutes: ["/admin"] },
+      limits: { maxScreens: 1, maxDepth: 1, maxDurationMinutes: 1, loopSuspicionThreshold: 3, excludeRoutes: ["/admin"], maxViewDepth: 4 },
       callbacks: { confirmContinueOnLoop: async () => true, approveWriteActions: async () => [] },
       emit: () => {},
     });
@@ -36,7 +36,7 @@ describe("FakeCrawler", () => {
     const crawler = new FakeCrawler({ ok: false, error: "sin navegador" });
     const result = await crawler.crawl({
       baseUrl: "https://example.test/",
-      limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] },
+      limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4 },
       callbacks: { confirmContinueOnLoop: async () => true, approveWriteActions: async () => [] },
       emit: () => {},
     });

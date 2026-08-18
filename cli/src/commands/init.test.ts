@@ -36,6 +36,7 @@ describe("runInit", () => {
     maxDurationMinutes: 60,
     loopSuspicionThreshold: 3,
     excludeRoutes: [] as string[],
+    maxViewDepth: 4,
   };
 
   it("saves the project config from the prompt answers", async () => {

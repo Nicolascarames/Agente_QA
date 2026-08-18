@@ -36,13 +36,17 @@ export const ProjectConfigSchema = z.object({
       maxDurationMinutes: z.number().int().min(1).default(60),
       loopSuspicionThreshold: z.number().int().min(2).default(3),
       excludeRoutes: z.array(z.string()).default([]),
+      maxViewDepth: z.number().int().min(0).default(4),
     })
     // zod v4's `.default()` substitutes this value verbatim when the key is missing —
     // it does not re-parse it through the object shape above, so the per-field
     // `.default(...)` calls would never fire on `{}`. Spelling the whole default out
     // here keeps `ProjectConfigSchema.parse({})` returning the same limits as the
     // per-field defaults describe, instead of an empty `crawl: {}`.
-    .default({ maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] }),
+    .default({
+      maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60,
+      loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4,
+    }),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
