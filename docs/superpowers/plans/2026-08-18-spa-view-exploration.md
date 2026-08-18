@@ -1047,7 +1047,7 @@ El cuerpo del `while` de `:1380` en adelante hoy asume siempre `next.url`/`next.
           }
 ```
 
-`enqueueChildren` es un helper local (declarado una vez, antes del `while`, con acceso a `queue`, `clickedElements`, `input.limits.maxViewDepth`) que factoriza EXACTAMENTE la misma lógica que hoy decide qué botones/enlaces pulsar — reutilízala en las dos ramas en vez de duplicar el bucle de `:1508-1660`:
+`enqueueChildren` es un helper local (declarado una vez, antes del `while`, con acceso a `queue`, `clickedElements`, `input.limits.maxViewDepth`) que factoriza EXACTAMENTE la misma lógica que hoy decide qué botones/enlaces pulsar — reutilízala en las dos ramas en vez de duplicar el bucle de `:1508-1660`. Esto incluye el cálculo de `twinIndex` (`:1499-1505` en el código actual): dos controles con el mismo `kind`+`accessibleName` en la misma pantalla (dos botones "Editar" en filas distintas de una tabla, por ejemplo) son elementos DISTINTOS, y `elementKey` los desambigua por posición — pasar siempre `index: 0` los trataría como el mismo elemento y solo se pulsaría uno de los dos, una regresión silenciosa sobre el comportamiento actual que probablemente rompería los tests de `attribute-siblings.html`:
 
 ```ts
       const promotedCountByAncestor = new Map<string, number>();
@@ -1055,9 +1055,26 @@ El cuerpo del `while` de `:1380` en adelante hoy asume siempre `next.url`/`next.
       function enqueueChildren(node: Screen, pathSoFar: PathStep[], depth: number): void {
         if (pathSoFar.length >= input.limits.maxViewDepth) return;
         const entryScreenId = node.reachedBy?.entryScreenId ?? node.id;
+
+        // Misma lógica que la captura de arriba: qué copia es esta, de entre
+        // los controles que comparten kind+accessibleName en esta pantalla.
+        const twinIndex = new Map<string, number>();
+        const seenNames = new Map<string, number>();
+        for (const entry of node.locators) {
+          const identity = `${entry.kind}|${entry.accessibleName ?? entry.name}`;
+          const index = seenNames.get(identity) ?? 0;
+          seenNames.set(identity, index + 1);
+          twinIndex.set(entry.name, index);
+        }
+
         for (const locator of node.locators.filter((l) => l.kind === "link" || l.kind === "button")) {
           if (node.writeActions.some((a) => a.locator === locator.name)) continue; // los submits los prueba runWritePass
-          const key = elementKey({ screenId: node.id, role: locator.kind, accessibleName: locator.accessibleName ?? locator.name, index: 0 });
+          const key = elementKey({
+            screenId: node.id,
+            role: locator.kind,
+            accessibleName: locator.accessibleName ?? locator.name,
+            index: twinIndex.get(locator.name) ?? 0,
+          });
           if (clickedElements.has(key)) continue;
           clickedElements.add(key);
           if (authenticated && LOGOUT_NAME.test(locator.accessibleName ?? "")) continue;
