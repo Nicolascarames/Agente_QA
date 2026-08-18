@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { codeGenerationPrompt } from "./generador.js";
-import type { AppMap } from "../appMap/schema.js";
+import type { AppMap, Screen } from "../appMap/schema.js";
 
 const map: AppMap = {
   schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
@@ -103,5 +103,80 @@ describe("codeGenerationPrompt", () => {
 
   it("throws a clear error when the screen doesn't exist in the map", () => {
     expect(() => codeGenerationPrompt(featureText, map, "ghost", naming)).toThrow(/ghost/);
+  });
+
+  // Mirrors the fixture in pageObjectEmitter.test.ts ("emits a goto() with a
+  // str parameter per field when the path's submit is not a login"): a
+  // non-login submit on the way to a nested screen makes that screen's
+  // goto() take one str per form field, so the prompt's fixed convention
+  // paragraph must not contradict the methods list it just printed.
+  it("does not claim goto() takes no arguments when this screen's goto is parameterized", () => {
+    const listScreen: Screen = {
+      id: "home", name: "home", className: "HomePage", urlTemplate: "/", signature: "s",
+      requiresAuth: false, texts: [], probeValues: [],
+      locators: [
+        { name: "search_input", kind: "input", accessibleName: "Search", python: 'page.get_by_label("Search")', count: 1, verifiedAt: "2026-01-01" },
+        { name: "search_button", kind: "button", accessibleName: "Search", python: 'page.get_by_role("button", name="Search")', count: 1, verifiedAt: "2026-01-01" },
+      ],
+      states: [], ambiguous: [], transitions: [],
+      writeActions: [{ locator: "search_button", label: "Search", kind: "submit", formFields: ["search_input"] }],
+    };
+    const resultsScreen: Screen = {
+      id: "home~search-results", name: "home~search-results", className: "HomeSearchResultsPage", urlTemplate: "/",
+      signature: "s2", requiresAuth: false, texts: [], probeValues: [], locators: [],
+      states: [], ambiguous: [], transitions: [], writeActions: [],
+      reachedBy: { entryScreenId: "home", path: [{ action: "submit", locator: "search_button", data: "valid" }] },
+    };
+    const searchMap: AppMap = {
+      schemaVersion: 2, appUrl: "https://example.test", createdAt: "2026-01-01", complete: true,
+      authenticated: false, screens: [listScreen, resultsScreen], scenarios: [],
+      stats: { screens: 2, locators: 2, ambiguous: 0, durationMs: 1 },
+    };
+
+    const prompt = codeGenerationPrompt("Feature: x", searchMap, resultsScreen.id, {
+      slug: "x",
+      featureFileName: "x.feature",
+    });
+    expect(prompt).toContain("goto(search_input: str)");
+    expect(prompt).not.toMatch(/"goto" no reciben ningún argumento/);
+  });
+
+  // Mirrors the fixture in pageObjectEmitter.test.ts ("emits a goto() that
+  // replays a login-then-click path..."): the screen under test is itself a
+  // nested view, so its `~`-bearing id must not leak into the Python module
+  // name the prompt tells the model to import from.
+  it("derives a valid Python module name for a nested screen id", () => {
+    const loginScreen: Screen = {
+      id: "home", name: "home", className: "HomePage", urlTemplate: "/", signature: "s",
+      requiresAuth: false, texts: [], probeValues: [],
+      locators: [
+        { name: "email_input", kind: "input", accessibleName: "Email", python: 'page.get_by_label("Email")', count: 1, verifiedAt: "2026-01-01" },
+        { name: "password_input", kind: "input", accessibleName: "Password", python: 'page.get_by_label("Password")', count: 1, verifiedAt: "2026-01-01" },
+        { name: "log_in_button", kind: "button", accessibleName: "Log in", python: 'page.get_by_role("button", name="Log in")', count: 1, verifiedAt: "2026-01-01" },
+      ],
+      states: [], ambiguous: [], transitions: [],
+      writeActions: [{ locator: "log_in_button", label: "Log in", kind: "submit", formFields: ["email_input", "password_input"] }],
+    };
+    const babyScreen: Screen = {
+      id: "home~crear-bebe", name: "Crear bebé", className: "HomeCrearBebePage", urlTemplate: "/",
+      signature: "s2", requiresAuth: true, texts: [], probeValues: [], locators: [],
+      states: [], ambiguous: [], transitions: [], writeActions: [],
+      reachedBy: {
+        entryScreenId: "home",
+        path: [{ action: "submit", locator: "log_in_button", data: "valid" }],
+      },
+    };
+    const nestedMap: AppMap = {
+      schemaVersion: 2, appUrl: "https://example.test", createdAt: "2026-01-01", complete: true,
+      authenticated: true, screens: [loginScreen, babyScreen], scenarios: [],
+      stats: { screens: 2, locators: 3, ambiguous: 0, durationMs: 1 },
+    };
+
+    const prompt = codeGenerationPrompt("Feature: x", nestedMap, babyScreen.id, {
+      slug: "x",
+      featureFileName: "x.feature",
+    });
+    expect(prompt).toContain("from pages.home_crear_bebe_page import");
+    expect(prompt).not.toContain("~");
   });
 });
