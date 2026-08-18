@@ -145,4 +145,23 @@ describe("checkFeatureLiterals", () => {
     const result = checkFeatureLiterals(feature('    Then I see "Nope"\n'), mapWithProbeValue);
     expect(result.candidates).not.toContain("agente-qa-probe@example.invalid");
   });
+
+  it("rejects an invented field in the test-username form", () => {
+    const text = feature('    When I fill "Nonexistent" with the test username\n');
+    expect(checkFeatureLiterals(text, map).missing).toEqual([
+      { literal: "Nonexistent", screenId: "login" },
+    ]);
+  });
+
+  it("accepts a real field in the test-password form", () => {
+    const text = feature('    When I fill "Email" with the test password\n');
+    expect(checkFeatureLiterals(text, map).missing).toEqual([]);
+  });
+
+  it("never mistakes the 'the test username' suffix for an interface literal", () => {
+    const text = feature('    When I fill "Email" with the test username\n');
+    const result = checkFeatureLiterals(text, map);
+    expect(result.missing).toEqual([]);
+    expect(result.missing.map((m) => m.literal)).not.toContain("the test username");
+  });
 });

@@ -40,7 +40,7 @@ Pipeline de 5 agentes completo y en `main`: **Explorador** (crawler → `.agente
 - **La solución que propone una review es una hipótesis, no un arreglo.** Todo fix de un test que "no puede fallar" se valida por mutación, igual que el bug original.
 - **La redacción de secretos hecha "para un consumidor LLM" no protege a un segundo consumidor** del mismo dato: comprobar cada sitio donde se reenvía.
 - Gotcha de la suite: `npx vitest run` completo falla la PRIMERA vez ("82 failed / no tests") y pasa limpio al repetir. No es el código; repetir antes de investigar.
-- Gotcha de subagentes: lanzan la suite en segundo plano y PARQUEAN esperando una notificación que nunca consumen, devolviendo el turno sin commitear. Prohibirlo en el prompt no basta — exigir verificación síncrona en primer plano y avisar de que un `| tail` sobre 4 minutos de suite parece colgado y no lo está.
+- Gotcha de subagentes: lanzan la suite en segundo plano y PARQUEAN esperando una notificación que nunca consumen, devolviendo el turno sin commitear. Exigir verificación síncrona en primer plano y avisar de que un `| tail` sobre 4 min de suite parece colgado y no lo está.
 
 ## Economía de contexto (medido 2026-08-18)
 
@@ -64,4 +64,5 @@ Transcripts reales del repo: **$3.200 en 19 sesiones, 87% en releer contexto del
 - Un test que mockea entera una función de librería externa no puede detectar un bug en cómo se la llama. Para contratos de librería, dejar la función real y sustituir solo la capa de red/modelo.
 - Un flag añadido a producción SOLO para que pase un `toContain` es sospechoso: hacer tolerante el test, no pobre el producto.
 - Al verificar la afirmación de un implementador sobre un error de compilador, reproducir la expresión EXACTA y los mismos flags de `tsconfig` — una simplificación "equivalente" puede no disparar la misma regla.
+- **Credenciales válidas en un `.feature` SIEMPRE salen de `.env`** (`AGENTE_QA_TEST_USERNAME`/`_PASSWORD`), nunca literales inventados por el LLM; las credenciales INVÁLIDAS sí son datos literales del escenario y da igual cuáles sean.
 - Un `replace` global sobre código fuente debe distinguir literales y comentarios de código real; si no, "arregla" una regla duplicada y estrena un bug de la misma familia dentro de las cadenas.

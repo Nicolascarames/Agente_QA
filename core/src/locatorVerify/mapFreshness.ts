@@ -36,8 +36,12 @@ const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
  * A `fill` step's second quoted group is test DATA the tester invented (an
  * email, a password) — never app copy, same rule `checkFeatureLiterals`
  * applies. Only the first quoted group (the field name) is a UI literal.
+ * The `the test username`/`the test password` forms carry no second quoted
+ * group — valid credentials come from `.env`, never a literal — and still
+ * match here so the field still gets revalidated in a real browser and still
+ * takes part in ambiguity detection below.
  */
-const FILL_STEP = /I fill "([^"]*)" with "([^"]*)"/;
+const FILL_STEP = /I fill "([^"]*)" with (?:"([^"]*)"|the test (?:username|password))/;
 const CLICK_STEP = /I click "([^"]*)"/;
 
 /**

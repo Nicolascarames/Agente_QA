@@ -59,6 +59,17 @@ describe("gherkinGenerationPrompt", () => {
     expect(gherkinGenerationPrompt("probar login", map, "login")).toMatch(/no inventes|do not invent/i);
   });
 
+  it("teaches the data-less test-username/test-password step forms for valid credentials", () => {
+    const prompt = gherkinGenerationPrompt("probar login", map, "login");
+    expect(prompt).toContain('with the test username');
+    expect(prompt).toContain('with the test password');
+  });
+
+  it("tells the model never to invent a literal email or password as if it were valid", () => {
+    const prompt = gherkinGenerationPrompt("probar login", map, "login");
+    expect(prompt).toMatch(/nunca inventes/i);
+  });
+
   it("groups one locator's states by precondition instead of flattening them into one line", () => {
     const prompt = gherkinGenerationPrompt("probar login", map, "login");
     const locatorLines = prompt.split("\n").filter((line) => line.includes("log_in_button"));

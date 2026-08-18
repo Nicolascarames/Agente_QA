@@ -41,6 +41,14 @@ describe("locatorsUsedBy", () => {
     const result = locatorsUsedBy(fillFeature, map);
     expect(result.used.map((u) => u.locator.name)).toEqual(["email_input"]);
   });
+
+  it("collects the field name from the data-less 'the test username'/'the test password' forms", () => {
+    const usernameFeature = `Feature: F\n\n  @screen:login\n  Scenario: S\n    When I fill "Email" with the test username\n`;
+    expect(locatorsUsedBy(usernameFeature, map).used.map((u) => u.locator.name)).toEqual(["email_input"]);
+
+    const passwordFeature = `Feature: F\n\n  @screen:login\n  Scenario: S\n    When I fill "Email" with the test password\n`;
+    expect(locatorsUsedBy(passwordFeature, map).used.map((u) => u.locator.name)).toEqual(["email_input"]);
+  });
 });
 
 describe("locatorsUsedBy with two locators sharing an accessible name", () => {
@@ -90,6 +98,14 @@ describe("locatorsUsedBy with two locators sharing an accessible name", () => {
   it("treats the second quoted group of a fill step as data, never a locator", () => {
     const fill = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "Log in" with "Log in"\n`;
     const result = locatorsUsedBy(fill, twinsMap);
+    expect(result.ambiguous).toHaveLength(1);
+    expect(result.ambiguous[0].quoted).toBe("Log in");
+  });
+
+  it("detects ambiguity for a fill step in the data-less test-username form, same as the form with a value", () => {
+    const fill = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "Log in" with the test username\n`;
+    const result = locatorsUsedBy(fill, twinsMap);
+    expect(result.used).toEqual([]);
     expect(result.ambiguous).toHaveLength(1);
     expect(result.ambiguous[0].quoted).toBe("Log in");
   });

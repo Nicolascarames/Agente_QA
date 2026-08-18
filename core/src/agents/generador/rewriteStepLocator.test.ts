@@ -43,6 +43,20 @@ describe("rewriteStepLocator", () => {
     );
   });
 
+  it("rewrites the field of a fill step in the 'the test username' form, without touching the suffix", () => {
+    const feature = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "Log in" with the test username\n`;
+    expect(rewriteStepLocator(feature, "home", "Log in", "log_in_input")).toBe(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "log_in_input" with the test username\n`
+    );
+  });
+
+  it("rewrites the field of a fill step in the 'the test password' form, without touching the suffix", () => {
+    const feature = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "Log in" with the test password\n`;
+    expect(rewriteStepLocator(feature, "home", "Log in", "log_in_input")).toBe(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I fill "log_in_input" with the test password\n`
+    );
+  });
+
   it("treats a $-bearing locator name as a literal, not String.replace syntax", () => {
     // map.json is user-editable (LocatorEntrySchema.name is only z.string().min(1)),
     // so a hand-written name containing "$&" or "$1" must not be interpreted as

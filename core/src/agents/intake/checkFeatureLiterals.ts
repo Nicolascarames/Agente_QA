@@ -24,9 +24,13 @@ const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
  * A `fill` step's second quoted group is test DATA the tester invented (an
  * email, a password) — never app copy. Demanding it exist in the map would
  * make it impossible to write any scenario with input. Only the first quoted
- * group (the field name) is a UI literal and must be grounded.
+ * group (the field name) is a UI literal and must be grounded. The
+ * `the test username`/`the test password` forms carry no second quoted
+ * group at all — valid credentials always come from `.env`, never a literal
+ * the model could invent — and still match here so the field name is checked
+ * the same way either form is written.
  */
-const FILL_STEP = /I fill "([^"]*)" with "([^"]*)"/;
+const FILL_STEP = /I fill "([^"]*)" with (?:"([^"]*)"|the test (?:username|password))/;
 
 /**
  * Every literal a scenario on this screen may legitimately quote — `screenLiterals`

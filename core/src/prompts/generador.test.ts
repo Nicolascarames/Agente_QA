@@ -104,4 +104,15 @@ describe("codeGenerationPrompt", () => {
   it("throws a clear error when the screen doesn't exist in the map", () => {
     expect(() => codeGenerationPrompt(featureText, map, "ghost", naming)).toThrow(/ghost/);
   });
+
+  it("names the data-less test-username/test-password step forms as the trigger for reading credentials from .env", () => {
+    const prompt = codeGenerationPrompt(featureText, map, "login", naming);
+    expect(prompt).toContain('with the test username');
+    expect(prompt).toContain('with the test password');
+  });
+
+  it("says a fill step with a quoted value uses that value as-is, for invalid credentials", () => {
+    const prompt = codeGenerationPrompt(featureText, map, "login", naming);
+    expect(prompt).toMatch(/usa ese valor tal cual/i);
+  });
 });

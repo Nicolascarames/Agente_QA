@@ -142,9 +142,17 @@ Reglas, todas obligatorias:
 5. Usa este vocabulario de pasos:
      Given I am on the "<pantalla>" screen
      When  I fill "<campo>" with "<valor>"
+     When  I fill "<campo>" with the test username
+     When  I fill "<campo>" with the test password
      When  I click "<elemento>"
      Then  I see "<texto>"
      Then  I do not see "<texto>"
+6. Para las credenciales VÁLIDAS de la cuenta de prueba usa SIEMPRE
+   "I fill \"<campo>\" with the test username" / "... with the test password".
+   Nunca inventes un email o una contraseña que se supongan válidos: no
+   existirían en la aplicación real y el escenario fallaría siempre. Para
+   credenciales INVÁLIDAS usa la forma con valor entrecomillado y el literal
+   que quieras: ahí el valor sí es un dato del escenario.
 
 Responde SOLO con el JSON: {"fileName": "kebab-case.feature", "featureText": "..."}`;
 }

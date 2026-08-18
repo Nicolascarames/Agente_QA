@@ -6,9 +6,10 @@ function escapeRegExp(value: string): string {
 
 /**
  * Pin an ambiguous step to one locator by name. Only `I click "<x>"` and the
- * FIRST quoted group of `I fill "<x>" with "<y>"` name a locator; the fill
- * step's second group is test data and a `Then I see "<x>"` asserts app copy —
- * neither is ever rewritten.
+ * FIRST quoted group of `I fill "<x>" with "<y>"` (or its data-less
+ * `... with the test username`/`... with the test password` forms) name a
+ * locator; a fill step's own quoted data value and a `Then I see "<x>"`
+ * assert app copy — neither is ever rewritten.
  *
  * Scoped to the scenarios under `screenId`: the same words on another screen
  * are another screen's locators, and answering for one must not answer for the
@@ -22,7 +23,7 @@ export function rewriteStepLocator(
 ): string {
   const literal = escapeRegExp(quoted);
   const click = new RegExp(`(I click ")${literal}(")`);
-  const fill = new RegExp(`(I fill ")${literal}(" with ")`);
+  const fill = new RegExp(`(I fill ")${literal}(" with )`);
 
   let current: string | null = null;
   return featureText
