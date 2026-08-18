@@ -10,6 +10,7 @@ import { redactText } from "./redact.js";
 import { elementKey, mergeScreenState } from "./elementIdentity.js";
 import type { Crawler, CrawlCredentials, CrawlInput, CrawlResult } from "./crawler.js";
 import { MissingCrawlerToolError } from "./crawler.js";
+import { PASSWORD_NAME, looksLikeEmailField, hasPasswordField } from "./credentialFields.js";
 
 export { pythonLiteral } from "./pythonLiteral.js";
 
@@ -30,8 +31,6 @@ const FORM_SELECTOR = "form";
 /** Fields the crawler treats as fillable form inputs, everywhere in this file. */
 const FIELD_SELECTOR =
   'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])';
-
-const PASSWORD_NAME = /password|contrasena|contraseña|clave/i;
 
 /**
  * Logging out mid-crawl would kill the session the whole authenticated pass
@@ -885,7 +884,7 @@ const INVALID_EMAIL = "agente-qa-probe@example.invalid";
 const INVALID_PASSWORD = "agente-qa-invalid-password";
 
 function valueFor(fieldName: string, data: "valid" | "invalid", credentials?: CrawlCredentials): string {
-  const looksLikeEmail = /email|correo|user|usuario/i.test(fieldName);
+  const looksLikeEmail = looksLikeEmailField(fieldName);
   const looksLikePassword = PASSWORD_NAME.test(fieldName);
   if (data === "invalid") return looksLikeEmail ? INVALID_EMAIL : looksLikePassword ? INVALID_PASSWORD : "";
   if (looksLikeEmail) return credentials?.username ?? "agente-qa@example.test";
@@ -957,13 +956,6 @@ async function fieldTarget(
     worst = Math.max(worst, matches);
   }
   return { target: null, matches: worst };
-}
-
-function hasPasswordField(screen: Screen, action: WriteAction): boolean {
-  return action.formFields.some((fieldName) => {
-    const field = screen.locators.find((l) => l.name === fieldName);
-    return field?.accessibleName !== undefined && PASSWORD_NAME.test(field.accessibleName);
-  });
 }
 
 /**
