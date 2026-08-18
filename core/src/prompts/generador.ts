@@ -33,7 +33,7 @@ export function codeGenerationPrompt(
   const moduleName = `${screen.id.replace(/-/g, "_")}_page`;
   const modulePath = `pages.${moduleName}`;
 
-  const methods = pageObjectMethodNames(screen);
+  const methods = pageObjectMethodNames(screen, map);
   const methodsList =
     methods.length > 0 ? methods.map((name) => `  - ${name}`).join("\n") : "  (ninguno)";
 
