@@ -3,7 +3,7 @@ import { checkFeatureLiterals } from "./checkFeatureLiterals.js";
 import type { AppMap } from "../../appMap/schema.js";
 
 const map: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
   complete: true, authenticated: false, scenarios: [],
   stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
   screens: [{
@@ -60,7 +60,7 @@ describe("checkFeatureLiterals", () => {
 
   it("recognizes a nested screen tag containing '~'", () => {
     const nestedMap: AppMap = {
-      schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+      schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
       complete: true, authenticated: false, scenarios: [],
       stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
       screens: [{
@@ -105,7 +105,7 @@ describe("checkFeatureLiterals", () => {
   // attempts on the very first, most obedient step every real crawl produces.
   it("accepts a prompt-obedient feature verbatim against a map shaped like a real crawl (name === id, a route slug absent from texts)", () => {
     const realMap: AppMap = {
-      schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+      schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
       complete: true, authenticated: false, scenarios: [],
       stats: { screens: 1, locators: 1, ambiguous: 0, durationMs: 0 },
       screens: [{

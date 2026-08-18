@@ -4,7 +4,7 @@ import { FakeLocatorVerifier } from "./testUtils.js";
 import type { AppMap } from "../appMap/schema.js";
 
 const map: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
   complete: true, authenticated: false, scenarios: [],
   stats: { screens: 1, locators: 2, ambiguous: 0, durationMs: 0 },
   screens: [{

@@ -1699,7 +1699,7 @@ export function createRealCrawler(): Crawler {
       }
 
       const map: AppMap = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         appUrl: input.baseUrl,
         createdAt: new Date().toISOString(),
         complete,
