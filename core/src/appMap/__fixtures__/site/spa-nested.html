@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <!-- El caso completo que motiva esta funcionalidad: un login que no cambia
+       la URL, seguido de un botón cuyo contenido revela un formulario real
+       (con un input, no solo botones) — el equivalente en miniatura de
+       "Log in" → dashboard → "Crear bebé" en la aplicación real medida. -->
+  <head><meta charset="utf-8" /><title>Fixture · Nested SPA views</title></head>
+  <body>
+    <main id="app">
+      <h1>Sign in</h1>
+      <form id="login">
+        <label>Email <input name="email" type="email" /></label>
+        <label>Password <input name="password" type="password" /></label>
+        <button type="submit">Log in</button>
+      </form>
+    </main>
+    <script>
+      document.getElementById("login").addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.getElementById("app").innerHTML = `
+          <h1>Dashboard</h1>
+          <p>You have no baby yet.</p>
+          <button type="button" id="create-baby">Create baby</button>
+        `;
+        document.getElementById("create-baby").addEventListener("click", () => {
+          document.getElementById("app").innerHTML = `
+            <h1>New baby</h1>
+            <form id="baby-form">
+              <label>Name <input name="name" type="text" /></label>
+              <button type="submit">Create</button>
+            </form>
+          `;
+        });
+      });
+    </script>
+  </body>
+</html>
