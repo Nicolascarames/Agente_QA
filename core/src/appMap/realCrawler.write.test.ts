@@ -344,4 +344,16 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — write pass", 
     expect(result.ok).toBe(true);
     expect(events.some((e) => e.startsWith("warn:"))).toBe(true);
   }, 40000);
+
+  it("marks the crawl authenticated after a login that swaps the view without changing the URL", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url.replace(/\/$/, "") + "/spa-login-only.html",
+      limits,
+      credentials: { username: "user@example.test", password: "secret" },
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.map.authenticated).toBe(true);
+  }, 20000);
 });

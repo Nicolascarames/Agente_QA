@@ -766,6 +766,31 @@ async function currentSignature(page: Page, secrets: string[]): Promise<string |
   return snapshot.length > 0 ? screenSignature(redactText(snapshot, secrets)) : null;
 }
 
+/**
+ * Si un envío que se suponía login tuvo éxito. La URL cambiando sigue siendo
+ * la señal más barata y se comprueba primero; en una SPA nunca cambia, así
+ * que la segunda comprobación es la que de verdad importa aquí: la firma dejó
+ * de ser la de la pantalla de login Y ya no queda ningún campo de contraseña
+ * visible. Comparar solo firmas no vale — un login FALLIDO también cambia la
+ * firma, al pintar el mensaje de error.
+ */
+async function submitSucceeded(
+  page: Page,
+  before: string,
+  loginSignature: string | null,
+  secrets: string[]
+): Promise<boolean> {
+  if (page.url() !== before) return true;
+  if (loginSignature === null) return false;
+  const signature = await currentSignature(page, secrets);
+  if (signature === null || signature === loginSignature) return false;
+  const passwordFieldCount = await page
+    .locator('input[type="password"]')
+    .count()
+    .catch(() => 1); // en caso de error, no reclamar éxito
+  return passwordFieldCount === 0;
+}
+
 /** `id`, `name` and `className` all derive from the same slug, in one place. */
 export function screenIdentity(screenId: string): { id: string; name: string; className: string } {
   const pythonSafeSlug = screenId.replace(/~/g, "_");
@@ -1072,7 +1097,7 @@ async function attemptLogin(page: Page, input: CrawlInput, emit: EmitEvent, secr
     return { authenticated: false, loginSignature: entry.signature };
   }
 
-  const authenticated = page.url() !== before;
+  const authenticated = await submitSucceeded(page, before, entry.signature, secrets);
   emit(
     authenticated
       ? { agent: "explorador", status: "ok", depth: 1, message: `Sesión iniciada, el mapa cubrirá la zona privada → ${page.url()}` }
@@ -1234,6 +1259,15 @@ async function runWritePass(
           if (isLoginAction) authenticated = true;
         }
         continue;
+      }
+
+      if (isLoginAction && data === "valid") {
+        const succeeded = await submitSucceeded(page, before, screen.signature, secrets);
+        if (succeeded) {
+          authenticated = true;
+          emit({ agent: "explorador", status: "ok", depth: 1, message: `Envío válido de "${action.label}" (sin cambio de URL, sesión iniciada)` });
+          continue;
+        }
       }
 
       const after = await captureScreen(page, { screenId: screen.id, baseUrl: input.baseUrl, secrets });
