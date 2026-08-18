@@ -9,7 +9,18 @@
        segundo salto MÁS ALLÁ de la promoción: un control revelado por la
        propia pantalla promocionada, no por el ancestro. Existe para probar
        que lo que ese salto revela se registra contra la pantalla promocionada
-       (baby-form), no contra el dashboard. -->
+       (baby-form), no contra el dashboard.
+
+       "Nursery", también dentro del Dashboard, es una escritura anidada tras
+       OTRA ya aprobada (el login), pero alcanzada por una navegación REAL, no
+       por un swap del mismo DOM: `runWritePass` solo sabe recargar una
+       pantalla desde la URL concreta que la capturó (`concreteUrls`), y una
+       pantalla promocionada por clic (baby-form) tiene registrada la URL de
+       su ANCESTRO — recargarla vuelve al login, no a la vista revelada — así
+       que su propio "Crear" nunca puede ejecutarse de verdad, con o sin este
+       bucle. "Nursery" evita esa limitación aparte con una URL propia y
+       real, y es lo que permite probar que un write action anidado no solo
+       se pregunta, sino que se ejecuta. -->
   <head><meta charset="utf-8" /><title>Fixture · Nested SPA views</title></head>
   <body>
     <main id="app">
@@ -27,6 +38,7 @@
           <h1>Dashboard</h1>
           <p>You have no baby yet.</p>
           <button type="button" id="create-baby">Create baby</button>
+          <a href="/nursery.html">Nursery</a>
         `;
         document.getElementById("create-baby").addEventListener("click", () => {
           document.getElementById("app").innerHTML = `

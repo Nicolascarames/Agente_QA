@@ -1921,25 +1921,43 @@ export function createRealCrawler(): Crawler {
 
         await drainQueue();
 
-        // Second pass: nothing is submitted without the user's approval, every
-        // run — there is deliberately no flag to bypass this. Every screen's
-        // write actions are offered up front, whether or not the walk hit any
-        // safety limit above; whatever the user did not approve simply never runs.
-        const pendingWriteActions = screens.flatMap((screen) =>
-          screen.writeActions.map((action) => ({ screenId: screen.id, action }))
-        );
-        const approvedWriteActions = await input.callbacks.approveWriteActions(pendingWriteActions);
-        const writeAuthenticated = await runWritePass(
-          page, screens, approvedWriteActions, concreteUrls, input, emit,
-          assignedScreenIds, promotedCountByAncestor, enqueueChildren
-        );
-        authenticated = authenticated || writeAuthenticated;
+        // Nothing is submitted without the user's approval, every run — there
+        // is deliberately no flag to bypass this. Every screen's write actions
+        // are offered up front, whether or not the walk hit any safety limit
+        // above; whatever the user did not approve simply never runs.
+        //
+        // Every approved write action can itself enqueue more exploration
+        // (Tarea 10's `runWritePass` extension: a same-route submit that
+        // reveals new controls is classified/promoted/enqueued exactly like a
+        // click). That newly-queued exploration can, in turn, discover MORE
+        // write actions nested behind it — a form only reachable after an
+        // earlier form was already submitted and approved (the real
+        // motivating case: `spa-nested.html`'s baby-creation form, only
+        // reachable after the login submit runs). A single extra approval
+        // pass only pushes this problem one level deeper; the loop below
+        // keeps alternating "drain what's queued" and "approve + run whatever
+        // new write actions that drain revealed" until a round finds nothing
+        // left to ask, which is the only way every depth gets a chance to
+        // surface its own forms for approval.
+        const askedWriteActions = new Set<string>(); // `${screenId}|${locator}`
+        while (true) {
+          await drainQueue();
 
-        // A same-route login success discovered above can enqueue its own
-        // children (Tarea 10's `spa-nested.html`: submitting the login form
-        // reveals a "Create baby" button) — drained here a second time, so
-        // they get explored exactly like anything the first pass found.
-        await drainQueue();
+          const pendingWriteActions = screens.flatMap((screen) =>
+            screen.writeActions
+              .filter((action) => !askedWriteActions.has(`${screen.id}|${action.locator}`))
+              .map((action) => ({ screenId: screen.id, action }))
+          );
+          if (pendingWriteActions.length === 0) break;
+          for (const p of pendingWriteActions) askedWriteActions.add(`${p.screenId}|${p.action.locator}`);
+
+          const approvedWriteActions = await input.callbacks.approveWriteActions(pendingWriteActions);
+          const writeAuthenticated = await runWritePass(
+            page, screens, approvedWriteActions, concreteUrls, input, emit,
+            assignedScreenIds, promotedCountByAncestor, enqueueChildren
+          );
+          authenticated = authenticated || writeAuthenticated;
+        }
 
         // `toScreenId` must hold a screen id, not the route template the walk
         // had at hand: consumers read it against `screen.id` and a template

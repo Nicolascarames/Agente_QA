@@ -375,10 +375,14 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
       expect(nameInput).toBeDefined();
     }, 20000);
 
-    it("keeps screen count at 2: the login screen and the promoted baby-form screen", async () => {
+    // 3, not 2: the login screen, the promoted baby-form screen, and (Tarea
+    // 11) the "Nursery" screen the Dashboard's real link reaches — a normal,
+    // addressable screen like any other, discovered down the same same-route
+    // dashboard state as the promoted baby-form.
+    it("keeps screen count at 3: the login screen, the promoted baby-form screen and the nursery screen", async () => {
       const result = await crawlNestedFixture();
       if (!result.ok) throw new Error(result.error);
-      expect(result.map.screens).toHaveLength(2);
+      expect(result.map.screens).toHaveLength(3);
     }, 20000);
 
     // The fixture's "Show tips" button lives on the ALREADY-PROMOTED baby-form
@@ -399,6 +403,40 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
 
       expect(entry.texts).not.toContain("Keep skin to skin contact.");
       expect(entry.locators.some((l) => l.accessibleName === "Show tips")).toBe(false);
+    }, 20000);
+
+    // Tarea 11: the nursery form's "Save" is a write action nested behind an
+    // already-approved write action (the login submit) — it does not exist
+    // in any `screen.writeActions` until the login's submit already ran and
+    // a following drain already followed the "Nursery" link the login
+    // revealed. A single approval pass can never see it; only a loop that
+    // keeps asking until a round finds nothing new does.
+    it("asks approval again for a write action only discovered after an earlier one ran, and runs it", async () => {
+      let approveCalls = 0;
+      const result = await createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+        limits,
+        credentials: { username: "user@example.test", password: "secret" },
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (pending) => {
+            approveCalls++;
+            return pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator }));
+          },
+        },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+
+      // Proves the loop actually iterated more than once, not that a single
+      // call happened to see everything.
+      expect(approveCalls).toBeGreaterThan(1);
+
+      const nurseryScreen = result.map.screens.find((s) => s.urlTemplate === "/nursery.html");
+      expect(nurseryScreen).toBeDefined();
+      const created = nurseryScreen!.texts.includes("Baby created!")
+        || nurseryScreen!.states.some((s) => s.addsTexts.includes("Baby created!"));
+      expect(created).toBe(true);
     }, 20000);
   });
 });

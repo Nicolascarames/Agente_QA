@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <!-- Tarea 11: la escritura anidada de spa-nested.html's Dashboard que
+       PUEDE ejecutarse de verdad — llega aquí por una navegación real desde
+       el "Nursery" link, así que `runWritePass` recarga esta pantalla desde
+       su propia URL concreta y el formulario sigue ahí, a diferencia del
+       "Crear" de baby-form (ver el comentario en spa-nested.html). -->
+  <head><meta charset="utf-8" /><title>Fixture · Nursery</title></head>
+  <body>
+    <main id="app">
+      <h1>Nursery</h1>
+      <form id="nursery-form">
+        <label>Name <input name="name" type="text" /></label>
+        <button type="submit">Save</button>
+      </form>
+    </main>
+    <script>
+      document.getElementById("nursery-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.getElementById("app").insertAdjacentHTML("beforeend", "<p>Baby created!</p>");
+      });
+    </script>
+  </body>
+</html>
