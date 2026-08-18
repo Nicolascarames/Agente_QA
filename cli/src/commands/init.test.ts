@@ -14,6 +14,7 @@ function prompts(overrides: Partial<InitPrompts> = {}): InitPrompts {
     selectAppLanguage: async () => "es",
     inputRoute: async (label) => (label.includes("home") ? "/" : ""),
     promptAdditionalRoutes: async () => ({}),
+    inputMaxViewDepth: async () => 4,
     selectGitignoreEntries: async (candidates) => candidates,
     ...overrides,
   };
@@ -106,6 +107,12 @@ describe("runInit", () => {
       checkout: "/carrito",
       signup: "/registro",
     });
+  });
+
+  it("saves the answered maxViewDepth into crawl config", async () => {
+    await runInit(prompts({ inputMaxViewDepth: async () => 2 }), tmpProject);
+    const config = await loadProjectConfig(tmpProject);
+    expect(config!.crawl.maxViewDepth).toBe(2);
   });
 
   it("creates the .env template when it doesn't exist yet, and reports it as created", async () => {

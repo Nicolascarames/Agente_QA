@@ -81,6 +81,13 @@ export const realInitPrompts: InitPrompts = {
     }
     return routes;
   },
+  async inputMaxViewDepth() {
+    return input({
+      message: "¿Cuántos niveles de vistas dentro de una misma pantalla (modales, pasos sin URL propia) explora el mapa?",
+      default: "4",
+      validate: (value) => (/^\d+$/.test(value) && Number(value) >= 0 ? true : "Introduce un número entero, 0 o mayor."),
+    }).then(Number);
+  },
   async selectGitignoreEntries(candidates) {
     return checkbox({
       message: "¿Qué añado al .gitignore del proyecto?",
