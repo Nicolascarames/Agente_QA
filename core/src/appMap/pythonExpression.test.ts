@@ -28,4 +28,33 @@ describe("toSelfPageExpression", () => {
   it("leaves an expression that does not start from page untouched", () => {
     expect(toSelfPageExpression('self.page.locator("#x")')).toBe('self.page.locator("#x")');
   });
+
+  // A `kind: "text"` locator's Python embeds the app's own copy verbatim, and
+  // ordinary UI copy ends in a lowercase "page." often enough that a
+  // literal-blind rewrite corrupts it into text nobody ever wrote on screen.
+  it("does not touch a `page.` that lives inside a string literal", () => {
+    const input = 'page.get_by_text("You do not have permission to view this page.", exact=True)';
+    expect(toSelfPageExpression(input)).toBe(
+      'self.page.get_by_text("You do not have permission to view this page.", exact=True)'
+    );
+  });
+
+  it("does not touch a `page.` inside a named-argument string literal", () => {
+    const input = 'page.get_by_role("button", name="Go to page.", exact=True)';
+    expect(toSelfPageExpression(input)).toBe(
+      'self.page.get_by_role("button", name="Go to page.", exact=True)'
+    );
+  });
+
+  it("copies a single-quoted literal's contents through untouched", () => {
+    const input = "page.get_by_text('Back to page.', exact=True)";
+    expect(toSelfPageExpression(input)).toBe("self.page.get_by_text('Back to page.', exact=True)");
+  });
+
+  it("respects a backslash-escaped quote inside a literal without ending it early", () => {
+    const input = 'page.get_by_text("Click \\"page.\\" now", exact=True)';
+    expect(toSelfPageExpression(input)).toBe(
+      'self.page.get_by_text("Click \\"page.\\" now", exact=True)'
+    );
+  });
 });

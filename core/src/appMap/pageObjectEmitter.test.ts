@@ -94,6 +94,28 @@ describe("emitPageObject", () => {
     // happen: inside a method only `self.page` exists.
     expect(emitPageObject(screen).content).not.toMatch(/(?<!self\.)\bpage\./);
   });
+
+  it("keeps a text locator's own copy byte-identical even when it ends in 'page.'", () => {
+    // Verbatim shape realCrawler.ts produces for a `kind: "text"` locator: the
+    // app's own words, which end in a lowercase "page." often enough in real
+    // UI copy. A literal-blind `page.` rewrite corrupts this into a string
+    // the crawler never validated and Playwright can never match.
+    const screen: Screen = {
+      id: "denied", name: "Access denied", className: "AccessDeniedPage", urlTemplate: "/denied",
+      signature: "sha256:a", requiresAuth: false,
+      texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+      locators: [
+        {
+          name: "text_no_permission", kind: "text",
+          python: 'page.get_by_text("You do not have permission to view this page.", exact=True)',
+          count: 1, verifiedAt: "t",
+        },
+      ],
+    };
+    expect(emitPageObject(screen).content).toContain(
+      'return self.page.get_by_text("You do not have permission to view this page.", exact=True)'
+    );
+  });
 });
 
 describe("pageObjectMethodNamesForLocator", () => {
