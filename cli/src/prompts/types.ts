@@ -1,4 +1,4 @@
-import type { ScenarioCandidate } from "@agente-qa/core";
+import type { ScenarioCandidate, LocatorEntry } from "@agente-qa/core";
 
 export interface InitPrompts {
   inputTestsDir(): Promise<string>;
@@ -30,6 +30,12 @@ export interface GeneratorPrompts {
   onStaleLocator(
     stale: { screenId: string; name: string; count: number }[]
   ): Promise<{ action: "remap" } | { action: "override"; python: string }>;
+  onAmbiguousLocator(step: {
+    screenId: string;
+    screenName: string;
+    quoted: string;
+    candidates: LocatorEntry[];
+  }): Promise<LocatorEntry>;
 }
 
 export interface ExecutorPrompts {

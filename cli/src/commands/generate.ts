@@ -47,6 +47,7 @@ export async function runGenerateTests(prompts: GeneratorPrompts, projectRoot: s
   const callbacks: GeneratorCallbacks = {
     confirmOverwrite: (filePath) => prompts.confirmOverwrite(filePath),
     onStaleLocator: (stale) => prompts.onStaleLocator(stale),
+    onAmbiguousLocator: (step) => prompts.onAmbiguousLocator(step),
   };
 
   const { writtenPaths } = await runGenerador({

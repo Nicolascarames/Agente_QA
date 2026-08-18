@@ -193,6 +193,29 @@ export function buildRealGeneratorPrompts(): GeneratorPrompts {
       });
       return { action: "override", python };
     },
+    async onAmbiguousLocator(step) {
+      console.log(
+        `\n⚠ El texto "${step.quoted}" de la pantalla "${step.screenName}" coincide con ${step.candidates.length} elementos del mapa. Elige a cuál se refiere el paso.`
+      );
+      // Read-only dump: the user decides with every fact the map holds, and
+      // nothing here edits map.json or the Page Object.
+      for (const candidate of step.candidates) {
+        console.log(`\n  ${candidate.name}   →   Page Object: get_${candidate.name}() / click_${candidate.name}()`);
+        console.log(`    kind:            ${candidate.kind}`);
+        console.log(`    accessibleName:  ${JSON.stringify(candidate.accessibleName ?? null)}`);
+        console.log(`    python:          ${candidate.python}`);
+        console.log(`    count:           ${candidate.count}`);
+        console.log(`    disambiguatedBy: ${candidate.disambiguatedBy ?? "(ninguno)"}`);
+        console.log(`    attributes:      ${JSON.stringify(candidate.attributes ?? {})}`);
+        console.log(`    verifiedAt:      ${candidate.verifiedAt}`);
+        if (candidate.stateId) console.log(`    estado:          ${candidate.stateId}`);
+      }
+      const name = await select<string>({
+        message: `¿A cuál se refiere "${step.quoted}"?`,
+        choices: step.candidates.map((c) => ({ name: c.name, value: c.name })),
+      });
+      return step.candidates.find((c) => c.name === name)!;
+    },
   };
 }
 

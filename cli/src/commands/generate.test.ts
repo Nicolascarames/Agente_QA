@@ -74,6 +74,29 @@ const baseMap: AppMap = {
   screens: [loginScreen],
 };
 
+// Same twins fixture as runGenerador.test.ts: two buttons sharing the
+// accessible name "Log in", only one of which submits — the ambiguity a
+// step's quoted text alone cannot resolve, used here to prove the CLI's
+// onAmbiguousLocator prompt is actually wired into runGenerador's callback.
+const homeScreenWithTwins: Screen = {
+  id: "home", name: "home", className: "HomePage", urlTemplate: "/",
+  signature: "sha256:t", requiresAuth: false,
+  texts: ["Log in"], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+  locators: [
+    { name: "log_in_button", kind: "button", accessibleName: "Log in",
+      python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'button\']"))',
+      count: 1, verifiedAt: "t" },
+    { name: "log_in_button_submit", kind: "button", accessibleName: "Log in",
+      python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'submit\']"))',
+      count: 1, verifiedAt: "t" },
+  ],
+};
+
+const mapWithTwins: AppMap = { ...baseMap, screens: [homeScreenWithTwins] };
+
+const featureWithAmbiguousClick =
+  'Feature: Login\n\n  @screen:home\n  Scenario: x\n    When I click "Log in"\n';
+
 // Carries no "I click"/"I fill" step, so locatorsUsedBy finds nothing to
 // revalidate — the FakeLocatorVerifier never needs a scripted response.
 const simpleFeature = "Feature: Login\n\n  @screen:login\n  Scenario: x\n    Given a\n";
@@ -97,6 +120,7 @@ function generatorPrompts(overrides: Partial<GeneratorPrompts> = {}): GeneratorP
     selectFeatureFile: vi.fn().mockResolvedValue("login.feature"),
     confirmOverwrite: vi.fn().mockResolvedValue(true),
     onStaleLocator: vi.fn().mockRejectedValue(new Error("onStaleLocator no debería haberse llamado")),
+    onAmbiguousLocator: vi.fn().mockRejectedValue(new Error("onAmbiguousLocator no debería haberse llamado")),
     ...overrides,
   };
 }
@@ -234,6 +258,33 @@ describe("runGenerateTests", () => {
     expect(prompts.onStaleLocator).toHaveBeenCalledWith([{ screenId: "login", name: "log_in_button", count: 0 }]);
     const overrides = await loadOverrides(tmpProject);
     expect(overrides.locators).toEqual([{ screenId: "login", name: "log_in_button", python: overridePython }]);
+  });
+
+  it("routes an ambiguous locator through the onAmbiguousLocator prompt, and writes the chosen locator into the .feature", async () => {
+    await writeEnv(tmpProject, BASE_ENV);
+    await saveProjectConfig(tmpProject, { testsDir: "tests", appUrl: "https://example.com" });
+    await saveAppMap(tmpProject, mapWithTwins);
+    await writeFeature(featureWithAmbiguousClick);
+
+    createProviderMock.mockReturnValue(new FakeLLMProvider([scriptedResponse]));
+    realCodeCheckerCheckMock.mockResolvedValue({ ok: true });
+    createRealLocatorVerifierMock.mockReturnValue(new FakeLocatorVerifier([{ ok: true }]));
+
+    const [, submitButton] = homeScreenWithTwins.locators;
+    const prompts = generatorPrompts({
+      onAmbiguousLocator: vi.fn().mockResolvedValue(submitButton),
+    });
+
+    await runGenerateTests(prompts, tmpProject);
+
+    expect(prompts.onAmbiguousLocator).toHaveBeenCalledWith({
+      screenId: "home",
+      screenName: "home",
+      quoted: "Log in",
+      candidates: homeScreenWithTwins.locators,
+    });
+    const rewritten = await fs.readFile(path.join(tmpProject, "tests", "features", "login.feature"), "utf-8");
+    expect(rewritten).toContain('When I click "log_in_button_submit"');
   });
 
   it("prints each agent event through formatAgentEvent, not a hand-built string", async () => {
