@@ -11,26 +11,35 @@ Responde y pregunta SIEMPRE en castellano (español de España), incluidas las p
 El objetivo de cada sesión es sacar trabajo productivo y terminado, no volumen de cambios. Para eso:
 
 - Antes de implementar nada no trivial, interroga los detalles: presenta las decisiones abiertas con opciones concretas y espera la elección.
-- Todo cambio no trivial pasa por el mismo ciclo que Plan 1: `superpowers:brainstorming` → spec en `docs/superpowers/specs/` → `superpowers:writing-plans` (tareas TDD bite-sized) → `superpowers:subagent-driven-development` (implementador + review por tarea + review final de rama). No lo abrevies para features grandes ni para agentes nuevos.
-- "Hecho" significa: código + `tsc --noEmit` limpio en ambos paquetes + `vitest run` en verde + review de subagente aprobado (o hallazgos aparcados con motivo), con la salida del comando como evidencia.
+- **Features de producto** (agentes nuevos, cambios de arquitectura, superficies nuevas) pasan por el ciclo completo: `superpowers:brainstorming` → spec en `docs/superpowers/specs/` → `superpowers:writing-plans` → `superpowers:subagent-driven-development`. No lo abrevies ahí.
+- **Configuración, docs, tooling y fixes de una causa localizada NO pasan por el ciclo.** Correr spec+plan+subagentes sobre un cambio de config cuesta más de lo que ahorra. Si dudas, di qué camino tomas y por qué en una línea, y sigue.
+- **Presupuesto de review: una re-review como máximo.** review → fix → re-review, y ahí se cierra. Lo que siga abierto se aparca con motivo escrito. Los bucles de re-review fueron $348 de pura iteración en la historia de este repo.
+- "Hecho" significa: código + `tsc --noEmit` limpio en ambos paquetes + `vitest run` en verde + review aprobado (o hallazgos aparcados con motivo), con la salida del comando como evidencia.
+- **Verificación agrupada**: `tsc` y `vitest` se ejecutan una vez al cerrar la tarea, no tras cada edición. Cada ejecución paga el contexto entero de la sesión; en este repo se acumularon 997 ejecuciones de vitest y 530 de tsc.
 - No amplíes el alcance por iniciativa propia. Mejoras no pedidas se proponen, no se hacen.
 
 ## Inicio de cada sesión
 
-1. Lee `memory.md` entero antes de la primera tarea.
-2. Pregunta al usuario: «¿Activo claude-brain para esta sesión?». Si dice que sí, invoca la skill `claude-brain` y sigue su protocolo de planificación y enrutado de modelos durante toda la sesión.
+1. Lee `memory.md` entero antes de la primera tarea (está acotado a ~8KB justamente para que eso sea barato). Las lecciones históricas viven en `docs/memoria/` y solo se leen si la tarea las toca.
+2. La sesión arranca en Opus 5 para brainstorm/spec/plan. **Al cerrar el plan, recuérdale al usuario que cambie a `/model sonnet`** para la implementación — no puedes cambiarlo tú, y a partir de ahí el hilo principal solo orquesta.
 
 ## Memoria (`memory.md`)
 
 - Cuando el usuario corrija algo — código, un supuesto, una preferencia, una forma de trabajar — regístralo en `memory.md` ANTES de continuar. No pidas permiso.
 - Registra también decisiones tomadas y conceptos clave del proyecto.
-- Si supera ~150 líneas, consolida: fusiona entradas repetidas, reduce correcciones asimiladas a reglas de una línea, borra lo obsoleto.
+- **Límite duro: 10KB.** Se mide en bytes, no en líneas — el conteo por líneas engañaba (131 líneas eran 54KB de párrafos gigantes, y `memory.md` acabó siendo el fichero más leído del repo: 230k tokens). Al pasarse: reduce las correcciones asimiladas a reglas de una línea y mueve el detalle a `docs/memoria/`.
 
-## Exploración del código y economía de tokens
+## Economía de contexto y despacho
 
-- Para localizar código usa PRIMERO el grafo de codebase-memory (`search_graph`, `trace_path`, `get_code_snippet`, `get_architecture`); Grep/Read solo para texto plano, configs o cuando el grafo no cubra. Si el índice está desfasado, `detect_changes` + reindexado.
-- Lee estrecho: secciones concretas, no ficheros enteros; nunca releas lo que ya está en contexto.
-- Piensa caro, ejecuta barato: planificación y diagnóstico difícil al modelo potente; ejecución mecánica y búsquedas al barato — así se dispachan los subagentes implementadores en `subagent-driven-development` (haiku para tareas con código completo en el brief, sonnet+ para integración/juicio, el más capaz para la review final de rama).
+El coste de una sesión lo domina el tamaño del contexto que arrastra el hilo principal, no lo que se escribe. Medido en este repo: **87% del gasto fue releer contexto**; a 400k tokens cada llamada costaba $0,45 frente a $0,14 a 120k, produciendo lo mismo.
+
+- **El hilo principal orquesta: despacha, lee resúmenes y commitea. No lee código.** Lo que abra ficheros grandes va dentro de un subagente, cuyo contexto muere con él.
+- Para localizar código usa PRIMERO el grafo de codebase-memory (`search_graph`, `trace_path`, `get_code_snippet`, `get_architecture`) o despacha `brain-scout`; Grep/Read solo para texto plano, configs o cuando el grafo no cubra. Si el índice está desfasado, `detect_changes` + reindexado.
+- **Nunca leas un fichero entero "para orientarte".** Pide anclas `fichero:línea` y lee solo ese rango con `offset`/`limit`. En este repo `realCrawler.ts` (1.757 líneas) se leyó entero 68 veces: 218k tokens.
+- **Los briefs de subagente llevan `fichero:línea` exactos**, el cambio exacto y el comando de verificación. Un brief cerrado es lo que permite que lo ejecute un modelo barato.
+- **Al pasar de ~150k de contexto, cierra la tarea y abre sesión nueva** con un handoff de 20 líneas.
+- **Enrutado por agente, no por decisión ad hoc**: `brain-scout` (haiku, localizar), `brain-implementer` (sonnet, una tarea de brief cerrado), `brain-reviewer` (sonnet, review por tarea — el reviewer por defecto), `brain-final-reviewer` (opus, review final de rama). Definidos en `~/.claude/agents/`.
+- **Máximo 2 despachos a opus por sesión**: review final de rama y diagnóstico difícil. Todo lo demás es sonnet o haiku. Histórico: opus fue el 8% de los despachos y el 52% del gasto en subagentes.
 
 ## Seguridad y producción
 
@@ -50,6 +59,8 @@ Antes de cualquier despliegue a producción o de publicar en npm — y tras toca
 - DI explícita: las funciones de `core` reciben `projectRoot` como parámetro, nunca leen `process.cwd()` por dentro — así los tests usan `fs.mkdtemp` real sin mockear `fs`.
 - Imports relativos con sufijo `.js` aunque el fichero sea `.ts` (ESM NodeNext).
 - `cli`'s `tsc` necesita `core/dist/` construido para resolver `@agente-qa/core` (vitest en cambio alía directo a `core/src`). Si falla resolución: `npm run build --workspace=core`, nunca tocar `cli/tsconfig.json` — ver Task 17 en el plan de Plan 1 para el porqué exacto.
+- **Un fichero de test por módulo, no por tarea del plan.** El TDD por tarea generó `realCrawler.capture.test.ts` + `.walk.test.ts` + `.write.test.ts` (63KB combinados con setup repetido) para un solo módulo. Si una tarea añade casos a un módulo que ya tiene test, van a ese fichero.
+- **Los planes llevan criterio de aceptación, no código inline.** El código lo escribe el implementador desde el brief. Los planes de este repo llegaron a 3.372 líneas y se leyeron 501k tokens de ellos.
 
 ## Comandos
 
