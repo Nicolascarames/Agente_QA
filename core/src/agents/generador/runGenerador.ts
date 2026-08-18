@@ -83,9 +83,10 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
 
   if (resolution.ambiguous.length > 0) {
     const askedCount = resolution.ambiguous.length;
-    const askedQuoted = resolution.ambiguous.map((s) => `"${s.quoted}"`).join(", ");
+    const resolvedNames: string[] = [];
     for (const step of resolution.ambiguous) {
       const chosen = await callbacks.onAmbiguousLocator(step);
+      resolvedNames.push(`"${step.quoted}" → ${chosen.name}`);
       workingText = rewriteStepLocator(workingText, step.screenId, step.quoted, chosen.name);
     }
     await fs.writeFile(featureFilePath, workingText, "utf-8");
@@ -98,17 +99,23 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
       // .feature that still carries the unresolved literal, contradicting the
       // spec's "no admite 'ninguno': la ambigüedad tiene que resolverse para
       // poder generar" — so abort instead of reporting a false success.
+      //
+      // The .feature on disk was already overwritten above with whatever DID
+      // get pinned (§5.4 of the design spec: the user has a right to know a
+      // file they approved was touched), so the error has to say so — a
+      // re-run resolves the rest by itself instead of the user re-answering
+      // questions already answered.
       const unresolved = resolution.ambiguous
         .map((s) => `"${s.quoted}" en la pantalla "${s.screenName}"`)
         .join(", ");
       throw new Error(
-        `No se ha podido concretar el localizador de ${resolution.ambiguous.length} paso(s) en ${featureFilePath}: ${unresolved}. Edita el archivo .feature y sustituye el texto citado por el nombre exacto del localizador elegido, para que el paso deje de ser ambiguo.`
+        `No se ha podido concretar el localizador de ${resolution.ambiguous.length} paso(s) en ${featureFilePath}: ${unresolved}. El archivo .feature ya se ha actualizado con los localizadores que sí se pudieron concretar; vuelve a ejecutar la generación para resolver el resto. Edita el archivo .feature y sustituye el texto citado por el nombre exacto del localizador elegido, para que el paso deje de ser ambiguo.`
       );
     }
     emit({
       agent: "generador", status: "ok", depth: 1,
-      message: `Se ha concretado el localizador de ${askedCount} paso(s) en ${featureFilePath}`,
-      detail: askedQuoted,
+      message: `Se ha${askedCount === 1 ? "" : "n"} concretado ${askedCount} localizador(es) en ${featureFilePath}`,
+      detail: resolvedNames.join(", "),
     });
   }
 

@@ -38,6 +38,18 @@ describe("rewriteStepLocator", () => {
 
   it("preserves CRLF line endings", () => {
     const feature = `Feature: F\r\n\r\n  @screen:home\r\n  Scenario: S\r\n    When I click "Log in"\r\n`;
-    expect(rewriteStepLocator(feature, "home", "Log in", "log_in_button_submit")).toContain("\r\n");
+    expect(rewriteStepLocator(feature, "home", "Log in", "log_in_button_submit")).toBe(
+      `Feature: F\r\n\r\n  @screen:home\r\n  Scenario: S\r\n    When I click "log_in_button_submit"\r\n`
+    );
+  });
+
+  it("treats a $-bearing locator name as a literal, not String.replace syntax", () => {
+    // map.json is user-editable (LocatorEntrySchema.name is only z.string().min(1)),
+    // so a hand-written name containing "$&" or "$1" must not be interpreted as
+    // replacement syntax and corrupt the rest of the line.
+    const feature = `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "Log in"\n`;
+    expect(rewriteStepLocator(feature, "home", "Log in", "weird_$&_$1_name")).toBe(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "weird_$&_$1_name"\n`
+    );
   });
 });

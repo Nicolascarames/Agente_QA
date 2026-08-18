@@ -38,8 +38,14 @@ export function rewriteStepLocator(
         return line;
       }
       if (current !== screenId) return line;
-      const rewritten = line.replace(fill, `$1${locatorName}$2`);
-      return rewritten === line ? line.replace(click, `$1${locatorName}$2`) : rewritten;
+      // locatorName reaches here from map.json, a file the user is invited to
+      // hand-edit (LocatorEntrySchema.name is only z.string().min(1)) — a name
+      // containing "$&" or "$1" would otherwise be read as String.replace
+      // replacement syntax and corrupt the .feature. "$$" escapes to a literal
+      // "$" in the replacement string, so doubling every "$" first neutralizes it.
+      const safeLocatorName = locatorName.replace(/\$/g, "$$$$");
+      const rewritten = line.replace(fill, `$1${safeLocatorName}$2`);
+      return rewritten === line ? line.replace(click, `$1${safeLocatorName}$2`) : rewritten;
     })
     .join(featureText.includes("\r\n") ? "\r\n" : "\n");
 }

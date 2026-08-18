@@ -686,8 +686,13 @@ class LoginPage:
     const onAmbiguousLocator = vi.fn(async (step: AmbiguousStep) =>
       step.candidates.find((c) => c.name === "log_in_button_submit")!
     );
+    const events: AgentEvent[] = [];
 
-    await runGenerador({ ...baseOptions(projectRoot, featureFilePath), callbacks: { ...callbacks(), onAmbiguousLocator } });
+    await runGenerador({
+      ...baseOptions(projectRoot, featureFilePath),
+      callbacks: { ...callbacks(), onAmbiguousLocator },
+      emit: (event) => events.push(event),
+    });
 
     expect(onAmbiguousLocator).toHaveBeenCalledTimes(1);
     const [step] = onAmbiguousLocator.mock.calls[0];
@@ -698,6 +703,13 @@ class LoginPage:
     const rewritten = await fs.readFile(featureFilePath, "utf-8");
     expect(rewritten).toContain('When I click "log_in_button_submit"');
     expect(rewritten).not.toContain('When I click "Log in"');
+
+    // The announcement counts localizadores concretados (one, this pair), and
+    // its detail names what the quoted text actually resolved to — not just
+    // the quoted text, which told the user nothing they didn't already know.
+    const announcement = events.find((e) => e.agent === "generador" && e.message.includes("concretado"));
+    expect(announcement?.message).toBe(`Se ha concretado 1 localizador(es) en ${featureFilePath}`);
+    expect(announcement?.detail).toBe('"Log in" → log_in_button_submit');
   });
 
   it("does not ask again once the .feature names the locator", async () => {
@@ -760,6 +772,11 @@ class LoginPage:
     expect(error.message).toContain("log_in_button_submit");
     expect(error.message).toContain("home");
     expect(error.message).toMatch(/\.feature/);
+    // The rewrite pass already overwrote the .feature on disk with whatever it
+    // COULD pin before hitting the residual ambiguity — the user has a right to
+    // know that happened (spec §5.4), and that re-running resolves the rest.
+    expect(error.message).toMatch(/ya se ha actualizado/i);
+    expect(error.message).toMatch(/vuelve a ejecutar la generación/i);
 
     // Only asked once — for the ORIGINAL ambiguity. The second, residual one is
     // an abort, never a second ask: no retry loop.
