@@ -221,6 +221,22 @@ Se conserva la excepción actual: si el camino no es reproducible — ruta con
 segmentos variables en la entrada — no se emite `goto()` y se explica por qué en
 un comentario, como ya se hace hoy.
 
+### Ruido en la promoción (D1) fuera de SPA con modales
+
+D1 generaliza bien a modales, paneles y pasos de asistente, pero la regla
+"añade localizadores interactivos ⇒ pantalla" también dispara en patrones que no
+deberían convertirse en pantallas propias: un acordeón que despliega un botón, un
+"cargar más" que añade filas con acciones, un menú desplegable. En una aplicación
+con muchos de estos patrones el mapa se llenaría de pantallas triviales, sin que
+D1 tenga forma de distinguirlas de un modal real.
+
+No se afina la regla con heurísticas nuevas — no hay casos reales delante para
+validarlas. En su lugar, cuando una misma pantalla base acumula más de 10 vistas
+promovidas, el walk emite un aviso: probablemente hay un patrón repetitivo, y
+conviene bajar `maxViewDepth` o excluir la ruta con `excludeRoutes`. El umbral no
+bloquea el crawl ni cuenta contra `maxScreens`; solo hace visible un fallo que de
+otro modo sería silencioso.
+
 ## Verificación
 
 Los tests del crawler usan páginas falsas a través de `testUtils.ts`; los casos
