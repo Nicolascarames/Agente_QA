@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser } from "playwright";
 import { startFixtureSite } from "./__fixtures__/server.js";
-import { captureScreen, collectWriteActions, pythonLiteral } from "./realCrawler.js";
+import { captureScreen, collectWriteActions, pythonLiteral, screenIdentity } from "./realCrawler.js";
 import type { AgentEvent } from "../events/agentEvent.js";
 
 describe("pythonLiteral", () => {
@@ -38,6 +38,14 @@ describe("pythonLiteral", () => {
     // The \n produced for the raw newline must not itself get re-escaped by
     // an earlier backslash pass, which would turn it into \\n.
     expect(pythonLiteral("a\nb")).not.toContain("\\\\n");
+  });
+});
+
+describe("screenIdentity", () => {
+  it("derives a valid Python class name from a nested view id containing '~'", () => {
+    const identity = screenIdentity("home~crear-bebe");
+    expect(identity.className).toBe("HomeCrearBebePage");
+    expect(identity.id).toBe("home~crear-bebe");
   });
 });
 

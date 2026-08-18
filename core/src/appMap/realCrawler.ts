@@ -768,11 +768,12 @@ async function currentSignature(page: Page, secrets: string[]): Promise<string |
 }
 
 /** `id`, `name` and `className` all derive from the same slug, in one place. */
-function screenIdentity(screenId: string): { id: string; name: string; className: string } {
+export function screenIdentity(screenId: string): { id: string; name: string; className: string } {
+  const pythonSafeSlug = screenId.replace(/~/g, "_");
   return {
     id: screenId,
     name: screenId,
-    className: `${pythonIdentifier(screenId).replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase())}Page`,
+    className: `${pythonIdentifier(pythonSafeSlug).replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase())}Page`,
   };
 }
 
