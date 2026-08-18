@@ -66,6 +66,26 @@ const homeScreenWithTwins: Screen = {
 
 const mapWithTwins: AppMap = { ...baseMap, screens: [homeScreenWithTwins] };
 
+// Same twins, plus two unrelated locators whose accessibleName happens to equal
+// the resolved twin's own NAME ("log_in_button_submit"). This is what "still
+// ambiguous after the rewrite pass" looks like with real functions and no
+// mocking: rewriteStepLocator DOES rewrite "Log in" -> "log_in_button_submit"
+// (nothing wrong with the rewrite itself), but that literal string is itself
+// the accessibleName two OTHER locators share, so the re-run of locatorsUsedBy
+// reports a brand new ambiguity instead of a clean resolution.
+const homeScreenWithResidualAmbiguity: Screen = {
+  ...homeScreenWithTwins,
+  locators: [
+    ...homeScreenWithTwins.locators,
+    { name: "mystery_a", kind: "button", accessibleName: "log_in_button_submit",
+      python: 'page.get_by_test_id("a")', count: 1, verifiedAt: "t" },
+    { name: "mystery_b", kind: "button", accessibleName: "log_in_button_submit",
+      python: 'page.get_by_test_id("b")', count: 1, verifiedAt: "t" },
+  ],
+};
+
+const mapWithResidualAmbiguity: AppMap = { ...baseMap, screens: [homeScreenWithResidualAmbiguity] };
+
 const scriptedResponse = `# FILE: tests/test_login.py
 from pytest_bdd import scenarios, given, when, then
 
@@ -681,6 +701,10 @@ class LoginPage:
   });
 
   it("does not ask again once the .feature names the locator", async () => {
+    // A negative assertion: it can only be falsified by a bug that makes the
+    // code ask MORE than it should (e.g. the accessibleName guard over-firing),
+    // never by one that asks less — so this test does not discriminate the
+    // Step-6 "remove the whole resolution block" mutation, only that class.
     const { projectRoot, featureFilePath } = await projectWithTwins(
       `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "log_in_button_submit"\n`
     );
@@ -705,5 +729,42 @@ class LoginPage:
     const checks = verifier.receivedCalls[0].checks.map((c) => c.method);
     expect(checks).toContain("get_log_in_button_submit");
     expect(checks).not.toContain("get_log_in_button");
+  });
+
+  it("aborts with an actionable error when the .feature is still ambiguous after the rewrite pass", async () => {
+    // The rewrite itself succeeds ("Log in" really does become
+    // "log_in_button_submit" in the .feature): the point is that resolving ONE
+    // ambiguity is not the same as the .feature being unambiguous overall. Two
+    // unrelated locators on this screen share "log_in_button_submit" as their
+    // OWN accessibleName, so the re-run of locatorsUsedBy genuinely reports a
+    // fresh ambiguity — proving the guard checks the recomputed resolution,
+    // not just that the loop ran once.
+    await saveAppMap(tmpProject, mapWithResidualAmbiguity);
+    const featureFilePath = await writeFeature(
+      `Feature: F\n\n  @screen:home\n  Scenario: S\n    When I click "Log in"\n`
+    );
+    const onAmbiguousLocator = vi.fn(async (step: AmbiguousStep) =>
+      step.candidates.find((c) => c.name === "log_in_button_submit")!
+    );
+    const llm = new FakeLLMProvider([]);
+
+    const promise = runGenerador({
+      ...baseOptions(tmpProject, featureFilePath),
+      llm,
+      callbacks: { ...callbacks(), onAmbiguousLocator },
+    });
+
+    await expect(promise).rejects.toThrow(/ambigu/i);
+    const error: Error = await promise.catch((e) => e);
+    expect(error.message).toContain(featureFilePath);
+    expect(error.message).toContain("log_in_button_submit");
+    expect(error.message).toContain("home");
+    expect(error.message).toMatch(/\.feature/);
+
+    // Only asked once — for the ORIGINAL ambiguity. The second, residual one is
+    // an abort, never a second ask: no retry loop.
+    expect(onAmbiguousLocator).toHaveBeenCalledTimes(1);
+    // Generation must never be reached with a still-ambiguous .feature.
+    expect(llm.receivedCalls).toHaveLength(0);
   });
 });

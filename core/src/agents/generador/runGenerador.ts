@@ -82,17 +82,34 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
   let resolution = locatorsUsedBy(workingText, map);
 
   if (resolution.ambiguous.length > 0) {
+    const askedCount = resolution.ambiguous.length;
+    const askedQuoted = resolution.ambiguous.map((s) => `"${s.quoted}"`).join(", ");
     for (const step of resolution.ambiguous) {
       const chosen = await callbacks.onAmbiguousLocator(step);
       workingText = rewriteStepLocator(workingText, step.screenId, step.quoted, chosen.name);
     }
     await fs.writeFile(featureFilePath, workingText, "utf-8");
+    resolution = locatorsUsedBy(workingText, map);
+    if (resolution.ambiguous.length > 0) {
+      // rewriteStepLocator found nothing to rewrite for one of the reported
+      // (screenId, quoted) pairs — e.g. the step's quoting doesn't match the
+      // patterns it recognizes. Proceeding here would silently drop that
+      // locator from `used` (never freshness-checked) and hand generateCode a
+      // .feature that still carries the unresolved literal, contradicting the
+      // spec's "no admite 'ninguno': la ambigüedad tiene que resolverse para
+      // poder generar" — so abort instead of reporting a false success.
+      const unresolved = resolution.ambiguous
+        .map((s) => `"${s.quoted}" en la pantalla "${s.screenName}"`)
+        .join(", ");
+      throw new Error(
+        `No se ha podido concretar el localizador de ${resolution.ambiguous.length} paso(s) en ${featureFilePath}: ${unresolved}. Edita el archivo .feature y sustituye el texto citado por el nombre exacto del localizador elegido, para que el paso deje de ser ambiguo.`
+      );
+    }
     emit({
       agent: "generador", status: "ok", depth: 1,
-      message: `Se ha concretado el localizador de ${resolution.ambiguous.length} paso(s) en ${featureFilePath}`,
-      detail: resolution.ambiguous.map((s) => `"${s.quoted}"`).join(", "),
+      message: `Se ha concretado el localizador de ${askedCount} paso(s) en ${featureFilePath}`,
+      detail: askedQuoted,
     });
-    resolution = locatorsUsedBy(workingText, map);
   }
 
   const used = resolution.used;
