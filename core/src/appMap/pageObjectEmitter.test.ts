@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { emitPageObject } from "./pageObjectEmitter.js";
-import type { Screen } from "./schema.js";
+import { spawnSync } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { emitPageObject, pageObjectMethodNamesForLocator } from "./pageObjectEmitter.js";
+import type { LocatorEntry, Screen } from "./schema.js";
 
 const screen: Screen = {
   id: "login", name: "Log in", className: "LoginPage", urlTemplate: "/",
@@ -71,5 +75,127 @@ describe("emitPageObject", () => {
   it("escapes the route template like every other Python literal it emits", () => {
     const { content } = emitPageObject({ ...screen, urlTemplate: '/we"ird' });
     expect(content).toContain('URL_TEMPLATE = "/we\\"ird"');
+  });
+
+  it("emits no bare page reference for an attribute-disambiguated locator", () => {
+    const screen: Screen = {
+      id: "home", name: "home", className: "HomePage", urlTemplate: "/",
+      signature: "sha256:a", requiresAuth: false,
+      texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+      locators: [
+        {
+          name: "log_in_button_submit", kind: "button", accessibleName: "Log in",
+          python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'submit\']"))',
+          count: 1, disambiguatedBy: "attribute:[type='submit']", verifiedAt: "t",
+        },
+      ],
+    };
+    // A bare `page.` anywhere in the emitted class is a NameError waiting to
+    // happen: inside a method only `self.page` exists.
+    expect(emitPageObject(screen).content).not.toMatch(/(?<!self\.)\bpage\./);
+  });
+
+  it("keeps a text locator's own copy byte-identical even when it ends in 'page.'", () => {
+    // Verbatim shape realCrawler.ts produces for a `kind: "text"` locator: the
+    // app's own words, which end in a lowercase "page." often enough in real
+    // UI copy. A literal-blind `page.` rewrite corrupts this into a string
+    // the crawler never validated and Playwright can never match.
+    const screen: Screen = {
+      id: "denied", name: "Access denied", className: "AccessDeniedPage", urlTemplate: "/denied",
+      signature: "sha256:a", requiresAuth: false,
+      texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+      locators: [
+        {
+          name: "text_no_permission", kind: "text",
+          python: 'page.get_by_text("You do not have permission to view this page.", exact=True)',
+          count: 1, verifiedAt: "t",
+        },
+      ],
+    };
+    expect(emitPageObject(screen).content).toContain(
+      'return self.page.get_by_text("You do not have permission to view this page.", exact=True)'
+    );
+  });
+});
+
+describe("pageObjectMethodNamesForLocator", () => {
+  // Pins this helper to the exact same kind->prefix rule `emitPageObject`
+  // uses, so a caller outside this module (the CLI's ambiguity prompt, in
+  // particular) can never advertise a method the emitted Page Object doesn't
+  // actually define.
+  const of = (kind: LocatorEntry["kind"]): LocatorEntry => ({
+    name: "x", kind, python: "page.x", count: 1, verifiedAt: "t",
+  });
+
+  it("gives an input get_ and fill_, never click_ or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("input"))).toEqual(["get_x", "fill_x"]);
+  });
+
+  it("gives a button get_ and click_, never fill_ or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("button"))).toEqual(["get_x", "click_x"]);
+  });
+
+  it("gives a link get_ and click_, never fill_ or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("link"))).toEqual(["get_x", "click_x"]);
+  });
+
+  it("gives a select get_ and select_, never fill_ or click_", () => {
+    expect(pageObjectMethodNamesForLocator(of("select"))).toEqual(["get_x", "select_x"]);
+  });
+
+  it("gives text only get_ — no fill_, click_, or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("text"))).toEqual(["get_x"]);
+  });
+
+  it("gives a heading only get_ — no fill_, click_, or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("heading"))).toEqual(["get_x"]);
+  });
+});
+
+const hasPython = spawnSync("python", ["--version"], { encoding: "utf-8" }).status === 0;
+
+describe.skipIf(!hasPython)("emitted Page Object executes", () => {
+  it("resolves an attribute-disambiguated getter without NameError", async () => {
+    const screen: Screen = {
+      id: "home", name: "home", className: "HomePage", urlTemplate: "/",
+      signature: "sha256:a", requiresAuth: false,
+      texts: [], probeValues: [], states: [], ambiguous: [], transitions: [], writeActions: [],
+      locators: [
+        {
+          name: "log_in_button_submit", kind: "button", accessibleName: "Log in",
+          python: 'page.get_by_role("button", name="Log in", exact=True).and_(page.locator("[type=\'submit\']"))',
+          count: 1, disambiguatedBy: "attribute:[type='submit']", verifiedAt: "t",
+        },
+      ],
+    };
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agente-qa-emit-"));
+    const emitted = emitPageObject(screen);
+    const modulePath = path.join(dir, "page_object.py");
+    await fs.writeFile(modulePath, emitted.content, "utf-8");
+
+    // A fake page: every call returns the fake, so the only way this fails is
+    // a name that does not exist in the method's scope.
+    const driver = `
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("po", ${JSON.stringify(modulePath).replace(/\\/g, "/")})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+class Fake:
+    def __getattr__(self, _name):
+        return lambda *a, **k: self
+
+po = mod.HomePage(Fake())
+po.get_log_in_button_submit()
+print("OK")
+`;
+    const driverPath = path.join(dir, "driver.py");
+    await fs.writeFile(driverPath, driver, "utf-8");
+
+    const run = spawnSync("python", [driverPath], { encoding: "utf-8" });
+    expect(`${run.stdout}${run.stderr}`).not.toMatch(/NameError/);
+    expect(run.stdout).toContain("OK");
+
+    await fs.rm(dir, { recursive: true, force: true });
   });
 });

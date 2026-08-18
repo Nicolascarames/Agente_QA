@@ -61,6 +61,7 @@ export type { GeneratedFile } from "./agents/generador/codeGenerator.js";
 export type { CodeGenerationEvidence } from "./prompts/generador.js";
 export { writeTestFiles, testFileExists, testFilePath } from "./agents/generador/writeTestFiles.js";
 export { listFeatureFiles } from "./agents/generador/listFeatureFiles.js";
+export { rewriteStepLocator } from "./agents/generador/rewriteStepLocator.js";
 export { runGenerador } from "./agents/generador/runGenerador.js";
 export type { GeneratorCallbacks, RunGeneradorOptions } from "./agents/generador/runGenerador.js";
 
@@ -82,7 +83,7 @@ export {
   MissingLocatorVerifierToolError,
 } from "./locatorVerify/realLocatorVerifier.js";
 export { locatorsUsedBy, checkMapFreshness } from "./locatorVerify/mapFreshness.js";
-export type { UsedLocator, MapFreshnessResult } from "./locatorVerify/mapFreshness.js";
+export type { UsedLocator, MapFreshnessResult, AmbiguousStep, UsedLocatorsResult } from "./locatorVerify/mapFreshness.js";
 
 export { listAvailableTags } from "./agents/ejecutor/listAvailableTags.js";
 export { runEjecutor } from "./agents/ejecutor/runEjecutor.js";
@@ -108,6 +109,8 @@ export { appMapDir, appMapPath, saveAppMap, loadAppMap } from "./appMap/mapStore
 
 export { overridesPath, loadOverrides, saveOverride, applyOverrides } from "./appMap/overrides.js";
 
+export { disambiguatorToken, disambiguatedName } from "./appMap/naming.js";
+
 export type {
   CrawlCredentials, CrawlLimits, CrawlCallbacks, CrawlInput, CrawlResult, Crawler,
 } from "./appMap/crawler.js";
@@ -118,7 +121,8 @@ export { runExplorador } from "./agents/explorador/runExplorador.js";
 export type { ExploradorCallbacks, RunExploradorOptions, ExploradorResult } from "./agents/explorador/runExplorador.js";
 export { generateScenarioCandidates } from "./agents/explorador/scenarioCandidates.js";
 export { createRealCrawler } from "./appMap/realCrawler.js";
-export { emitPageObject } from "./appMap/pageObjectEmitter.js";
+export { emitPageObject, pageObjectMethodNamesForLocator } from "./appMap/pageObjectEmitter.js";
+export { toSelfPageExpression } from "./appMap/pythonExpression.js";
 export { redactMap, redactText, REDACTED } from "./appMap/redact.js";
 
 export { findScreen, screenLiterals, textsAfterClick, findLocator } from "./appMap/mapQuery.js";

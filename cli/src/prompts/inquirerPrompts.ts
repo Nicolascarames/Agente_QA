@@ -1,4 +1,5 @@
 import { select, input, checkbox } from "@inquirer/prompts";
+import { pageObjectMethodNamesForLocator } from "@agente-qa/core";
 import type {
   InitPrompts,
   MenuPrompts,
@@ -192,6 +193,36 @@ export function buildRealGeneratorPrompts(): GeneratorPrompts {
         message: `Expresión Playwright para "${item.name}" (ej. page.get_by_test_id("login-submit")):`,
       });
       return { action: "override", python };
+    },
+    async onAmbiguousLocator(step) {
+      console.log(
+        `\n⚠ El texto "${step.quoted}" de la pantalla "${step.screenName}" coincide con ${step.candidates.length} elementos del mapa. Elige a cuál se refiere el paso.`
+      );
+      // Read-only dump: the user decides with every fact the map holds, and
+      // nothing here edits map.json or the Page Object.
+      for (const candidate of step.candidates) {
+        // The method list comes from pageObjectMethodNamesForLocator (core), the
+        // same function emitPageObject uses to decide what to emit — never a
+        // hardcoded get_/click_ pair, which would lie for an input (fill_, not
+        // click_) or a text/heading (get_ only, no click_ at all).
+        const methods = pageObjectMethodNamesForLocator(candidate)
+          .map((name) => `${name}()`)
+          .join(" / ");
+        console.log(`\n  ${candidate.name}   →   Page Object: ${methods}`);
+        console.log(`    kind:            ${candidate.kind}`);
+        console.log(`    accessibleName:  ${JSON.stringify(candidate.accessibleName ?? null)}`);
+        console.log(`    python:          ${candidate.python}`);
+        console.log(`    count:           ${candidate.count}`);
+        console.log(`    disambiguatedBy: ${candidate.disambiguatedBy ?? "(ninguno)"}`);
+        console.log(`    attributes:      ${JSON.stringify(candidate.attributes ?? {})}`);
+        console.log(`    verifiedAt:      ${candidate.verifiedAt}`);
+        if (candidate.stateId) console.log(`    stateId:         ${candidate.stateId}`);
+      }
+      const name = await select<string>({
+        message: `¿A cuál se refiere "${step.quoted}"?`,
+        choices: step.candidates.map((c) => ({ name: c.name, value: c.name })),
+      });
+      return step.candidates.find((c) => c.name === name)!;
     },
   };
 }

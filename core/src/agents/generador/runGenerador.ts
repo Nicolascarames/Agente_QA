@@ -4,11 +4,13 @@ import type { LLMProvider } from "../../llm/provider.js";
 import type { CodeChecker } from "../../codeCheck/codeChecker.js";
 import type { LocatorVerifier, ExplorationCredentials } from "../../locatorVerify/locatorVerifier.js";
 import type { EmitEvent } from "../../events/agentEvent.js";
+import type { LocatorEntry } from "../../appMap/schema.js";
 import { loadAppMap } from "../../appMap/mapStore.js";
 import { saveOverride } from "../../appMap/overrides.js";
 import { findScreen } from "../../appMap/mapQuery.js";
 import { locatorsUsedBy, checkMapFreshness } from "../../locatorVerify/mapFreshness.js";
 import { generateCode, type GeneratedFile } from "./codeGenerator.js";
+import { rewriteStepLocator } from "./rewriteStepLocator.js";
 import { testFileExists, testFilePath, writeTestFiles } from "./writeTestFiles.js";
 
 function toPythonModuleSlug(rawSlug: string): string {
@@ -33,6 +35,9 @@ export interface GeneratorCallbacks {
   onStaleLocator(
     stale: { screenId: string; name: string; count: number }[]
   ): Promise<{ action: "remap" } | { action: "override"; python: string }>;
+  onAmbiguousLocator(
+    step: { screenId: string; screenName: string; quoted: string; candidates: LocatorEntry[] }
+  ): Promise<LocatorEntry>;
 }
 
 export interface RunGeneradorOptions {
@@ -73,7 +78,48 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
     );
   }
 
-  const used = locatorsUsedBy(featureText, map);
+  let workingText = featureText;
+  let resolution = locatorsUsedBy(workingText, map);
+
+  if (resolution.ambiguous.length > 0) {
+    const askedCount = resolution.ambiguous.length;
+    const resolvedNames: string[] = [];
+    for (const step of resolution.ambiguous) {
+      const chosen = await callbacks.onAmbiguousLocator(step);
+      resolvedNames.push(`"${step.quoted}" → ${chosen.name}`);
+      workingText = rewriteStepLocator(workingText, step.screenId, step.quoted, chosen.name);
+    }
+    await fs.writeFile(featureFilePath, workingText, "utf-8");
+    resolution = locatorsUsedBy(workingText, map);
+    if (resolution.ambiguous.length > 0) {
+      // rewriteStepLocator found nothing to rewrite for one of the reported
+      // (screenId, quoted) pairs — e.g. the step's quoting doesn't match the
+      // patterns it recognizes. Proceeding here would silently drop that
+      // locator from `used` (never freshness-checked) and hand generateCode a
+      // .feature that still carries the unresolved literal, contradicting the
+      // spec's "no admite 'ninguno': la ambigüedad tiene que resolverse para
+      // poder generar" — so abort instead of reporting a false success.
+      //
+      // The .feature on disk was already overwritten above with whatever DID
+      // get pinned (§5.4 of the design spec: the user has a right to know a
+      // file they approved was touched), so the error has to say so — a
+      // re-run resolves the rest by itself instead of the user re-answering
+      // questions already answered.
+      const unresolved = resolution.ambiguous
+        .map((s) => `"${s.quoted}" en la pantalla "${s.screenName}"`)
+        .join(", ");
+      throw new Error(
+        `No se ha podido concretar el localizador de ${resolution.ambiguous.length} paso(s) en ${featureFilePath}: ${unresolved}. El archivo .feature ya se ha actualizado con los localizadores que sí se pudieron concretar; vuelve a ejecutar la generación para resolver el resto. Edita el archivo .feature y sustituye el texto citado por el nombre exacto del localizador elegido, para que el paso deje de ser ambiguo.`
+      );
+    }
+    emit({
+      agent: "generador", status: "ok", depth: 1,
+      message: `Se ha${askedCount === 1 ? "" : "n"} concretado ${askedCount} localizador(es) en ${featureFilePath}`,
+      detail: resolvedNames.join(", "),
+    });
+  }
+
+  const used = resolution.used;
   emit({
     agent: "generador", status: "info", depth: 1,
     message: `Verificando ${used.length} localizador(es) contra la aplicación real`,
@@ -123,7 +169,7 @@ export async function runGenerador(options: RunGeneradorOptions): Promise<{ writ
       agent: "generador", status: "info", depth: 1,
       message: `Generando código (intento ${attempt} de ${MAX_ATTEMPTS})`,
     });
-    files = await generateCode(featureText, llm, map, screenId, naming, retry);
+    files = await generateCode(workingText, llm, map, screenId, naming, retry);
 
     const checkResult = await checker.check(files);
     if (checkResult.ok) {

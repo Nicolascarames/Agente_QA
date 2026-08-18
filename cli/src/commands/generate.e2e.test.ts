@@ -98,6 +98,7 @@ def a():
         selectFeatureFile: vi.fn().mockResolvedValue("login.feature"),
         confirmOverwrite: vi.fn().mockResolvedValue(true),
         onStaleLocator: vi.fn().mockRejectedValue(new Error("onStaleLocator no debería haberse llamado")),
+        onAmbiguousLocator: vi.fn().mockRejectedValue(new Error("onAmbiguousLocator no debería haberse llamado")),
       };
 
       const writtenPaths = await runGenerateTests(prompts, tmpProject);

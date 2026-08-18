@@ -1,5 +1,6 @@
 import type { AppMap, LocatorEntry } from "../appMap/schema.js";
 import { findScreen } from "../appMap/mapQuery.js";
+import { toSelfPageExpression } from "../appMap/pythonExpression.js";
 import type { LocatorCheck, LocatorVerifier, ExplorationCredentials } from "./locatorVerifier.js";
 import type { GeneratedFile } from "../agents/generador/codeGenerator.js";
 
@@ -17,6 +18,18 @@ export type MapFreshnessResult =
   | { ok: true; warnings?: string }
   | { ok: false; stale: { screenId: string; name: string; count: number }[] };
 
+export interface AmbiguousStep {
+  screenId: string;
+  screenName: string;
+  quoted: string;
+  candidates: LocatorEntry[];
+}
+
+export interface UsedLocatorsResult {
+  used: UsedLocator[];
+  ambiguous: AmbiguousStep[];
+}
+
 const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
 
 /**
@@ -32,9 +45,11 @@ const CLICK_STEP = /I click "([^"]*)"/;
  * `@screen:` tag declares. This is the SMALL set of locators worth
  * revalidating in a real browser before code generation — not the whole map.
  */
-export function locatorsUsedBy(featureText: string, map: AppMap): UsedLocator[] {
+export function locatorsUsedBy(featureText: string, map: AppMap): UsedLocatorsResult {
   const used: UsedLocator[] = [];
+  const ambiguous: AmbiguousStep[] = [];
   const seen = new Set<string>();
+  const asked = new Set<string>();
   let currentScreenId: string | null = null;
 
   for (const rawLine of featureText.split(/\r?\n/)) {
@@ -58,9 +73,25 @@ export function locatorsUsedBy(featureText: string, map: AppMap): UsedLocator[] 
     const screen = findScreen(map, currentScreenId);
     if (!screen) continue;
 
-    const locator =
-      screen.locators.find((l) => l.accessibleName === name) ??
-      screen.locators.find((l) => l.name === name);
+    const byAccessibleName = screen.locators.filter((l) => l.accessibleName === name);
+    if (byAccessibleName.length > 1) {
+      // Taking the first match here is how a login scenario ends up clicking
+      // the button that does not submit. The caller has to decide, so report
+      // it: once per (screen, quoted text), because every step quoting the
+      // same text on the same screen means the same element.
+      const key = `${currentScreenId}::${name}`;
+      if (asked.has(key)) continue;
+      asked.add(key);
+      ambiguous.push({
+        screenId: currentScreenId,
+        screenName: screen.name,
+        quoted: name,
+        candidates: byAccessibleName,
+      });
+      continue;
+    }
+
+    const locator = byAccessibleName[0] ?? screen.locators.find((l) => l.name === name);
     if (!locator) continue;
 
     const key = `${currentScreenId}::${locator.name}`;
@@ -75,12 +106,7 @@ export function locatorsUsedBy(featureText: string, map: AppMap): UsedLocator[] 
     });
   }
 
-  return used;
-}
-
-/** `page.get_by_role(...)` -> `self.page.get_by_role(...)`, letter for letter beyond that. */
-function toSelfPageExpression(python: string): string {
-  return python.startsWith("page.") ? `self.page.${python.slice("page.".length)}` : python;
+  return { used, ambiguous };
 }
 
 const PAGE_OBJECT_PATH = "pages/map_freshness.py";

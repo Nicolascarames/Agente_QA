@@ -1,4 +1,5 @@
 import { pythonLiteral } from "./pythonLiteral.js";
+import { toSelfPageExpression } from "./pythonExpression.js";
 import type { LocatorEntry, Screen } from "./schema.js";
 
 const FILLABLE: LocatorEntry["kind"][] = ["input"];
@@ -27,7 +28,7 @@ function locatorMethods(locator: LocatorEntry): string {
   const lines = [
     `    def get_${locator.name}(self) -> Locator:`,
     stateNote.trimEnd(),
-    `        return self.${locator.python}`,
+    `        return ${toSelfPageExpression(locator.python)}`,
   ].filter((line) => line.length > 0);
 
   for (const prefix of methodPrefixesFor(locator)) {
@@ -56,6 +57,17 @@ function locatorMethods(locator: LocatorEntry): string {
 }
 
 /**
+ * Every Page Object method name ONE locator earns — `get_<name>` always, plus
+ * `fill_<name>` / `click_<name>` / `select_<name>` per its `kind`, in the same
+ * order `emitPageObject` writes them. The single place anything outside this
+ * module (the CLI's ambiguity prompt, in particular) may ask "what can I call
+ * on this locator" without re-deriving the kind→prefix rule itself.
+ */
+export function pageObjectMethodNamesForLocator(locator: LocatorEntry): string[] {
+  return methodPrefixesFor(locator).map((prefix) => `${prefix}_${locator.name}`);
+}
+
+/**
  * Every method name a screen's emitted Page Object exposes: `goto` (only when
  * the route has no variable segment) followed by get_ / fill_ / click_ / select_
  * per locator, in the same order `emitPageObject` writes them. The
@@ -65,9 +77,7 @@ function locatorMethods(locator: LocatorEntry): string {
 export function pageObjectMethodNames(screen: Screen): string[] {
   const templated = screen.urlTemplate.includes(":");
   const gotoMethod = templated ? [] : ["goto"];
-  const locatorMethodNames = screen.locators.flatMap((locator) =>
-    methodPrefixesFor(locator).map((prefix) => `${prefix}_${locator.name}`)
-  );
+  const locatorMethodNames = screen.locators.flatMap(pageObjectMethodNamesForLocator);
   return [...gotoMethod, ...locatorMethodNames];
 }
 
