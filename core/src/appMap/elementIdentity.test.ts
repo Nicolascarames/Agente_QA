@@ -102,4 +102,31 @@ describe("mergeScreenState", () => {
     expect(merged.locators).toHaveLength(1);
     expect(merged.locators[0].stateId).toBeUndefined();
   });
+
+  it("merges new writeActions without duplicating an existing one by locator", () => {
+    const baseScreen: Screen = {
+      ...screen,
+      writeActions: [{ locator: "log_in_button_2", label: "Log in", kind: "submit", formFields: ["email_input", "password_input"] }],
+    };
+    const merged = mergeScreenState(baseScreen, {
+      id: "click-crear_bebe_button",
+      reachedBy: { action: "click", locator: "crear_bebe_button", data: "none" },
+      texts: [],
+      locators: [],
+      writeActions: [
+        { locator: "log_in_button_2", label: "Log in", kind: "submit", formFields: ["email_input", "password_input"] }, // ya existe
+        { locator: "crear_button", label: "Crear", kind: "submit", formFields: ["name_input", "birth_date_input"] }, // nuevo
+      ],
+    });
+    expect(merged.writeActions).toHaveLength(2);
+    expect(merged.writeActions.map((a) => a.locator)).toEqual(["log_in_button_2", "crear_button"]);
+  });
+
+  it("keeps writeActions unchanged when the merge doesn't pass any", () => {
+    const baseScreen: Screen = { ...screen, writeActions: [] };
+    const merged = mergeScreenState(baseScreen, {
+      id: "click-x", reachedBy: { action: "click", locator: "x", data: "none" }, texts: [], locators: [],
+    });
+    expect(merged.writeActions).toEqual([]);
+  });
 });

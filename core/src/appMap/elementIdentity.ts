@@ -1,4 +1,4 @@
-import type { LocatorEntry, Screen, ScreenState } from "./schema.js";
+import type { LocatorEntry, Screen, ScreenState, WriteAction } from "./schema.js";
 
 /**
  * The crawler never clicks the same element twice. Position is part of the
@@ -22,7 +22,13 @@ export function elementKey(input: {
  */
 export function mergeScreenState(
   screen: Screen,
-  state: { id: string; reachedBy: ScreenState["reachedBy"]; texts: string[]; locators: LocatorEntry[] }
+  state: {
+    id: string;
+    reachedBy: ScreenState["reachedBy"];
+    texts: string[];
+    locators: LocatorEntry[];
+    writeActions?: WriteAction[];
+  }
 ): Screen {
   // Deduplicate incoming texts, then filter against screen's texts
   const uniqueIncomingTexts = Array.from(new Set(state.texts));
@@ -34,10 +40,15 @@ export function mergeScreenState(
     .filter((locator) => !existingLocatorNames.has(locator.name))
     .map((locator) => ({ ...locator, stateId: state.id }));
 
+  // Merge writeActions, but skip if locator already exists on screen
+  const existingActionLocators = new Set(screen.writeActions.map((a) => a.locator));
+  const newWriteActions = (state.writeActions ?? []).filter((action) => !existingActionLocators.has(action.locator));
+
   return {
     ...screen,
     texts: [...screen.texts, ...newTexts],
     locators: [...screen.locators, ...taggedLocators],
     states: [...screen.states, { id: state.id, reachedBy: state.reachedBy, addsTexts: newTexts }],
+    writeActions: [...screen.writeActions, ...newWriteActions],
   };
 }
