@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { AppMapSchema, OverridesFileSchema } from "./schema.js";
+import { AppMapSchema, OverridesFileSchema, ScreenSchema } from "./schema.js";
 
-const minimalScreen = {
+const baseScreen = {
   id: "login",
   name: "Log in",
   className: "LoginPage",
@@ -17,10 +17,40 @@ const minimalScreen = {
   writeActions: [],
 };
 
+const minimalScreen = baseScreen;
+
+const baseMap = {
+  schemaVersion: 2,
+  appUrl: "https://example.test/",
+  createdAt: "2026-08-16T10:00:00.000Z",
+  complete: true,
+  authenticated: false,
+  screens: [baseScreen],
+  scenarios: [],
+  stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 10 },
+};
+
+describe("ScreenSchema", () => {
+  it("accepts a screen reached by a path of actions from an addressable ancestor", () => {
+    const screen = {
+      ...baseScreen,
+      id: "home~crear-bebe",
+      reachedBy: {
+        entryScreenId: "home",
+        path: [
+          { action: "submit", locator: "log_in_button_2", data: "valid" },
+          { action: "click", locator: "crear_bebe_button", data: "none" },
+        ],
+      },
+    };
+    expect(ScreenSchema.safeParse(screen).success).toBe(true);
+  });
+});
+
 describe("AppMapSchema", () => {
   it("accepts a minimal complete map", () => {
     const parsed = AppMapSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       appUrl: "https://example.test/",
       createdAt: "2026-08-16T10:00:00.000Z",
       complete: true,
@@ -32,9 +62,14 @@ describe("AppMapSchema", () => {
     expect(parsed.screens[0].id).toBe("login");
   });
 
+  it("rejects schemaVersion 1", () => {
+    const map = { ...baseMap, schemaVersion: 1 };
+    expect(AppMapSchema.safeParse(map).success).toBe(false);
+  });
+
   it("rejects a locator whose count is not exactly 1", () => {
     const result = AppMapSchema.safeParse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       appUrl: "https://example.test/",
       createdAt: "2026-08-16T10:00:00.000Z",
       complete: true,
@@ -56,7 +91,7 @@ describe("AppMapSchema", () => {
   // measured just to make the entry parse.
   it("accepts an ambiguous candidate that matched nothing", () => {
     const result = AppMapSchema.safeParse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       appUrl: "https://example.test/",
       createdAt: "2026-08-16T10:00:00.000Z",
       complete: true,

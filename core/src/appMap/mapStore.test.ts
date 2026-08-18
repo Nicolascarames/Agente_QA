@@ -5,8 +5,8 @@ import path from "node:path";
 import { appMapPath, saveAppMap, loadAppMap } from "./mapStore.js";
 import type { AppMap } from "./schema.js";
 
-const map: AppMap = {
-  schemaVersion: 1,
+const validV2Map: AppMap = {
+  schemaVersion: 2,
   appUrl: "https://example.test/",
   createdAt: "2026-08-16T10:00:00.000Z",
   complete: true,
@@ -15,6 +15,8 @@ const map: AppMap = {
   scenarios: [],
   stats: { screens: 0, locators: 0, ambiguous: 0, durationMs: 0 },
 };
+
+const map = validV2Map;
 
 let projectRoot: string;
 
@@ -53,5 +55,13 @@ describe("saveAppMap / loadAppMap", () => {
     await saveAppMap(projectRoot, { ...map, authenticated: true });
     const loaded = await loadAppMap(projectRoot);
     expect(loaded?.authenticated).toBe(true);
+  });
+
+  it("rejects a schemaVersion 1 map with a message that asks to re-map", async () => {
+    const target = appMapPath(projectRoot);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, JSON.stringify({ ...validV2Map, schemaVersion: 1 }));
+
+    await expect(loadAppMap(projectRoot)).rejects.toThrow(/agente-qa map/);
   });
 });
