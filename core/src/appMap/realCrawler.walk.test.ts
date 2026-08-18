@@ -6,7 +6,7 @@ import type { CrawlLimits } from "./crawler.js";
 
 const limits: CrawlLimits = {
   maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60,
-  loopSuspicionThreshold: 3, excludeRoutes: [],
+  loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4,
 };
 
 let site: Awaited<ReturnType<typeof startFixtureSite>>;
@@ -30,6 +30,28 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     const templates = result.map.screens.map((s) => s.urlTemplate).sort();
     expect(templates).toContain("/");
     expect(templates).toContain("/reset.html");
+  }, 20000);
+
+  // Final-review finding: the depth bound used to apply to `pathSoFar.length`
+  // unconditionally, so `maxViewDepth: 0` made `0 >= 0` true even for the
+  // TOP-LEVEL call (`pathSoFar = []`, ordinary click/link exploration from a
+  // freshly captured screen) — silencing all click exploration on any site,
+  // not just nested same-route promotion. `maxViewDepth: 0` must reproduce
+  // today's by-level behaviour exactly; only nested (same-route) exploration
+  // is meant to stop at depth 0.
+  it("still discovers routes reachable by clicking when maxViewDepth is 0", async () => {
+    const result = await createRealCrawler().crawl({
+      baseUrl: site.url,
+      limits: { ...limits, maxViewDepth: 0 },
+      callbacks: { confirmContinueOnLoop: async () => false, approveWriteActions: async () => [] },
+      emit: () => {},
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const templates = result.map.screens.map((s) => s.urlTemplate).sort();
+    expect(templates).toContain("/");
+    expect(templates).toContain("/reset.html");
+    expect(result.map.screens.length).toBeGreaterThan(1);
   }, 20000);
 
   it("collapses /item/1 and /item/2 into a single templated screen", async () => {
@@ -339,4 +361,123 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     const ids = result.map.screens.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   }, 20000);
+
+  // The bug this plan exists to fix, in miniature: a login that swaps the DOM
+  // in place (no route change) followed by a button whose own content reveals
+  // a REAL form. Before this rewrite, nothing inside a same-route state was
+  // ever clicked — the click loop's locator list was snapshotted once, before
+  // any state existed — so the "Create baby" button was invisible past the
+  // login, let alone the form it opens.
+  describe("a click inside a same-route login state that reveals a real form", () => {
+    const crawlNestedFixture = () =>
+      createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+        limits,
+        credentials: { username: "user@example.test", password: "secret" },
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (pending) => pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator })),
+        },
+        emit: () => {},
+      });
+
+    it("promotes the baby-creation form to its own screen with a reachedBy path", async () => {
+      const result = await crawlNestedFixture();
+      if (!result.ok) throw new Error(result.error);
+      const babyScreen = result.map.screens.find((s) => s.reachedBy !== undefined);
+      expect(babyScreen).toBeDefined();
+      expect(babyScreen!.reachedBy).toEqual({
+        entryScreenId: result.map.screens[0].id,
+        path: [
+          { action: "submit", locator: expect.any(String), data: "valid" },
+          { action: "click", locator: "create_baby_button", data: "none" },
+        ],
+      });
+      const nameInput = babyScreen!.locators.find((l) => l.kind === "input");
+      expect(nameInput).toBeDefined();
+    }, 20000);
+
+    // 3, not 2: the login screen, the promoted baby-form screen, and (Tarea
+    // 11) the "Nursery" screen the Dashboard's real link reaches — a normal,
+    // addressable screen like any other, discovered down the same same-route
+    // dashboard state as the promoted baby-form.
+    it("keeps screen count at 3: the login screen, the promoted baby-form screen and the nursery screen", async () => {
+      const result = await crawlNestedFixture();
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens).toHaveLength(3);
+    }, 20000);
+
+    // The fixture's "Show tips" button lives on the ALREADY-PROMOTED baby-form
+    // screen, not on the dashboard. Clicking it is a second hop past the
+    // promotion boundary (path length 3): what it reveals must be recorded
+    // against the promoted screen, never against the dashboard entry.
+    it("records a second hop through an already-promoted screen against that screen, not the entry", async () => {
+      const result = await crawlNestedFixture();
+      if (!result.ok) throw new Error(result.error);
+      const entry = result.map.screens[0];
+      const babyScreen = result.map.screens.find((s) => s.reachedBy !== undefined);
+      expect(babyScreen).toBeDefined();
+
+      const showTips = babyScreen!.locators.find((l) => l.accessibleName === "Show tips");
+      expect(showTips).toBeDefined();
+      expect(babyScreen!.states.some((s) => s.reachedBy.locator === showTips!.name)).toBe(true);
+      expect(babyScreen!.texts).toContain("Keep skin to skin contact.");
+
+      expect(entry.texts).not.toContain("Keep skin to skin contact.");
+      expect(entry.locators.some((l) => l.accessibleName === "Show tips")).toBe(false);
+    }, 20000);
+
+    // Tarea 11: the nursery form's "Save" is a write action nested behind an
+    // already-approved write action (the login submit) — it does not exist
+    // in any `screen.writeActions` until the login's submit already ran and
+    // a following drain already followed the "Nursery" link the login
+    // revealed. A single approval pass can never see it; only a loop that
+    // keeps asking until a round finds nothing new does.
+    it("asks approval again for a write action only discovered after an earlier one ran, and runs it", async () => {
+      let approveCalls = 0;
+      const result = await createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+        limits,
+        credentials: { username: "user@example.test", password: "secret" },
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (pending) => {
+            approveCalls++;
+            return pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator }));
+          },
+        },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+
+      // Proves the loop actually iterated more than once, not that a single
+      // call happened to see everything.
+      expect(approveCalls).toBeGreaterThan(1);
+
+      const nurseryScreen = result.map.screens.find((s) => s.urlTemplate === "/nursery.html");
+      expect(nurseryScreen).toBeDefined();
+      const created = nurseryScreen!.texts.includes("Baby created!")
+        || nurseryScreen!.states.some((s) => s.addsTexts.includes("Baby created!"));
+      expect(created).toBe(true);
+    }, 20000);
+
+    // Companion to the top-level "still discovers routes..." test above:
+    // `maxViewDepth: 0` must still stop NESTED same-route exploration — only
+    // the login screen is captured, the "Create baby" click is never queued.
+    it("stops same-route promotion at depth 0 while still discovering the login screen", async () => {
+      const result = await createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+        limits: { ...limits, maxViewDepth: 0 },
+        credentials: { username: "user@example.test", password: "secret" },
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (pending) => pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator })),
+        },
+        emit: () => {},
+      });
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens.some((s) => s.reachedBy !== undefined)).toBe(false);
+      expect(result.map.screens).toHaveLength(1);
+    }, 20000);
+  });
 });

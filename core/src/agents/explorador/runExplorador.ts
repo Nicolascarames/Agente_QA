@@ -66,7 +66,7 @@ export async function runExplorador(options: RunExploradorOptions): Promise<Expl
   const writtenPaths: string[] = [];
   const skippedPaths: string[] = [];
   for (const screen of safe.screens) {
-    const emitted = emitPageObject(screen);
+    const emitted = emitPageObject(screen, safe);
     const target = path.join(projectRoot, testsDir, emitted.path);
     const exists = await fs.access(target).then(() => true, () => false);
     if (exists && !(await callbacks.confirmOverwrite(target))) {

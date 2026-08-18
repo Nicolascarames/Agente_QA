@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { chromium, type Browser } from "playwright";
 import { startFixtureSite } from "./__fixtures__/server.js";
-import { captureScreen, collectWriteActions, pythonLiteral } from "./realCrawler.js";
+import { captureScreen, collectWriteActions, pythonLiteral, screenIdentity, classifyViewChange } from "./realCrawler.js";
 import type { AgentEvent } from "../events/agentEvent.js";
+import type { LocatorEntry } from "./schema.js";
 
 describe("pythonLiteral", () => {
   // Carried from the Task 6 review: pageObjectEmitter interpolates
@@ -38,6 +39,38 @@ describe("pythonLiteral", () => {
     // The \n produced for the raw newline must not itself get re-escaped by
     // an earlier backslash pass, which would turn it into \\n.
     expect(pythonLiteral("a\nb")).not.toContain("\\\\n");
+  });
+});
+
+describe("screenIdentity", () => {
+  it("derives a valid Python class name from a nested view id containing '~'", () => {
+    const identity = screenIdentity("home~crear-bebe");
+    expect(identity.className).toBe("HomeCrearBebePage");
+    expect(identity.id).toBe("home~crear-bebe");
+  });
+});
+
+describe("classifyViewChange", () => {
+  it("promotes when a new input appears", () => {
+    const locators = [{ name: "name_input", kind: "input" } as LocatorEntry];
+    expect(classifyViewChange(locators)).toBe("promote");
+  });
+
+  it("promotes when a new select appears", () => {
+    const locators = [{ name: "country_select", kind: "select" } as LocatorEntry];
+    expect(classifyViewChange(locators)).toBe("promote");
+  });
+
+  it("stays a state when only buttons and links appear", () => {
+    const locators = [
+      { name: "send_reset_link_button", kind: "button" } as LocatorEntry,
+      { name: "back_link", kind: "link" } as LocatorEntry,
+    ];
+    expect(classifyViewChange(locators)).toBe("state");
+  });
+
+  it("stays a state when nothing new appears", () => {
+    expect(classifyViewChange([])).toBe("state");
   });
 });
 

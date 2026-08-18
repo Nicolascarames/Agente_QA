@@ -16,7 +16,7 @@ function deps(overrides: Record<string, unknown> = {}) {
     runExplorador: vi.fn(async (_opts: unknown) => ({ map: { stats: { screens: 2 } }, mapPath: "/tmp/map.json", writtenPaths: ["/tmp/pages/a.py"] })),
     loadConfig: vi.fn(async () => ({
       testsDir: "tests", appUrl: "https://example.test/",
-      crawl: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] },
+      crawl: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4 },
     })),
     loadEnv: vi.fn(async () => ({ testUsername: "u", testPassword: "p" })),
     buildLlm: vi.fn(async () => ({ generate: vi.fn(async () => "") })),

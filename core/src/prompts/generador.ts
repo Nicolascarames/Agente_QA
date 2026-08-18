@@ -29,11 +29,11 @@ export function codeGenerationPrompt(
   if (!screen) throw new Error(`La pantalla "${screenId}" no existe en el mapa.`);
 
   // Mirrors the path convention `emitPageObject` (core/src/appMap/pageObjectEmitter.ts)
-  // actually writes to: `pages/${screen.id.replace(/-/g, "_")}_page.py`.
-  const moduleName = `${screen.id.replace(/-/g, "_")}_page`;
+  // actually writes to: `pages/${screen.id.replace(/-/g, "_").replace(/~/g, "_")}_page.py`.
+  const moduleName = `${screen.id.replace(/-/g, "_").replace(/~/g, "_")}_page`;
   const modulePath = `pages.${moduleName}`;
 
-  const methods = pageObjectMethodNames(screen);
+  const methods = pageObjectMethodNames(screen, map);
   const methodsList =
     methods.length > 0 ? methods.map((name) => `  - ${name}`).join("\n") : "  (ninguno)";
 
@@ -74,8 +74,11 @@ ningún otro método de esa clase:
 ${methodsList}
 
 Convención de cada método, según su prefijo: "get_*" devuelve un "Locator" y no actúa
-sobre él; "fill_*" y "select_*" reciben un único argumento "value: str"; "click_*" y
-"goto" no reciben ningún argumento.
+sobre él; "fill_*" y "select_*" reciben un único argumento "value: str"; "click_*" no
+recibe ningún argumento. "goto" normalmente tampoco, salvo que la lista de métodos de
+más abajo lo muestre con parámetros entre paréntesis — en ese caso son "str", en el
+mismo orden mostrado, y representan datos de un formulario que hace falta cruzar antes
+de llegar a esta pantalla.
 
 Un step definition NUNCA construye su propio localizador ni resuelve un elemento de la
 pantalla llamando directamente a un método de "page" con un selector, un rol o un texto:

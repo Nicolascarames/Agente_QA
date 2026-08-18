@@ -30,7 +30,7 @@ const loginScreen: Screen = {
 };
 
 const baseMap: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.com/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.com/", createdAt: "t",
   complete: true, authenticated: false, scenarios: [],
   stats: { screens: 1, locators: 1, ambiguous: 0, durationMs: 0 },
   screens: [loginScreen],
@@ -217,6 +217,39 @@ describe("runGenerador", () => {
         emit: () => {},
       })
     ).rejects.toThrow(/agente-qa map/);
+  });
+
+  // Final-review finding: this module's own `SCREEN_TAG` used to admit only
+  // `[\p{L}\p{N}_-]+`, truncating `@screen:home~crear-bebe` at the `~` and
+  // resolving `screenId` to `home` — a lookup that only fails loudly when no
+  // ancestor screen named `home` exists in the map. Here it does not, so the
+  // old regex would wrongly throw "no corresponde a ninguna pantalla".
+  it("resolves a nested screen tag ('~') to the actual nested screen instead of truncating it", async () => {
+    const nestedScreen: Screen = {
+      id: "home~crear-bebe", name: "Crear bebé", className: "CreateBabyPage", urlTemplate: "/crear-bebe",
+      signature: "sha256:a", requiresAuth: false,
+      texts: ["Crear bebé"], probeValues: [], locators: [], ambiguous: [], transitions: [], writeActions: [],
+      states: [],
+    };
+    const nestedMap: AppMap = { ...baseMap, screens: [nestedScreen] };
+    await saveAppMap(tmpProject, nestedMap);
+    const featureFilePath = await writeFeature(
+      "Feature: Create baby\n\n  @screen:home~crear-bebe\n  Scenario: x\n    Given a\n    When b\n    Then c\n"
+    );
+
+    const result = await runGenerador({
+      featureFilePath,
+      llm: new FakeLLMProvider([scriptedResponse]),
+      checker: new FakeCodeChecker([{ ok: true }]),
+      verifier: new FakeLocatorVerifier([]),
+      projectRoot: tmpProject,
+      testsDir: "tests",
+      baseUrl: "https://example.com",
+      credentials: undefined,
+      callbacks: callbacks(),
+      emit: () => {},
+    });
+    expect(result.writtenPaths).toHaveLength(1);
   });
 
   it("generates and writes only tests/*.py, never a file under pages/", async () => {

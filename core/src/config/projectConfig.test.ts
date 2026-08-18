@@ -25,6 +25,7 @@ describe("projectConfig", () => {
     maxDurationMinutes: 60,
     loopSuspicionThreshold: 3,
     excludeRoutes: [] as string[],
+    maxViewDepth: 4,
   };
 
   it("saves and loads project config round-trip, defaulting headedMode to false when omitted", async () => {
@@ -117,14 +118,15 @@ describe("projectConfig", () => {
   it("defaults the crawl block when the config has none", () => {
     const parsed = ProjectConfigSchema.parse({ testsDir: "tests", appUrl: "https://example.test/" });
     expect(parsed.crawl).toEqual({
-      maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [],
+      maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60,
+      loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4,
     });
   });
 
   it("keeps user-supplied crawl limits", () => {
     const parsed = ProjectConfigSchema.parse({
       testsDir: "tests", appUrl: "https://example.test/",
-      crawl: { maxScreens: 20, maxDepth: 3, maxDurationMinutes: 5, loopSuspicionThreshold: 2, excludeRoutes: ["/admin/*"] },
+      crawl: { maxScreens: 20, maxDepth: 3, maxDurationMinutes: 5, loopSuspicionThreshold: 2, excludeRoutes: ["/admin/*"], maxViewDepth: 4 },
     });
     expect(parsed.crawl.excludeRoutes).toEqual(["/admin/*"]);
   });

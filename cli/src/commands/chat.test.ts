@@ -42,7 +42,7 @@ const loginScreen: Screen = {
 };
 
 const baseMap: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.com/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.com/", createdAt: "t",
   complete: true, authenticated: false, scenarios: [],
   stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
   screens: [loginScreen],

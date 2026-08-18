@@ -5,7 +5,7 @@ import type { AppMap } from "./schema.js";
 const secrets = ["s3cr3t-pass", "user@example.test"];
 
 const mapWithSecret: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
   complete: true, authenticated: true, scenarios: [],
   stats: { screens: 1, locators: 1, ambiguous: 0, durationMs: 0 },
   screens: [{

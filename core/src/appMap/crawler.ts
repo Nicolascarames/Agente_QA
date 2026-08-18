@@ -12,6 +12,8 @@ export interface CrawlLimits {
   maxDurationMinutes: number;
   loopSuspicionThreshold: number;
   excludeRoutes: string[];
+  /** Cuántas acciones desde una pantalla direccionable explora el crawler dentro de una vista SPA. */
+  maxViewDepth: number;
 }
 
 export interface CrawlCallbacks {

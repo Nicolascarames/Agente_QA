@@ -3,7 +3,7 @@ import { checkFeatureLiterals } from "./checkFeatureLiterals.js";
 import type { AppMap } from "../../appMap/schema.js";
 
 const map: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
   complete: true, authenticated: false, scenarios: [],
   stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
   screens: [{
@@ -58,6 +58,28 @@ describe("checkFeatureLiterals", () => {
     expect(checkFeatureLiterals(text, map).screenTagFound).toBe(true);
   });
 
+  it("recognizes a nested screen tag containing '~'", () => {
+    const nestedMap: AppMap = {
+      schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
+      complete: true, authenticated: false, scenarios: [],
+      stats: { screens: 1, locators: 0, ambiguous: 0, durationMs: 0 },
+      screens: [{
+        id: "home~crear-bebe", name: "Crear bebé", className: "CreateBabyPage", urlTemplate: "/crear-bebe",
+        signature: "sha256:a", requiresAuth: false,
+        texts: ["Crear bebé"], probeValues: [], locators: [],
+        ambiguous: [], transitions: [], writeActions: [],
+        states: [],
+      }],
+    };
+    const feature = `Feature: Create baby
+  @screen:home~crear-bebe
+  Scenario: Create baby
+    Then I see "Crear bebé"`;
+    const result = checkFeatureLiterals(feature, nestedMap);
+    expect(result.screenTagFound).toBe(true);
+    expect(result.missing).toEqual([]);
+  });
+
   it("accepts a fill step whose data value is not in the map — the value is test data, not app copy", () => {
     const text = feature('    When I fill "Email" with "nope@example.com"\n');
     expect(checkFeatureLiterals(text, map).missing).toEqual([]);
@@ -83,7 +105,7 @@ describe("checkFeatureLiterals", () => {
   // attempts on the very first, most obedient step every real crawl produces.
   it("accepts a prompt-obedient feature verbatim against a map shaped like a real crawl (name === id, a route slug absent from texts)", () => {
     const realMap: AppMap = {
-      schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+      schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
       complete: true, authenticated: false, scenarios: [],
       stats: { screens: 1, locators: 1, ambiguous: 0, durationMs: 0 },
       screens: [{

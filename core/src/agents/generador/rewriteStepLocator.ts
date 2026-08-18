@@ -1,4 +1,4 @@
-const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
+import { SCREEN_TAG } from "../../appMap/schema.js";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

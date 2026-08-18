@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <!-- El caso completo que motiva esta funcionalidad: un login que no cambia
+       la URL, seguido de un botón cuyo contenido revela un formulario real
+       (con un input, no solo botones) — el equivalente en miniatura de
+       "Log in" → dashboard → "Crear bebé" en la aplicación real medida.
+
+       "Show tips", dentro de la vista promocionada "New baby", añade un
+       segundo salto MÁS ALLÁ de la promoción: un control revelado por la
+       propia pantalla promocionada, no por el ancestro. Existe para probar
+       que lo que ese salto revela se registra contra la pantalla promocionada
+       (baby-form), no contra el dashboard.
+
+       "Nursery", también dentro del Dashboard, es una escritura anidada tras
+       OTRA ya aprobada (el login), pero alcanzada por una navegación REAL, no
+       por un swap del mismo DOM: `runWritePass` solo sabe recargar una
+       pantalla desde la URL concreta que la capturó (`concreteUrls`), y una
+       pantalla promocionada por clic (baby-form) tiene registrada la URL de
+       su ANCESTRO — recargarla vuelve al login, no a la vista revelada — así
+       que su propio "Crear" nunca puede ejecutarse de verdad, con o sin este
+       bucle. "Nursery" evita esa limitación aparte con una URL propia y
+       real, y es lo que permite probar que un write action anidado no solo
+       se pregunta, sino que se ejecuta. -->
+  <head><meta charset="utf-8" /><title>Fixture · Nested SPA views</title></head>
+  <body>
+    <main id="app">
+      <h1>Sign in</h1>
+      <form id="login">
+        <label>Email <input name="email" type="email" /></label>
+        <label>Password <input name="password" type="password" /></label>
+        <button type="submit">Log in</button>
+      </form>
+    </main>
+    <script>
+      document.getElementById("login").addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.getElementById("app").innerHTML = `
+          <h1>Dashboard</h1>
+          <p>You have no baby yet.</p>
+          <button type="button" id="create-baby">Create baby</button>
+          <a href="/nursery.html">Nursery</a>
+        `;
+        document.getElementById("create-baby").addEventListener("click", () => {
+          document.getElementById("app").innerHTML = `
+            <h1>New baby</h1>
+            <form id="baby-form">
+              <label>Name <input name="name" type="text" /></label>
+              <button type="submit">Create</button>
+            </form>
+            <button type="button" id="show-tips">Show tips</button>
+          `;
+          document.getElementById("show-tips").addEventListener("click", () => {
+            document.getElementById("app").insertAdjacentHTML("beforeend", "<p>Keep skin to skin contact.</p>");
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

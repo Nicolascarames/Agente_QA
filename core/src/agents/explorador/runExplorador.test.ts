@@ -10,7 +10,7 @@ import { runExplorador } from "./runExplorador.js";
 import type { AppMap } from "../../appMap/schema.js";
 
 const map: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
   complete: true, authenticated: false, scenarios: [],
   stats: { screens: 1, locators: 1, ambiguous: 0, durationMs: 5 },
   screens: [{
@@ -33,7 +33,7 @@ function options(overrides: Partial<Parameters<typeof runExplorador>[0]> = {}) {
     projectRoot,
     testsDir: "tests",
     baseUrl: "https://example.test/",
-    limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [] },
+    limits: { maxScreens: 500, maxDepth: 25, maxDurationMinutes: 60, loopSuspicionThreshold: 3, excludeRoutes: [], maxViewDepth: 4 },
     callbacks: {
       confirmContinueOnLoop: async () => true,
       approveWriteActions: async () => [],

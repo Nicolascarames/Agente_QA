@@ -10,6 +10,7 @@ import { redactText } from "./redact.js";
 import { elementKey, mergeScreenState } from "./elementIdentity.js";
 import type { Crawler, CrawlCredentials, CrawlInput, CrawlResult } from "./crawler.js";
 import { MissingCrawlerToolError } from "./crawler.js";
+import { PASSWORD_NAME, looksLikeEmailField, hasPasswordField } from "./credentialFields.js";
 
 export { pythonLiteral } from "./pythonLiteral.js";
 
@@ -30,8 +31,6 @@ const FORM_SELECTOR = "form";
 /** Fields the crawler treats as fillable form inputs, everywhere in this file. */
 const FIELD_SELECTOR =
   'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])';
-
-const PASSWORD_NAME = /password|contrasena|contraseña|clave/i;
 
 /**
  * Logging out mid-crawl would kill the session the whole authenticated pass
@@ -767,13 +766,50 @@ async function currentSignature(page: Page, secrets: string[]): Promise<string |
   return snapshot.length > 0 ? screenSignature(redactText(snapshot, secrets)) : null;
 }
 
+/**
+ * Si un envío que se suponía login tuvo éxito. La URL cambiando sigue siendo
+ * la señal más barata y se comprueba primero; en una SPA nunca cambia, así
+ * que la segunda comprobación es la que de verdad importa aquí: la firma dejó
+ * de ser la de la pantalla de login Y ya no queda ningún campo de contraseña
+ * visible. Comparar solo firmas no vale — un login FALLIDO también cambia la
+ * firma, al pintar el mensaje de error.
+ */
+async function submitSucceeded(
+  page: Page,
+  before: string,
+  loginSignature: string | null,
+  secrets: string[]
+): Promise<boolean> {
+  if (page.url() !== before) return true;
+  if (loginSignature === null) return false;
+  const signature = await currentSignature(page, secrets);
+  if (signature === null || signature === loginSignature) return false;
+  const passwordFieldCount = await page
+    .locator('input[type="password"]')
+    .count()
+    .catch(() => 1); // en caso de error, no reclamar éxito
+  return passwordFieldCount === 0;
+}
+
 /** `id`, `name` and `className` all derive from the same slug, in one place. */
-function screenIdentity(screenId: string): { id: string; name: string; className: string } {
+export function screenIdentity(screenId: string): { id: string; name: string; className: string } {
+  const pythonSafeSlug = screenId.replace(/~/g, "_");
   return {
     id: screenId,
     name: screenId,
-    className: `${pythonIdentifier(screenId).replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase())}Page`,
+    className: `${pythonIdentifier(pythonSafeSlug).replace(/(^|_)([a-z])/g, (_, __, c: string) => c.toUpperCase())}Page`,
   };
+}
+
+/**
+ * D1: un campo rellenable (input o select) nuevo es un formulario real y se
+ * promociona a pantalla propia. Un botón o enlace nuevo, por sí solo, se
+ * queda como estado — un diálogo de confirmación o un menú desplegable no
+ * merecen Page Object propio. Validado contra `state.html`: ese fixture
+ * añade un botón sin ningún input y tres tests ya exigen que se quede estado.
+ */
+export function classifyViewChange(newLocators: LocatorEntry[]): "promote" | "state" {
+  return newLocators.some((l) => l.kind === "input" || l.kind === "select") ? "promote" : "state";
 }
 
 function matchesExcluded(urlTemplate: string, patterns: string[]): boolean {
@@ -884,7 +920,7 @@ const INVALID_EMAIL = "agente-qa-probe@example.invalid";
 const INVALID_PASSWORD = "agente-qa-invalid-password";
 
 function valueFor(fieldName: string, data: "valid" | "invalid", credentials?: CrawlCredentials): string {
-  const looksLikeEmail = /email|correo|user|usuario/i.test(fieldName);
+  const looksLikeEmail = looksLikeEmailField(fieldName);
   const looksLikePassword = PASSWORD_NAME.test(fieldName);
   if (data === "invalid") return looksLikeEmail ? INVALID_EMAIL : looksLikePassword ? INVALID_PASSWORD : "";
   if (looksLikeEmail) return credentials?.username ?? "agente-qa@example.test";
@@ -956,13 +992,6 @@ async function fieldTarget(
     worst = Math.max(worst, matches);
   }
   return { target: null, matches: worst };
-}
-
-function hasPasswordField(screen: Screen, action: WriteAction): boolean {
-  return action.formFields.some((fieldName) => {
-    const field = screen.locators.find((l) => l.name === fieldName);
-    return field?.accessibleName !== undefined && PASSWORD_NAME.test(field.accessibleName);
-  });
 }
 
 /**
@@ -1079,7 +1108,7 @@ async function attemptLogin(page: Page, input: CrawlInput, emit: EmitEvent, secr
     return { authenticated: false, loginSignature: entry.signature };
   }
 
-  const authenticated = page.url() !== before;
+  const authenticated = await submitSucceeded(page, before, entry.signature, secrets);
   emit(
     authenticated
       ? { agent: "explorador", status: "ok", depth: 1, message: `Sesión iniciada, el mapa cubrirá la zona privada → ${page.url()}` }
@@ -1165,6 +1194,9 @@ async function derivePrivateScreens(
   }
 }
 
+/** One step of a click/submit sequence from an addressable ancestor screen to a view with no URL of its own. */
+type PathStep = { action: "click" | "submit"; locator: string; data: "valid" | "invalid" | "none" };
+
 /**
  * Every approved write action runs TWICE, with different data, because the two
  * outcomes are different screens and both are needed. Without the invalid
@@ -1183,7 +1215,10 @@ async function runWritePass(
   approved: { screenId: string; locator: string }[],
   concreteUrls: Map<Screen, string>,
   input: CrawlInput,
-  emit: EmitEvent
+  emit: EmitEvent,
+  assignedScreenIds: Set<string>,
+  promotedCountByAncestor: Map<string, number>,
+  enqueueChildren: (node: Screen, pathSoFar: PathStep[], depth: number) => void
 ): Promise<boolean> {
   const secrets = secretsOf(input);
   let authenticated = false;
@@ -1193,6 +1228,24 @@ async function runWritePass(
     const screen = screens[index];
     const action = screen.writeActions.find((a) => a.locator === locatorName);
     if (!action) continue;
+
+    // Una pantalla `reachedBy` (promocionada por clic desde su ancestro, sin
+    // URL propia) no puede recargarse: `concreteUrls` guarda la URL del
+    // ANCESTRO, no la de esta vista. Recargar esa URL y luego rellenar/pulsar
+    // deja el DOM equivocado bajo el formulario — 0 elementos resueltos casi
+    // siempre (y el aviso culparía, engañosamente, a la ambigüedad de
+    // locators), o peor, coincide por casualidad con un control del propio
+    // ancestro y ejecuta y fusiona SU envío como si fuera de esta vista.
+    // TODO(follow-up): runWritePass no reproduce reachedBy.path todavía —
+    // ningún task del plan SPA cubre esto aún. Cuando lo haga, esta guarda
+    // se sustituye por el replay real.
+    if (screen.reachedBy !== undefined) {
+      emit({
+        agent: "explorador", status: "warn", depth: 1,
+        message: `No se puede ejecutar todavía "${action.label}": ${screen.id} es una vista sin URL propia y el crawler aún no sabe reproducir su camino antes de escribir. Se ofrece para aprobación pero no se ejecuta.`,
+      });
+      continue;
+    }
 
     const isLoginAction = hasPasswordField(screen, action);
 
@@ -1243,6 +1296,64 @@ async function runWritePass(
         continue;
       }
 
+      if (isLoginAction && data === "valid") {
+        const succeeded = await submitSucceeded(page, before, screen.signature, secrets);
+        if (succeeded) {
+          authenticated = true;
+          emit({ agent: "explorador", status: "ok", depth: 1, message: `Envío válido de "${action.label}" (sin cambio de URL, sesión iniciada)` });
+
+          // A same-route login is exactly the case this plan exists for: the
+          // DOM behind `screen` is no longer the login form, and whatever it
+          // reveals — a real form or just a dashboard shell — goes through the
+          // same classify/promote/merge machinery a click does, instead of
+          // being thrown away the moment `authenticated` flips true.
+          const step: PathStep = { action: "submit", locator: action.locator, data: "valid" };
+          const view = await captureScreen(page, { screenId: `${screen.id}~probe`, baseUrl: input.baseUrl, secrets, emit });
+          const knownNames = new Set(screen.locators.map((l) => l.name));
+          const newLocators = view.locators.filter((l) => !knownNames.has(l.name));
+          const newWriteActions = await collectWriteActions(page, view, secrets);
+
+          if (classifyViewChange(newLocators) === "promote") {
+            const promotedId = uniqueName(`${screen.id}~${action.locator.replace(/_/g, "-")}`, assignedScreenIds);
+            assignedScreenIds.add(promotedId);
+            const promoted: Screen = {
+              ...view,
+              ...screenIdentity(promotedId),
+              urlTemplate: screen.urlTemplate,
+              reachedBy: { entryScreenId: screen.id, path: [step] },
+              writeActions: newWriteActions,
+            };
+            concreteUrls.set(promoted, url);
+            screens.push(promoted);
+            promotedCountByAncestor.set(screen.id, (promotedCountByAncestor.get(screen.id) ?? 0) + 1);
+            if ((promotedCountByAncestor.get(screen.id) ?? 0) > 10) {
+              emit({
+                agent: "explorador", status: "warn", depth: 1,
+                message: `${screen.id} ya tiene más de 10 vistas promocionadas: probablemente hay un patrón repetitivo (acordeón, "cargar más"...). Considera bajar maxViewDepth o excluir esta ruta.`,
+              });
+            }
+            emit({
+              agent: "explorador", status: "ok", depth: 1,
+              message: `"${action.label}" revela un formulario nuevo tras iniciar sesión: se promociona a ${promotedId}`,
+            });
+            enqueueChildren(promoted, [step], 1);
+          } else {
+            Object.assign(
+              screen,
+              mergeScreenState(screen, {
+                id: `valid-submit-${action.locator}`,
+                reachedBy: { action: "submit", locator: action.locator, data: "valid" },
+                texts: view.texts,
+                locators: newLocators,
+                writeActions: newWriteActions,
+              })
+            );
+            enqueueChildren(screen, [step], 1);
+          }
+          continue;
+        }
+      }
+
       const after = await captureScreen(page, { screenId: screen.id, baseUrl: input.baseUrl, secrets });
       // Merged IN PLACE. `screens`, `concreteUrls` and `absorbedBy` all hold
       // this exact object; swapping in the fresh one `mergeScreenState`
@@ -1265,6 +1376,136 @@ async function runWritePass(
     }
   }
   return authenticated;
+}
+
+/**
+ * Which screen's `locators`/`writeActions` address a step of a path. Every
+ * step that stayed a STATE of `entry` lives in `entry.locators` — that is what
+ * merging in place means. A step that PROMOTED broke that chain: its own
+ * controls live on the screen the promotion created, addressed by the exact
+ * path prefix that reached it, never on `entry`. Without this, a path that
+ * clicks past a promotion boundary would look up its own locator on the wrong
+ * screen and `replayPath` would report every such branch unreproducible.
+ */
+function locatorSourceFor(entry: Screen, screens: Screen[], prefix: PathStep[]): Screen {
+  if (prefix.length === 0) return entry;
+  const promoted = screens.find(
+    (s) =>
+      s.reachedBy !== undefined &&
+      s.reachedBy.entryScreenId === entry.id &&
+      s.reachedBy.path.length === prefix.length &&
+      s.reachedBy.path.every((step, i) => step.action === prefix[i].action && step.locator === prefix[i].locator && step.data === prefix[i].data)
+  );
+  return promoted ?? entry;
+}
+
+/**
+ * Vuelve a un nodo sin URL propia reproduciendo la secuencia de acciones que
+ * lo alcanzó, verificando la firma tras cada paso contra la que se registró
+ * la primera vez que se recorrió ese mismo prefijo. Una discrepancia dice que
+ * la aplicación no es determinista en ese punto — la rama se aborta en vez de
+ * arriesgarse a construir el resto del mapa sobre un estado que no es el que
+ * se cree que es.
+ *
+ * `skipped: true` marks a step the walk deliberately refuses — an
+ * out-of-session logout link, an excluded destination, a locator that no
+ * longer resolves uniquely — the same reasons the old single-click loop used
+ * to skip a control without failing the crawl. Only `skipped: false` marks a
+ * real failure (a dead navigation, a non-deterministic signature), which is
+ * what should mark `AppMap.complete` false.
+ *
+ * `knownPathSignatures` is a parameter, not module state: two different
+ * `crawl()` calls in the same process (as in this file's own test suite, a
+ * fixture reused across several `it`s) share no app instance and must not
+ * share this cache either, or a signature legitimately different between two
+ * unrelated crawls of screens that happen to reuse the same id would read as
+ * "this application is not deterministic".
+ */
+async function replayPath(
+  page: Page,
+  entryUrl: string,
+  entry: Screen,
+  screens: Screen[],
+  path: PathStep[],
+  credentials: CrawlCredentials | undefined,
+  secrets: string[],
+  authenticated: boolean,
+  input: CrawlInput,
+  emit: EmitEvent,
+  knownPathSignatures: Map<string, string>
+): Promise<{ ok: true } | { ok: false; skipped: boolean }> {
+  try {
+    await page.goto(entryUrl, { waitUntil: "domcontentloaded" });
+  } catch {
+    return { ok: false, skipped: false };
+  }
+
+  for (let i = 0; i < path.length; i++) {
+    const step = path[i];
+    const source = locatorSourceFor(entry, screens, path.slice(0, i));
+    const locatorEntry = source.locators.find((l) => l.name === step.locator);
+    if (locatorEntry === undefined) return { ok: false, skipped: false };
+
+    const role = locatorEntry.kind === "link" ? "link" : "button";
+    const name = locatorEntry.accessibleName ?? "";
+    const target = narrowedBy(page, scopedBy(page, locatorEntry).getByRole(role as never, { name, exact: true }), locatorEntry);
+
+    const matches = await target.count().catch(() => 0);
+    if (matches !== 1) {
+      emit({
+        agent: "explorador", status: "warn", depth: path.length,
+        message: `"${name}" ya no resuelve a un único elemento al reproducir el camino (${matches} coincidencias), se omite la rama`,
+      });
+      return { ok: false, skipped: true };
+    }
+
+    const before = page.url();
+    const logoutPath = authenticated ? await logoutDestination(target, before) : null;
+    if (logoutPath !== null) {
+      emit({
+        agent: "explorador", status: "info", depth: path.length,
+        message: `No se pulsa "${name}": lleva a ${logoutPath} y cerraría la sesión a mitad del recorrido`,
+      });
+      return { ok: false, skipped: true };
+    }
+    const excluded = await excludedDestination(target, before, input);
+    if (excluded !== null) {
+      emit({
+        agent: "explorador", status: "info", depth: path.length,
+        message: `No se pulsa "${name}": lleva a ${excluded}, que está excluida`,
+      });
+      return { ok: false, skipped: true };
+    }
+
+    if (step.action === "submit") {
+      const action = source.writeActions.find((a) => a.locator === step.locator);
+      if (action === undefined) return { ok: false, skipped: false };
+      for (const fieldName of action.formFields) {
+        const field = source.locators.find((l) => l.name === fieldName);
+        if (field === undefined) continue;
+        const fieldTarget = narrowedBy(page, scopedBy(page, field).getByRole("textbox", { name: field.accessibleName ?? "" }), field);
+        await fieldTarget.fill(valueFor(field.accessibleName ?? "", step.data === "invalid" ? "invalid" : "valid", credentials)).catch(() => undefined);
+      }
+    }
+
+    await target.click({ timeout: 5_000 }).catch(() => undefined);
+    await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+
+    const signature = await currentSignature(page, secrets);
+    if (signature === null) return { ok: false, skipped: false };
+    const prefixKey = `${entry.id}#${JSON.stringify(path.slice(0, i + 1))}`;
+    const known = knownPathSignatures.get(prefixKey);
+    if (known === undefined) {
+      knownPathSignatures.set(prefixKey, signature);
+    } else if (known !== signature) {
+      emit({
+        agent: "explorador", status: "warn", depth: path.length,
+        message: `${prefixKey} produjo una firma distinta al reproducirlo: la aplicación no es determinista en ese punto`,
+      });
+      return { ok: false, skipped: false };
+    }
+  }
+  return { ok: true };
 }
 
 /**
@@ -1335,7 +1576,76 @@ export function createRealCrawler(): Crawler {
       let loginSignature: string | null = null;
 
       const deadline = startedAt + input.limits.maxDurationMinutes * 60_000;
-      const queue: { url: string; depth: number }[] = [{ url: input.baseUrl, depth: 0 }];
+      // A URL is addressable on its own (`page.goto` reaches it directly). A
+      // path is not: it is a sequence of click/submit steps from the nearest
+      // addressable ancestor, needed for any view a same-route click or submit
+      // reveals — a modal, a client-rendered login — which `page.goto` alone
+      // can never reproduce.
+      type WalkItem =
+        | { kind: "url"; url: string; depth: number }
+        | { kind: "path"; entryScreenId: string; path: PathStep[]; depth: number };
+      const queue: WalkItem[] = [{ kind: "url", url: input.baseUrl, depth: 0 }];
+      const promotedCountByAncestor = new Map<string, number>();
+      // Every fingerprint an addressable screen already accounts for: its own
+      // base capture, plus every state or promoted screen a path has revealed
+      // from it since. Two different paths landing on the identical view — two
+      // buttons that open the same panel, or a click that does nothing and
+      // lands right back where a merge already looked — must not each grow
+      // their own state; keyed by the Screen object, not its id, so a later
+      // sibling collapse (which rewrites `id` in place) does not orphan it.
+      const knownStateSignatures = new Map<Screen, Set<string>>();
+      // Scoped to this one `crawl()` call — see the note on `replayPath`.
+      const knownPathSignatures = new Map<string, string>();
+
+      // Reused by both branches of the walk below (a screen just captured at a
+      // URL, and a node reached through a path of clicks/submits): exactly the
+      // logic that used to live inline in the click loop, deciding what to
+      // click next from a node's CURRENT locator list — which, after a state
+      // merge or a promotion, includes controls a click loop that snapshotted
+      // the list once, before any state existed, would never have seen.
+      function enqueueChildren(node: Screen, pathSoFar: PathStep[], depth: number): void {
+        // El límite solo acota la exploración de vistas ANIDADAS (mismo route,
+        // click tras click sin navegación) — `pathSoFar` no vacío. La
+        // exploración ordinaria (`pathSoFar = []`, la que arranca desde una
+        // pantalla recién capturada por URL) nunca debe frenarse aquí, o
+        // `maxViewDepth: 0` apagaría TODA la exploración por clic, no solo la
+        // anidada.
+        if (pathSoFar.length > 0 && pathSoFar.length >= input.limits.maxViewDepth) return;
+        const entryScreenId = node.reachedBy?.entryScreenId ?? node.id;
+
+        // Misma lógica que la captura de arriba: qué copia es esta, de entre
+        // los controles que comparten kind+accessibleName en esta pantalla.
+        // Dos botones "Editar" en filas distintas de una tabla son elementos
+        // DISTINTOS, y `elementKey` los desambigua por posición — sin esto se
+        // tratarían como el mismo elemento y solo se pulsaría uno de los dos.
+        const twinIndex = new Map<string, number>();
+        const seenNames = new Map<string, number>();
+        for (const entry of node.locators) {
+          const identity = `${entry.kind}|${entry.accessibleName ?? entry.name}`;
+          const index = seenNames.get(identity) ?? 0;
+          seenNames.set(identity, index + 1);
+          twinIndex.set(entry.name, index);
+        }
+
+        for (const locator of node.locators.filter((l) => l.kind === "link" || l.kind === "button")) {
+          if (node.writeActions.some((a) => a.locator === locator.name)) continue; // los submits los prueba runWritePass
+          const key = elementKey({
+            screenId: node.id,
+            role: locator.kind,
+            accessibleName: locator.accessibleName ?? locator.name,
+            index: twinIndex.get(locator.name) ?? 0,
+          });
+          if (clickedElements.has(key)) continue;
+          clickedElements.add(key);
+          if (authenticated && LOGOUT_NAME.test(locator.accessibleName ?? "")) continue;
+          queue.push({
+            kind: "path",
+            entryScreenId,
+            path: [...pathSoFar, { action: "click", locator: locator.name, data: "none" }],
+            depth: depth + 1,
+          });
+        }
+      }
 
       try {
         // `newContext`/`newPage` run inside the guarded region on purpose: the
@@ -1354,10 +1664,17 @@ export function createRealCrawler(): Crawler {
         if (authenticated) {
           const landed = page.url();
           if (toUrlTemplate(landed, input.baseUrl) !== toUrlTemplate(input.baseUrl, input.baseUrl)) {
-            queue.push({ url: landed, depth: 0 });
+            queue.push({ kind: "url", url: landed, depth: 0 });
           }
         }
 
+        // A function, not an inline loop, because it runs twice: once for the
+        // first pass proper, and once more after the write pass — a same-route
+        // login success discovered there (Tarea 10's own fixture: a valid
+        // submit that swaps the DOM in place) enqueues its own children via
+        // `enqueueChildren`, and those need draining too, or a login-revealed
+        // form would be captured but never explored past its first control.
+        async function drainQueue(): Promise<void> {
         while (queue.length > 0) {
           if (screens.length >= input.limits.maxScreens || Date.now() > deadline) {
             complete = false;
@@ -1366,8 +1683,20 @@ export function createRealCrawler(): Crawler {
           }
 
           const next = queue.shift()!;
-          if (next.depth > input.limits.maxDepth) { complete = false; continue; }
+          if (next.kind === "url" && next.depth > input.limits.maxDepth) { complete = false; continue; }
+          // Redundant with `enqueueChildren`'s own bound in construction (it
+          // never pushes a path longer than that), kept here as a defensive
+          // duplicate — but it must apply the SAME "nested only" rule: a
+          // length-1 path is the ordinary first click off a normal screen,
+          // not yet known to be nested, and `maxViewDepth: 0` must not skip
+          // it (same bug as the one fixed in `enqueueChildren`, just hit from
+          // the other side of the queue).
+          if (next.kind === "path" && next.path.length > 1 && next.path.length > input.limits.maxViewDepth) {
+            complete = false;
+            continue;
+          }
 
+          if (next.kind === "url") {
           // Excluded BEFORE navigating. A safety net whose whole promise is
           // "do not go there" — admin areas, endpoints with side effects on
           // load — fails that promise if the request is made and only the
@@ -1473,6 +1802,7 @@ export function createRealCrawler(): Crawler {
 
           screen.writeActions = await collectWriteActions(page, screen, secrets);
           screens.push(screen);
+          knownStateSignatures.set(screen, new Set([screen.signature]));
           emit({
             agent: "explorador", status: "ok", depth: 0,
             message: `${template} · pantalla ${screens.length}`,
@@ -1480,199 +1810,197 @@ export function createRealCrawler(): Crawler {
             durationMs: Date.now() - stepStart,
           });
 
-          // Every fingerprint this screen already accounts for: its base
-          // capture, plus every state recorded from it below. A click that
-          // lands on one of them added nothing, and recording it again is how
-          // two controls that open the same panel would each get their own
-          // state — and how a control that toggles a panel open and shut would
-          // grow one per click.
-          const knownSignatures = new Set<string>([screen.signature]);
+          // Every button, link and (if this screen turns out to have any
+          // same-route state) whatever a merged state reveals gets explored
+          // from here — `enqueueChildren` reads `screen.locators` fresh each
+          // time it runs, not a list snapshotted before any state existed.
+          enqueueChildren(screen, [], next.depth);
+          } else {
+            // next.kind === "path": reproducir el camino sobre la URL del
+            // ancestro addressable y decidir qué es lo nuevo que revela el
+            // último paso.
+            const entry = screens.find((s) => s.id === next.entryScreenId);
+            if (entry === undefined) continue; // no debería pasar: el ancestro siempre se captura antes de encolar un camino
+            const entryUrl = concreteUrls.get(entry);
+            if (entryUrl === undefined) continue;
 
-          // Which of the screen's same-named twins each entry is. Until
-          // attribute narrowing, a duplicated accessible name produced at most
-          // one entry, so index 0 identified it. Now a tab and a submit sharing
-          // a name are both recorded, and a key built from the name alone would
-          // read the second as already clicked and never explore where it goes.
-          // Derived from the screen's own locator list, so every element that
-          // has no twin keeps index 0 and behaves exactly as before.
-          const twinIndex = new Map<string, number>();
-          const seenNames = new Map<string, number>();
-          for (const entry of screen.locators) {
-            const identity = `${entry.kind}|${entry.accessibleName ?? entry.name}`;
-            const index = seenNames.get(identity) ?? 0;
-            seenNames.set(identity, index + 1);
-            twinIndex.set(entry.name, index);
-          }
-
-          // First pass: navigation only. Submits are recorded, never clicked.
-          for (const locator of screen.locators.filter((l) => l.kind === "link" || l.kind === "button")) {
-            if (screen.writeActions.some((action) => action.locator === locator.name)) continue;
-            const key = elementKey({
-              screenId: screen.id,
-              role: locator.kind,
-              accessibleName: locator.accessibleName ?? locator.name,
-              index: twinIndex.get(locator.name) ?? 0,
-            });
-            if (clickedElements.has(key)) continue;
-            clickedElements.add(key);
-
-            // Only while the crawl actually holds a session. On a public crawl
-            // there is nothing to lose by following a control that happens to
-            // be called "Log out", and skipping it dropped a real screen for
-            // nothing.
-            const name = locator.accessibleName ?? "";
-            if (authenticated && LOGOUT_NAME.test(name)) {
-              emit({
-                agent: "explorador", status: "info", depth: next.depth + 1,
-                message: `No se pulsa "${name}": cerrar sesión es una acción de escritura, mataría la sesión a mitad del recorrido`,
-              });
-              continue;
-            }
-
-            try {
-              await page.goto(next.url, { waitUntil: "domcontentloaded" });
-            } catch {
-              complete = false;
-              emit({
-                agent: "explorador", status: "warn", depth: next.depth + 1,
-                message: `No se pudo recargar ${next.url} antes de probar "${locator.accessibleName ?? locator.name}", se omite`,
-              });
-              continue;
-            }
-            const before = page.url();
-
-            // Reuse the SAME scope `resolveCandidate` already validated at
-            // capture time, instead of re-resolving the accessible name from
-            // scratch, unscoped, and taking `.first()`. Two controls sharing a
-            // name (a nav link and its header twin) both match page-wide, and
-            // `.first()` would click whichever comes first in DOM order — not
-            // necessarily the element the map recorded and generated the
-            // Python locator for. That could attribute a transition to the
-            // wrong destination, or miss a screen only the scoped element
-            // leads to, while the generated Python (built from the scoped
-            // locator) claims to reach somewhere the map does not.
-            const role = locator.kind === "link" ? "link" : "button";
-            const target = narrowedBy(
-              page,
-              scopedBy(page, locator).getByRole(role as never, { name, exact: true }),
-              locator
+            const replay = await replayPath(
+              page, entryUrl, entry, screens, next.path, input.credentials, secrets, authenticated, input, emit,
+              knownPathSignatures
             );
-
-            const matches = await target.count().catch(() => 0);
-            if (matches !== 1) {
-              // Still ambiguous even scoped (or the scope disappeared since
-              // capture): guessing positionally is worse than skipping.
-              emit({
-                agent: "explorador", status: "warn", depth: next.depth + 1,
-                message: `"${name}" ya no resuelve a un único elemento al recorrerlo (${matches} coincidencias), se omite`,
-              });
-              continue;
-            }
-
-            // Same reasoning as the name test above, applied to where the
-            // control GOES: a link labelled "Exit" or "Salir", or an icon with
-            // no text at all, ends the session just as surely as one labelled
-            // "Log out". Read from the href, so the session dies for nothing
-            // only if this misses.
-            const logoutPath = authenticated ? await logoutDestination(target, before) : null;
-            if (logoutPath !== null) {
-              emit({
-                agent: "explorador", status: "info", depth: next.depth + 1,
-                message: `No se pulsa "${name}": lleva a ${logoutPath} y cerraría la sesión a mitad del recorrido`,
-              });
-              continue;
-            }
-
-            // A link states its destination before it is followed, so an
-            // excluded route can be honoured without ever requesting it.
-            const excluded = await excludedDestination(target, before, input);
-            if (excluded !== null) {
-              emit({
-                agent: "explorador", status: "info", depth: next.depth + 1,
-                message: `No se pulsa "${name}": lleva a ${excluded}, que está excluida`,
-              });
-              continue;
-            }
-
-            await target.click({ timeout: 5_000 }).catch(() => undefined);
-            await page.waitForLoadState("domcontentloaded").catch(() => undefined);
-            const after = page.url();
-            const external = isExternalUrl(after, input.baseUrl);
-            const targetTemplate = external ? "" : toUrlTemplate(after, input.baseUrl);
-
-            // The route did not change, so nothing was navigated to: on a
-            // client-rendered application the click swapped the view in place.
-            // That is a STATE of this screen, never a new screen — which is
-            // exactly what keeps "one Page Object per route" intact. Until now
-            // only the write pass could produce a state, so a click-induced one
-            // fell between the two passes and the walk recorded nothing at all:
-            // measured on a real login, where "Forgot password?" leaves
-            // `page.url()` identical and replaces the panel, the whole crawl
-            // came back with a single screen.
-            if (!external && targetTemplate === template) {
-              const signature = await currentSignature(page, secrets);
-              if (signature === null || knownSignatures.has(signature)) continue;
-              knownSignatures.add(signature);
-
-              const view = await captureScreen(page, { screenId: screen.id, baseUrl: input.baseUrl, secrets });
-              const stateId = `click-${locator.name}`;
-              // Merged IN PLACE: `screens`, `concreteUrls` and `absorbedBy` all
-              // hold this exact object, and swapping in the fresh one
-              // `mergeScreenState` returns would orphan every lookup keyed on
-              // its identity. Locators that only exist here are tagged with the
-              // state id by the merge itself, as the write pass's are.
-              Object.assign(
-                screen,
-                mergeScreenState(screen, {
-                  id: stateId,
-                  reachedBy: { action: "click", locator: locator.name, data: "none" },
-                  texts: view.texts,
-                  locators: view.locators.filter((l) => !screen.locators.some((existing) => existing.python === l.python)),
-                })
-              );
-              emit({
-                agent: "explorador", status: "ok", depth: next.depth + 1,
-                message: `"${name}" cambia la vista sin cambiar de ruta: se guarda como estado de ${template}`,
-                detail: `${screen.states.at(-1)?.addsTexts.length ?? 0} textos nuevos`,
-              });
-
-              // Back to the screen's base state, so the next control is clicked
-              // from the same place the map describes instead of from whatever
-              // this state left behind.
-              try {
-                await page.goto(next.url, { waitUntil: "domcontentloaded" });
-              } catch {
+            if (!replay.ok) {
+              // A skipped step (logout, excluded, no longer unique) already
+              // explained itself; only a genuine failure to reproduce marks
+              // the crawl incomplete.
+              if (!replay.skipped) {
                 complete = false;
                 emit({
-                  agent: "explorador", status: "warn", depth: next.depth + 1,
-                  message: `No se pudo volver a ${next.url} tras el estado "${stateId}", se deja de recorrer esta pantalla`,
+                  agent: "explorador", status: "warn", depth: next.depth,
+                  message: `No se pudo reproducir el camino hasta ${next.path.map((s) => s.locator).join(" → ")}, se omite la rama`,
                 });
-                break;
               }
               continue;
             }
 
-            // Everything from here down really navigated: the route template
-            // changed, or the click left the application. A click that changed
-            // nothing at all cannot reach this point — it has the same URL,
-            // hence the same template, and the state branch above answered it.
-            screen.transitions.push({
-              locator: locator.name,
-              action: "click",
-              toScreenId: external ? null : targetTemplate,
-              urlChanged: true,
-              ...(external ? { externalUrl: after } : {}),
-            });
-            if (!external && !visitedTemplates.has(targetTemplate)) queue.push({ url: after, depth: next.depth + 1 });
+            const lastStep = next.path[next.path.length - 1];
+            // The screen the last step was actually clicked FROM — `entry`
+            // itself only for a path that never crossed a promotion boundary.
+            // A path that promoted at some earlier step (D2: exploring further
+            // through an already-promoted node) must record the transition,
+            // signature and merged/promoted state against THAT screen, or its
+            // own further-revealed content silently pollutes `entry` instead.
+            const owner = locatorSourceFor(entry, screens, next.path.slice(0, -1));
+            const afterUrl = page.url();
+            const external = isExternalUrl(afterUrl, input.baseUrl);
+            const entryTemplate = toUrlTemplate(entryUrl, input.baseUrl);
+            const afterTemplate = external ? "" : toUrlTemplate(afterUrl, input.baseUrl);
+
+            if (external || afterTemplate !== entryTemplate) {
+              // The last step of the path really navigated — the route
+              // template changed, or it left the application. Not an in-place
+              // view: a new addressable screen, discovered exactly as a click
+              // that changes route always was.
+              owner.transitions.push({
+                locator: lastStep.locator,
+                action: lastStep.action,
+                toScreenId: external ? null : afterTemplate,
+                urlChanged: true,
+                ...(external ? { externalUrl: afterUrl } : {}),
+              });
+              if (!external && !visitedTemplates.has(afterTemplate)) {
+                queue.push({ kind: "url", url: afterUrl, depth: next.depth + 1 });
+              }
+              continue;
+            }
+
+            // Same route: a cheap signature check first, exactly as the old
+            // click loop did before ever paying for a full capture. A path
+            // that lands on a view this entry already accounts for — its own
+            // base capture, another state, or another promoted screen reached
+            // down a different path — added nothing new.
+            const signature = await currentSignature(page, secrets);
+            if (signature === null) {
+              complete = false;
+              emit({
+                agent: "explorador", status: "warn", depth: next.depth,
+                message: `No se pudo comprobar la vista al final de ${next.path.map((s) => s.locator).join(" → ")}, se omite la rama`,
+              });
+              continue;
+            }
+            const known = knownStateSignatures.get(owner) ?? new Set<string>();
+            if (known.has(signature)) continue;
+            known.add(signature);
+            knownStateSignatures.set(owner, known);
+
+            // Let Tarea 9's classifier decide whether what the last step
+            // really added is a real form (promote) or merely a panel/dialog
+            // (state of `owner`), exactly as D1 describes.
+            const view = await captureScreen(page, { screenId: `${owner.id}~probe`, baseUrl: input.baseUrl, secrets, emit });
+            const knownNames = new Set(owner.locators.map((l) => l.name));
+            const newLocators = view.locators.filter((l) => !knownNames.has(l.name));
+            const newWriteActions = await collectWriteActions(page, view, secrets);
+            const stateId = `path-${next.path.map((s) => s.locator).join("-")}`;
+
+            if (classifyViewChange(newLocators) === "promote") {
+              const promotedId = uniqueName(`${entry.id}~${lastStep.locator.replace(/_/g, "-")}`, assignedScreenIds);
+              assignedScreenIds.add(promotedId);
+              const promoted: Screen = {
+                ...view,
+                ...screenIdentity(promotedId),
+                urlTemplate: entry.urlTemplate,
+                reachedBy: { entryScreenId: entry.id, path: next.path },
+                writeActions: newWriteActions,
+              };
+              concreteUrls.set(promoted, entryUrl);
+              screens.push(promoted);
+              promotedCountByAncestor.set(entry.id, (promotedCountByAncestor.get(entry.id) ?? 0) + 1);
+              if ((promotedCountByAncestor.get(entry.id) ?? 0) > 10) {
+                emit({
+                  agent: "explorador", status: "warn", depth: next.depth,
+                  message: `${entry.id} ya tiene más de 10 vistas promocionadas: probablemente hay un patrón repetitivo (acordeón, "cargar más"...). Considera bajar maxViewDepth o excluir esta ruta.`,
+                });
+              }
+              emit({
+                agent: "explorador", status: "ok", depth: next.depth,
+                message: `${next.path.map((s) => s.locator).join(" → ")} revela un formulario nuevo: se promociona a ${promotedId}`,
+              });
+              enqueueChildren(promoted, next.path, next.depth);
+            } else {
+              // Merged IN PLACE into `owner` — `entry` itself when the path
+              // never crossed a promotion boundary, the promoted screen a
+              // deeper step was actually clicked from otherwise. `screens`,
+              // `concreteUrls` and `absorbedBy` all hold this exact object,
+              // and swapping in the fresh one `mergeScreenState` returns
+              // would orphan every lookup keyed on its identity.
+              Object.assign(
+                owner,
+                mergeScreenState(owner, {
+                  id: stateId,
+                  reachedBy: { action: lastStep.action, locator: lastStep.locator, data: lastStep.data },
+                  texts: view.texts,
+                  locators: newLocators,
+                  writeActions: newWriteActions,
+                })
+              );
+              emit({
+                agent: "explorador", status: "ok", depth: next.depth,
+                message: `${next.path.map((s) => s.locator).join(" → ")} cambia la vista sin cambiar de ruta: se guarda como estado de ${owner.urlTemplate}`,
+                detail: `${owner.states.at(-1)?.addsTexts.length ?? 0} textos nuevos`,
+              });
+              enqueueChildren(owner, next.path, next.depth);
+            }
           }
+        }
+        }
+
+        await drainQueue();
+
+        // Nothing is submitted without the user's approval, every run — there
+        // is deliberately no flag to bypass this. Every screen's write actions
+        // are offered up front, whether or not the walk hit any safety limit
+        // above; whatever the user did not approve simply never runs.
+        //
+        // Every approved write action can itself enqueue more exploration
+        // (Tarea 10's `runWritePass` extension: a same-route submit that
+        // reveals new controls is classified/promoted/enqueued exactly like a
+        // click). That newly-queued exploration can, in turn, discover MORE
+        // write actions nested behind it — a form only reachable after an
+        // earlier form was already submitted and approved (the real
+        // motivating case: `spa-nested.html`'s baby-creation form, only
+        // reachable after the login submit runs). A single extra approval
+        // pass only pushes this problem one level deeper; the loop below
+        // keeps alternating "drain what's queued" and "approve + run whatever
+        // new write actions that drain revealed" until a round finds nothing
+        // left to ask, which is the only way every depth gets a chance to
+        // surface its own forms for approval.
+        const askedWriteActions = new Set<string>(); // `${screenId}|${locator}`
+        while (true) {
+          await drainQueue();
+
+          const pendingWriteActions = screens.flatMap((screen) =>
+            screen.writeActions
+              .filter((action) => !askedWriteActions.has(`${screen.id}|${action.locator}`))
+              .map((action) => ({ screenId: screen.id, action }))
+          );
+          if (pendingWriteActions.length === 0) break;
+          for (const p of pendingWriteActions) askedWriteActions.add(`${p.screenId}|${p.action.locator}`);
+
+          const approvedWriteActions = await input.callbacks.approveWriteActions(pendingWriteActions);
+          const writeAuthenticated = await runWritePass(
+            page, screens, approvedWriteActions, concreteUrls, input, emit,
+            assignedScreenIds, promotedCountByAncestor, enqueueChildren
+          );
+          authenticated = authenticated || writeAuthenticated;
         }
 
         // `toScreenId` must hold a screen id, not the route template the walk
         // had at hand: consumers read it against `screen.id` and a template
-        // matches none of them. Resolved here, once, when every screen the
-        // walk could reach is already known — and through `absorbedBy` too,
-        // because a destination recorded as `/blog/first-post` is answered by
-        // the screen that has since become `/blog/:id`.
+        // matches none of them. Resolved here, once BOTH drains are done and
+        // every screen the walk could reach — including one a same-route login
+        // only revealed during the write pass — is already known. Through
+        // `absorbedBy` too, because a destination recorded as
+        // `/blog/first-post` is answered by the screen that has since become
+        // `/blog/:id`.
         const screenIdForTemplate = (template: string): string | null =>
           screens.find((s) => s.urlTemplate === template)?.id ?? absorbedBy.get(template)?.id ?? null;
         for (const screen of screens) {
@@ -1682,17 +2010,6 @@ export function createRealCrawler(): Crawler {
               : { ...transition, toScreenId: screenIdForTemplate(transition.toScreenId) }
           );
         }
-
-        // Second pass: nothing is submitted without the user's approval, every
-        // run — there is deliberately no flag to bypass this. Every screen's
-        // write actions are offered up front, whether or not the walk hit any
-        // safety limit above; whatever the user did not approve simply never runs.
-        const pendingWriteActions = screens.flatMap((screen) =>
-          screen.writeActions.map((action) => ({ screenId: screen.id, action }))
-        );
-        const approvedWriteActions = await input.callbacks.approveWriteActions(pendingWriteActions);
-        const writeAuthenticated = await runWritePass(page, screens, approvedWriteActions, concreteUrls, input, emit);
-        authenticated = authenticated || writeAuthenticated;
 
         // Only a crawl that held a session can have screens that needed one:
         // without credentials every screen in the map was, by construction,
@@ -1706,7 +2023,7 @@ export function createRealCrawler(): Crawler {
       }
 
       const map: AppMap = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         appUrl: input.baseUrl,
         createdAt: new Date().toISOString(),
         complete,

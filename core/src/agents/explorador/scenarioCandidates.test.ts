@@ -4,7 +4,7 @@ import { generateScenarioCandidates } from "./scenarioCandidates.js";
 import type { AppMap } from "../../appMap/schema.js";
 
 const map: AppMap = {
-  schemaVersion: 1, appUrl: "https://example.test/", createdAt: "t",
+  schemaVersion: 2, appUrl: "https://example.test/", createdAt: "t",
   complete: true, authenticated: false, screens: [], scenarios: [],
   stats: { screens: 0, locators: 0, ambiguous: 0, durationMs: 0 },
 };

@@ -7,6 +7,7 @@ export interface InitPrompts {
   selectAppLanguage(): Promise<"es" | "en">;
   inputRoute(label: string): Promise<string>;
   promptAdditionalRoutes(): Promise<Record<string, string>>;
+  inputMaxViewDepth(): Promise<number>;
   selectGitignoreEntries(candidates: string[]): Promise<string[]>;
 }
 
