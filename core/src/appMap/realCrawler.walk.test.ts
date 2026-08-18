@@ -339,4 +339,46 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
     const ids = result.map.screens.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   }, 20000);
+
+  // The bug this plan exists to fix, in miniature: a login that swaps the DOM
+  // in place (no route change) followed by a button whose own content reveals
+  // a REAL form. Before this rewrite, nothing inside a same-route state was
+  // ever clicked — the click loop's locator list was snapshotted once, before
+  // any state existed — so the "Create baby" button was invisible past the
+  // login, let alone the form it opens.
+  describe("a click inside a same-route login state that reveals a real form", () => {
+    const crawlNestedFixture = () =>
+      createRealCrawler().crawl({
+        baseUrl: site.url.replace(/\/$/, "") + "/spa-nested.html",
+        limits,
+        credentials: { username: "user@example.test", password: "secret" },
+        callbacks: {
+          confirmContinueOnLoop: async () => false,
+          approveWriteActions: async (pending) => pending.map((p) => ({ screenId: p.screenId, locator: p.action.locator })),
+        },
+        emit: () => {},
+      });
+
+    it("promotes the baby-creation form to its own screen with a reachedBy path", async () => {
+      const result = await crawlNestedFixture();
+      if (!result.ok) throw new Error(result.error);
+      const babyScreen = result.map.screens.find((s) => s.reachedBy !== undefined);
+      expect(babyScreen).toBeDefined();
+      expect(babyScreen!.reachedBy).toEqual({
+        entryScreenId: result.map.screens[0].id,
+        path: [
+          { action: "submit", locator: expect.any(String), data: "valid" },
+          { action: "click", locator: "create_baby_button", data: "none" },
+        ],
+      });
+      const nameInput = babyScreen!.locators.find((l) => l.kind === "input");
+      expect(nameInput).toBeDefined();
+    }, 20000);
+
+    it("keeps screen count at 2: the login screen and the promoted baby-form screen", async () => {
+      const result = await crawlNestedFixture();
+      if (!result.ok) throw new Error(result.error);
+      expect(result.map.screens).toHaveLength(2);
+    }, 20000);
+  });
 });
