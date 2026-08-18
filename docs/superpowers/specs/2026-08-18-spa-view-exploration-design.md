@@ -52,22 +52,39 @@ profundidad configurable, y que el código generado sepa alcanzarlas.
 
 ### D1 — Una vista SPA se promueve a pantalla
 
-Regla determinista: **una vista que añade localizadores interactivos
-(`input`, `button`, `select`) es una pantalla; una que solo añade texto es un
-estado.**
+Regla determinista: **una vista que añade un campo rellenable (`input` o
+`select`) es una pantalla; una que solo añade botones, enlaces o texto es un
+estado.** Un botón nuevo, por sí solo, nunca promueve — un diálogo de
+confirmación o un menú desplegable siguen siendo estado exactamente como hoy.
 
-Contrastada contra el mapa real medido:
+Contrastada contra el mapa real medido y el fixture existente:
 
 | Acción | Qué añade | Clasificación |
 |---|---|---|
 | Envío inválido de "Log in" | solo `"Authentication failed. Please try again."` | estado (igual que hoy) |
-| "Forgot password?" | inputs y botones del panel de reset | pantalla |
-| Envío válido de "Log in" | el dashboard entero | pantalla |
-| "Crear bebé" | Nombre, Fecha de nacimiento, botón Crear | pantalla |
+| "Forgot password?" (medido: sin input nuevo, solo botones/heading/texto) | `Send reset link`, `Back to log in`, heading, texto | estado |
+| `state.html` — "Forgot password?" del fixture | un botón `Send reset link`, sin input | estado (ya cubierto por 3 tests existentes) |
+| Envío válido de "Log in" | el dashboard entero, sin campos rellenables propios | estado — pero D2 sigue explorando dentro, ver más abajo |
+| "Crear bebé", pulsado dentro de ese estado | input Nombre, input Fecha de nacimiento, botón Crear | pantalla, alcanzada con el camino `[submit log_in_button_2 válido, click crear_bebe_button]` |
+
+Se comprobó contra `core/src/appMap/__fixtures__/site/state.html` y sus tres
+tests en `realCrawler.walk.test.ts` (líneas 292-317): ese fixture añade un
+botón sin ningún input, y los tests ya afirman que debe quedar como estado.
+Una primera redacción de esta regla ("cualquier localizador interactivo
+promueve") entraba en conflicto directo con ese suite ya validado. La versión
+final — solo campos rellenables — es coherente con él sin tocar sus
+expectativas.
 
 La alternativa considerada — "sustituye vs añade" — se descarta: un modal se
 superpone sin retirar nada del DOM, y clasificaría el formulario de crear bebé
 como estado, que es justo el caso que motiva el trabajo.
+
+Límite conocido y aceptado: si una vista nueva reutiliza el mismo nombre de
+locator que uno ya existente en la pantalla (p. ej. un input "Email" propio de
+un panel de reset que se llama igual que el "Email" del login), `mergeScreenState`
+lo descarta por nombre duplicado antes de que esta regla pueda verlo, y la vista
+se queda como estado aunque tuviera un campo propio. Es una limitación
+preexistente de la deduplicación por nombre, no algo que este trabajo resuelva.
 
 El motivo de promover en vez de anidar estados no es estético. El prompt del
 intake vuelca **todos** los literales de una pantalla en una lista plana
@@ -81,14 +98,37 @@ el problema desaparece sin tocar los consumidores.
 Coste aceptado: se rompe el invariante "un Page Object por ruta". En una SPA ese
 invariante ya no describe nada — la ruta no identifica lo que se ve.
 
-### D2 — Se vuelve a una vista reproduciendo su camino
+**Corrección importante, encontrada al planificar la implementación:** D1
+decide si una vista tiene Page Object propio, pero por sí sola NO decide si el
+walk sigue explorando más allá de esa vista. Con la regla de arriba, el
+dashboard post-login se queda como estado (solo añade botones). Un estado es
+hoy terminal — nada dentro de él se pulsa. Sin corregir esto, `crear_bebe_button`
+seguiría sin explorarse nunca, que es exactamente el bug que motiva todo este
+trabajo: la promoción por sí sola no lo resuelve.
 
-Una vista no es direccionable: no existe `page.goto()` que lleve al modal de
-crear bebé. Cada vista guarda la URL de entrada y la secuencia de acciones que
-lleva hasta ella. Para explorar dentro, el crawler navega a la URL de entrada y
-reproduce el camino, **verificando la firma después de cada paso**. Si una firma
-no coincide con la registrada, la rama se aborta, se emite aviso y el mapa queda
-`complete: false`.
+Por eso D2 (más abajo) explora dentro de un estado igual que dentro de una
+pantalla promocionada: la única diferencia entre ambos es si el nodo obtiene
+Page Object propio, nunca si se sigue explorando desde él. El campo `path` de
+`reachedBy` ya lo soporta sin cambios de esquema — un paso del camino puede ser
+un hop que solo produjo un estado, no una pantalla.
+
+### D2 — Se vuelve a una vista reproduciendo su camino, promocionada o no
+
+Ni una pantalla promocionada ni un estado son direccionables: no existe
+`page.goto()` que lleve al modal de crear bebé, y tampoco lo hay para "el
+dashboard tras un login válido". Cada nodo — promocionado o no — guarda la URL
+de entrada más direccionable (la del ancestro `Screen` real) y la secuencia de
+acciones que lleva hasta él. Para explorar dentro de cualquiera de los dos, el
+crawler navega a esa URL y reproduce el camino, **verificando la firma después
+de cada paso**. Si una firma no coincide con la registrada, la rama se aborta,
+se emite aviso y el mapa queda `complete: false`.
+
+El walk trata la cola BFS de forma uniforme: cada elemento es un camino (posiblemente
+vacío, para las pantallas direccionables de siempre). Al procesar uno, se enumeran
+los controles nuevos que el DOM ofrece en ese punto — vengan de la captura base o de
+un estado — y cada uno que no se haya pulsado ya se encola con el camino extendido en
+un paso, sin importar si el hop anterior produjo pantalla o solo estado. `maxViewDepth`
+acota la longitud del camino, no si hubo promoción por el medio.
 
 La alternativa — seguir explorando in situ en profundidad, sin volver a la base —
 gasta muchas menos acciones, pero deja al crawler sin saber dónde está tras un
@@ -159,17 +199,24 @@ varias pantallas comparten valor. Eso obliga a arreglar la resolución de
 `toScreenId` al final del walk, que hoy busca por `urlTemplate` y pasaría a ser
 ambigua: debe resolver a la pantalla **base** de la ruta, nunca a una vista.
 
-`ScreenState` conserva su significado actual: cambios que solo añaden texto.
+`ScreenState` amplía su significado: hoy son cambios que solo añaden texto;
+pasan a admitir también botones y enlaces nuevos, siempre que ningún campo
+rellenable aparezca — el caso que D1 sigue clasificando como estado.
 
 ### Recorrido (`core/src/appMap/realCrawler.ts`)
 
-Las vistas entran en la misma cola BFS que las URLs. Un elemento de la cola pasa
-a ser `{ url, depth }` o `{ path, depth }`.
+Las vistas y los estados entran en la misma cola BFS que las URLs. Un elemento
+de la cola pasa a ser `{ url, depth }` (pantalla direccionable, camino vacío) o
+`{ path, depth }` (todo lo demás — pantalla promocionada o estado, sin
+distinción a efectos de cola).
 
 Al detectar que un clic no cambió de ruta, el crawler compara los localizadores
-capturados con los de la vista de origen. Si hay localizadores interactivos
-nuevos, encola una pantalla nueva con su camino; si no, registra un estado como
-hoy.
+capturados con los ya conocidos en ese punto del árbol. Si hay un campo
+rellenable (`input`/`select`) nuevo, se promociona a pantalla con su propio
+`reachedBy`; si no, se funde como estado del ancestro más cercano, igual que
+hoy. **En ambos casos** los controles nuevos que ese punto revela se encolan
+con el camino extendido en un paso — un estado ya no es un punto final, solo
+un punto sin Page Object propio.
 
 La reproducción de un camino reutiliza el localizador ya validado en captura
 (`scopedBy` / `narrowedBy`), nunca vuelve a resolver el nombre accesible desde
