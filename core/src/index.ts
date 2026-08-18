@@ -121,7 +121,7 @@ export { runExplorador } from "./agents/explorador/runExplorador.js";
 export type { ExploradorCallbacks, RunExploradorOptions, ExploradorResult } from "./agents/explorador/runExplorador.js";
 export { generateScenarioCandidates } from "./agents/explorador/scenarioCandidates.js";
 export { createRealCrawler } from "./appMap/realCrawler.js";
-export { emitPageObject } from "./appMap/pageObjectEmitter.js";
+export { emitPageObject, pageObjectMethodNamesForLocator } from "./appMap/pageObjectEmitter.js";
 export { toSelfPageExpression } from "./appMap/pythonExpression.js";
 export { redactMap, redactText, REDACTED } from "./appMap/redact.js";
 

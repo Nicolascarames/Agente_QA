@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { emitPageObject } from "./pageObjectEmitter.js";
-import type { Screen } from "./schema.js";
+import { emitPageObject, pageObjectMethodNamesForLocator } from "./pageObjectEmitter.js";
+import type { LocatorEntry, Screen } from "./schema.js";
 
 const screen: Screen = {
   id: "login", name: "Log in", className: "LoginPage", urlTemplate: "/",
@@ -93,6 +93,40 @@ describe("emitPageObject", () => {
     // A bare `page.` anywhere in the emitted class is a NameError waiting to
     // happen: inside a method only `self.page` exists.
     expect(emitPageObject(screen).content).not.toMatch(/(?<!self\.)\bpage\./);
+  });
+});
+
+describe("pageObjectMethodNamesForLocator", () => {
+  // Pins this helper to the exact same kind->prefix rule `emitPageObject`
+  // uses, so a caller outside this module (the CLI's ambiguity prompt, in
+  // particular) can never advertise a method the emitted Page Object doesn't
+  // actually define.
+  const of = (kind: LocatorEntry["kind"]): LocatorEntry => ({
+    name: "x", kind, python: "page.x", count: 1, verifiedAt: "t",
+  });
+
+  it("gives an input get_ and fill_, never click_ or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("input"))).toEqual(["get_x", "fill_x"]);
+  });
+
+  it("gives a button get_ and click_, never fill_ or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("button"))).toEqual(["get_x", "click_x"]);
+  });
+
+  it("gives a link get_ and click_, never fill_ or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("link"))).toEqual(["get_x", "click_x"]);
+  });
+
+  it("gives a select get_ and select_, never fill_ or click_", () => {
+    expect(pageObjectMethodNamesForLocator(of("select"))).toEqual(["get_x", "select_x"]);
+  });
+
+  it("gives text only get_ — no fill_, click_, or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("text"))).toEqual(["get_x"]);
+  });
+
+  it("gives a heading only get_ — no fill_, click_, or select_", () => {
+    expect(pageObjectMethodNamesForLocator(of("heading"))).toEqual(["get_x"]);
   });
 });
 
