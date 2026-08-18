@@ -18,7 +18,7 @@ export interface FeatureLiteralCheck {
   screenTagFound: boolean;
 }
 
-const SCREEN_TAG = /@screen:([\p{L}\p{N}_-]+)/u;
+const SCREEN_TAG = /@screen:([\p{L}\p{N}_~-]+)/u;
 
 /**
  * A `fill` step's second quoted group is test DATA the tester invented (an
