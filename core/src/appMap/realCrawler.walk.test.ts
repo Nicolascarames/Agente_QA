@@ -380,5 +380,25 @@ describe.skipIf(!chromium.executablePath())("createRealCrawler — first pass", 
       if (!result.ok) throw new Error(result.error);
       expect(result.map.screens).toHaveLength(2);
     }, 20000);
+
+    // The fixture's "Show tips" button lives on the ALREADY-PROMOTED baby-form
+    // screen, not on the dashboard. Clicking it is a second hop past the
+    // promotion boundary (path length 3): what it reveals must be recorded
+    // against the promoted screen, never against the dashboard entry.
+    it("records a second hop through an already-promoted screen against that screen, not the entry", async () => {
+      const result = await crawlNestedFixture();
+      if (!result.ok) throw new Error(result.error);
+      const entry = result.map.screens[0];
+      const babyScreen = result.map.screens.find((s) => s.reachedBy !== undefined);
+      expect(babyScreen).toBeDefined();
+
+      const showTips = babyScreen!.locators.find((l) => l.accessibleName === "Show tips");
+      expect(showTips).toBeDefined();
+      expect(babyScreen!.states.some((s) => s.reachedBy.locator === showTips!.name)).toBe(true);
+      expect(babyScreen!.texts).toContain("Keep skin to skin contact.");
+
+      expect(entry.texts).not.toContain("Keep skin to skin contact.");
+      expect(entry.locators.some((l) => l.accessibleName === "Show tips")).toBe(false);
+    }, 20000);
   });
 });

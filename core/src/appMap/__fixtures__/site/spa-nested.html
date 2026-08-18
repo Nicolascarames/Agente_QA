@@ -3,7 +3,13 @@
   <!-- El caso completo que motiva esta funcionalidad: un login que no cambia
        la URL, seguido de un botón cuyo contenido revela un formulario real
        (con un input, no solo botones) — el equivalente en miniatura de
-       "Log in" → dashboard → "Crear bebé" en la aplicación real medida. -->
+       "Log in" → dashboard → "Crear bebé" en la aplicación real medida.
+
+       "Show tips", dentro de la vista promocionada "New baby", añade un
+       segundo salto MÁS ALLÁ de la promoción: un control revelado por la
+       propia pantalla promocionada, no por el ancestro. Existe para probar
+       que lo que ese salto revela se registra contra la pantalla promocionada
+       (baby-form), no contra el dashboard. -->
   <head><meta charset="utf-8" /><title>Fixture · Nested SPA views</title></head>
   <body>
     <main id="app">
@@ -29,7 +35,11 @@
               <label>Name <input name="name" type="text" /></label>
               <button type="submit">Create</button>
             </form>
+            <button type="button" id="show-tips">Show tips</button>
           `;
+          document.getElementById("show-tips").addEventListener("click", () => {
+            document.getElementById("app").insertAdjacentHTML("beforeend", "<p>Keep skin to skin contact.</p>");
+          });
         });
       });
     </script>

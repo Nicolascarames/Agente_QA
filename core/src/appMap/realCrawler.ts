@@ -1809,6 +1809,13 @@ export function createRealCrawler(): Crawler {
             }
 
             const lastStep = next.path[next.path.length - 1];
+            // The screen the last step was actually clicked FROM — `entry`
+            // itself only for a path that never crossed a promotion boundary.
+            // A path that promoted at some earlier step (D2: exploring further
+            // through an already-promoted node) must record the transition,
+            // signature and merged/promoted state against THAT screen, or its
+            // own further-revealed content silently pollutes `entry` instead.
+            const owner = locatorSourceFor(entry, screens, next.path.slice(0, -1));
             const afterUrl = page.url();
             const external = isExternalUrl(afterUrl, input.baseUrl);
             const entryTemplate = toUrlTemplate(entryUrl, input.baseUrl);
@@ -1819,7 +1826,7 @@ export function createRealCrawler(): Crawler {
               // template changed, or it left the application. Not an in-place
               // view: a new addressable screen, discovered exactly as a click
               // that changes route always was.
-              entry.transitions.push({
+              owner.transitions.push({
                 locator: lastStep.locator,
                 action: lastStep.action,
                 toScreenId: external ? null : afterTemplate,
@@ -1846,16 +1853,16 @@ export function createRealCrawler(): Crawler {
               });
               continue;
             }
-            const known = knownStateSignatures.get(entry) ?? new Set<string>();
+            const known = knownStateSignatures.get(owner) ?? new Set<string>();
             if (known.has(signature)) continue;
             known.add(signature);
-            knownStateSignatures.set(entry, known);
+            knownStateSignatures.set(owner, known);
 
             // Let Tarea 9's classifier decide whether what the last step
             // really added is a real form (promote) or merely a panel/dialog
-            // (state of `entry`), exactly as D1 describes.
-            const view = await captureScreen(page, { screenId: `${entry.id}~probe`, baseUrl: input.baseUrl, secrets, emit });
-            const knownNames = new Set(entry.locators.map((l) => l.name));
+            // (state of `owner`), exactly as D1 describes.
+            const view = await captureScreen(page, { screenId: `${owner.id}~probe`, baseUrl: input.baseUrl, secrets, emit });
+            const knownNames = new Set(owner.locators.map((l) => l.name));
             const newLocators = view.locators.filter((l) => !knownNames.has(l.name));
             const newWriteActions = await collectWriteActions(page, view, secrets);
             const stateId = `path-${next.path.map((s) => s.locator).join("-")}`;
@@ -1885,13 +1892,15 @@ export function createRealCrawler(): Crawler {
               });
               enqueueChildren(promoted, next.path, next.depth);
             } else {
-              // Merged IN PLACE: `screens`, `concreteUrls` and `absorbedBy`
-              // all hold this exact object, and swapping in the fresh one
-              // `mergeScreenState` returns would orphan every lookup keyed on
-              // its identity.
+              // Merged IN PLACE into `owner` — `entry` itself when the path
+              // never crossed a promotion boundary, the promoted screen a
+              // deeper step was actually clicked from otherwise. `screens`,
+              // `concreteUrls` and `absorbedBy` all hold this exact object,
+              // and swapping in the fresh one `mergeScreenState` returns
+              // would orphan every lookup keyed on its identity.
               Object.assign(
-                entry,
-                mergeScreenState(entry, {
+                owner,
+                mergeScreenState(owner, {
                   id: stateId,
                   reachedBy: { action: lastStep.action, locator: lastStep.locator, data: lastStep.data },
                   texts: view.texts,
@@ -1901,10 +1910,10 @@ export function createRealCrawler(): Crawler {
               );
               emit({
                 agent: "explorador", status: "ok", depth: next.depth,
-                message: `${next.path.map((s) => s.locator).join(" → ")} cambia la vista sin cambiar de ruta: se guarda como estado de ${entry.urlTemplate}`,
-                detail: `${entry.states.at(-1)?.addsTexts.length ?? 0} textos nuevos`,
+                message: `${next.path.map((s) => s.locator).join(" → ")} cambia la vista sin cambiar de ruta: se guarda como estado de ${owner.urlTemplate}`,
+                detail: `${owner.states.at(-1)?.addsTexts.length ?? 0} textos nuevos`,
               });
-              enqueueChildren(entry, next.path, next.depth);
+              enqueueChildren(owner, next.path, next.depth);
             }
           }
         }
