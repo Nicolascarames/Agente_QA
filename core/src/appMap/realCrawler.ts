@@ -801,6 +801,17 @@ export function screenIdentity(screenId: string): { id: string; name: string; cl
   };
 }
 
+/**
+ * D1: un campo rellenable (input o select) nuevo es un formulario real y se
+ * promociona a pantalla propia. Un botón o enlace nuevo, por sí solo, se
+ * queda como estado — un diálogo de confirmación o un menú desplegable no
+ * merecen Page Object propio. Validado contra `state.html`: ese fixture
+ * añade un botón sin ningún input y tres tests ya exigen que se quede estado.
+ */
+export function classifyViewChange(newLocators: LocatorEntry[]): "promote" | "state" {
+  return newLocators.some((l) => l.kind === "input" || l.kind === "select") ? "promote" : "state";
+}
+
 function matchesExcluded(urlTemplate: string, patterns: string[]): boolean {
   return patterns.some((pattern) => {
     const regex = new RegExp("^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
